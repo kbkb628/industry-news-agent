@@ -1,4 +1,5 @@
 import json
+from datetime import UTC, datetime
 from pathlib import Path
 
 import pytest
@@ -356,3 +357,348 @@ def test_local_tool_gateway_wraps_missing_tools_and_tool_errors() -> None:
     assert invalid.success is False
     assert invalid.error is not None
     assert invalid.error.code == "invalid_tool_response"
+
+
+def _build_task6_topic() -> dict[str, object]:
+    return {
+        "topic_id": "topic_ai_agent",
+        "name": "AI Agent",
+        "description": "Track enterprise AI agent launches and deployment updates.",
+        "seed_keywords": ["OpenAI", "enterprise", "automation"],
+        "trusted_sources": ["AI Daily RSS", "AI Search"],
+        "exclude_keywords": ["rumor"],
+        "push_threshold": 0.72,
+    }
+
+
+def test_task6_tool_registry_registers_minimal_candidate_pipeline() -> None:
+    from app.tools.registry import build_default_tool_registry
+
+    registry = build_default_tool_registry(llm=MockLLM())
+    gateway = LocalToolGateway()
+    registry.register_into(gateway)
+
+    assert registry.list_tool_names() == [
+        "rss_fetch",
+        "mock_search",
+        "fetch_article_content",
+        "extract_article",
+        "deduplicate_items",
+        "score_candidate",
+        "decide_push",
+    ]
+
+    response = gateway.call(
+        "rss_fetch",
+        run_id="run_task6_registry",
+        topic=_build_task6_topic(),
+    )
+
+    assert response.success is True
+    assert response.error is None
+    assert response.data is not None
+    assert response.data["run_id"] == "run_task6_registry"
+    assert len(response.data["candidates"]) == 1
+    assert response.data["candidates"][0]["source_type"] == "rss"
+
+
+def test_task6_pipeline_supports_fixture_retrieval_extract_dedup_score_and_push() -> None:
+    from app.tools.registry import build_default_tool_registry
+
+    topic = _build_task6_topic()
+    registry = build_default_tool_registry(llm=MockLLM())
+    gateway = LocalToolGateway()
+    registry.register_into(gateway)
+
+    rss_response = gateway.call("rss_fetch", run_id="run_task6_chain", topic=topic)
+    search_response = gateway.call(
+        "mock_search",
+        run_id="run_task6_chain",
+        topic=topic,
+    )
+
+    assert rss_response.success is True
+    assert search_response.success is True
+    assert rss_response.data is not None
+    assert search_response.data is not None
+
+    candidates = [
+        *rss_response.data["candidates"],
+        *search_response.data["candidates"],
+    ]
+
+    assert len(candidates) == 3
+
+    fetch_response = gateway.call("fetch_article_content", candidates=candidates)
+
+    assert fetch_response.success is True
+    assert fetch_response.data is not None
+    fetched_candidates = fetch_response.data["candidates"]
+    assert all(item["fetch_status"] == "fetched" for item in fetched_candidates)
+    assert all(item["content"] for item in fetched_candidates)
+
+    extract_response = gateway.call(
+        "extract_article",
+        run_id="run_task6_chain",
+        topic=topic,
+        candidates=fetched_candidates,
+    )
+
+    assert extract_response.success is True
+    assert extract_response.data is not None
+    extracted_articles = extract_response.data["articles"]
+    assert len(extracted_articles) == 3
+    assert extracted_articles[0]["summary"]
+    assert extracted_articles[0]["keywords"]
+
+    dedup_response = gateway.call("deduplicate_items", articles=extracted_articles)
+
+    assert dedup_response.success is True
+    assert dedup_response.data is not None
+    deduped_articles = dedup_response.data["articles"]
+    assert len(deduped_articles) == 2
+    assert dedup_response.data["deduped_count"] == 2
+    assert dedup_response.data["dropped_candidate_ids"] == ["cand_search_openai_dup"]
+
+    score_response = gateway.call(
+        "score_candidate",
+        topic=topic,
+        articles=deduped_articles,
+    )
+
+    assert score_response.success is True
+    assert score_response.data is not None
+    scored_articles = score_response.data["articles"]
+    assert len(scored_articles) == 2
+
+    openai_article = next(
+        item for item in scored_articles if item["candidate_id"] == "cand_rss_openai"
+    )
+    rumor_article = next(
+        item for item in scored_articles if item["candidate_id"] == "cand_search_rumor"
+    )
+
+    assert openai_article["score"] >= topic["push_threshold"]
+    assert rumor_article["score"] < topic["push_threshold"]
+    assert "trusted source" in openai_article["score_breakdown"]
+    assert "exclude keyword" in rumor_article["score_breakdown"]
+
+    push_response = gateway.call(
+        "decide_push",
+        run_id="run_task6_chain",
+        topic=topic,
+        articles=scored_articles,
+    )
+
+    assert push_response.success is True
+    assert push_response.data is not None
+    pushes = push_response.data["pushes"]
+    assert len(pushes) == 2
+    assert push_response.data["push_count"] == 1
+    assert sum(1 for push in pushes if push["should_push"]) == 1
+
+    push_by_candidate_id = {push["candidate_id"]: push for push in pushes}
+    assert push_by_candidate_id["cand_rss_openai"]["should_push"] is True
+    assert push_by_candidate_id["cand_search_rumor"]["should_push"] is False
+    assert "below threshold" in push_by_candidate_id["cand_search_rumor"]["decision_reason"]
+
+
+def test_task6_dedup_uses_content_fingerprint_in_addition_to_url_and_title() -> None:
+    from app.tools.registry import build_default_tool_registry
+
+    registry = build_default_tool_registry(llm=MockLLM())
+    gateway = LocalToolGateway()
+    registry.register_into(gateway)
+
+    articles = [
+        {
+            "candidate_id": "cand_a",
+            "title": "OpenAI launches AI agent automation workflow for enterprises",
+            "url": "https://example.com/articles/openai-ai-agent-workflow",
+            "summary": "Enterprise workflow launch.",
+            "content": "Alpha version of the article body.",
+        },
+        {
+            "candidate_id": "cand_b",
+            "title": "OpenAI launches AI agent automation workflow for enterprises",
+            "url": "https://another.example.com/articles/openai-ai-agent-workflow",
+            "summary": "Enterprise workflow launch from another source.",
+            "content": "Beta version with materially different body text.",
+        },
+        {
+            "candidate_id": "cand_c",
+            "title": "OpenAI launches AI agent automation workflow for enterprises",
+            "url": "https://another.example.com/articles/openai-ai-agent-workflow?utm_source=dup",
+            "summary": "Exact duplicate body from another source path variant.",
+            "content": "Beta version with materially different body text.",
+        },
+    ]
+
+    dedup_response = gateway.call("deduplicate_items", articles=articles)
+
+    assert dedup_response.success is True
+    assert dedup_response.data is not None
+    kept_articles = dedup_response.data["articles"]
+    assert [article["candidate_id"] for article in kept_articles] == ["cand_a", "cand_b"]
+    assert dedup_response.data["dropped_candidate_ids"] == ["cand_c"]
+
+
+def test_task6_extract_degrades_to_raw_summary_mode_when_fetch_fails() -> None:
+    from app.tools.registry import build_default_tool_registry
+
+    topic = _build_task6_topic()
+    registry = build_default_tool_registry(llm=MockLLM())
+    gateway = LocalToolGateway()
+    registry.register_into(gateway)
+
+    extract_response = gateway.call(
+        "extract_article",
+        run_id="run_task6_summary_mode",
+        topic=topic,
+        candidates=[
+            {
+                "candidate_id": "cand_failed_fetch",
+                "run_id": "run_task6_summary_mode",
+                "topic_id": topic["topic_id"],
+                "source_type": "search",
+                "source_name": "AI Search",
+                "title": "OpenAI enterprise agent update reaches summary fallback",
+                "url": "https://example.com/articles/openai-summary-fallback",
+                "published_at": "2026-06-08T12:00:00Z",
+                "raw_summary": "Fallback summary from search results.",
+                "fetch_status": "failed",
+                "fetch_error": "timeout",
+                "content": "",
+            }
+        ],
+    )
+
+    assert extract_response.success is True
+    assert extract_response.data is not None
+    assert extract_response.data["skipped_candidate_ids"] == []
+
+    extracted_articles = extract_response.data["articles"]
+    assert len(extracted_articles) == 1
+    extracted_article = extracted_articles[0]
+    assert extracted_article["candidate_id"] == "cand_failed_fetch"
+    assert extracted_article["summary"] == "Fallback summary from search results."
+    assert extracted_article["content"] == ""
+    assert extracted_article["extraction_mode"] == "raw_summary"
+    assert extracted_article["fetch_status"] == "failed"
+    assert extracted_article["fetch_error"] == "timeout"
+
+
+def test_task6_fetch_preserves_candidate_identity_when_urls_canonicalize_equal(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from app.tools.browser_fetch_tool import BrowserFetchTool
+
+    tool = BrowserFetchTool()
+    monkeypatch.setattr(
+        tool,
+        "load_articles",
+        lambda: [
+            {
+                "candidate_id": "cand_primary",
+                "url": "https://example.com/articles/shared-story",
+                "content": "Primary candidate body.",
+            },
+            {
+                "candidate_id": "cand_duplicate",
+                "url": "https://example.com/articles/shared-story?utm_source=dup",
+                "content": "Duplicate candidate body.",
+            },
+        ],
+    )
+
+    response = tool(
+        candidates=[
+            {
+                "candidate_id": "cand_primary",
+                "url": "https://example.com/articles/shared-story",
+                "raw_summary": "Primary summary",
+            },
+            {
+                "candidate_id": "cand_duplicate",
+                "url": "https://example.com/articles/shared-story?utm_source=dup",
+                "raw_summary": "Duplicate summary",
+            },
+        ]
+    )
+
+    assert response.success is True
+    assert response.data is not None
+    fetched_candidates = response.data["candidates"]
+    assert fetched_candidates[0]["content"] == "Primary candidate body."
+    assert fetched_candidates[1]["content"] == "Duplicate candidate body."
+
+
+def test_task6_decide_push_respects_history_url_and_cooldown_rules() -> None:
+    from app.tools.registry import build_default_tool_registry
+
+    topic = {
+        **_build_task6_topic(),
+        "cooldown_hours": 24,
+    }
+    registry = build_default_tool_registry(llm=MockLLM())
+    gateway = LocalToolGateway()
+    registry.register_into(gateway)
+
+    response = gateway.call(
+        "decide_push",
+        run_id="run_task6_cooldown",
+        topic=topic,
+        now=datetime(2026, 6, 9, 12, 0, tzinfo=UTC),
+        push_history=[
+            {
+                "url": "https://example.com/articles/already-pushed",
+                "title": "Historical title",
+                "pushed_at": "2026-06-01T12:00:00Z",
+            },
+            {
+                "url": "https://example.com/articles/older-url",
+                "title": "Fresh Funding Round For Agent Startup",
+                "pushed_at": "2026-06-09T02:00:00Z",
+            },
+        ],
+        articles=[
+            {
+                "candidate_id": "cand_same_url",
+                "extracted_id": "ext_same_url",
+                "title": "Brand new title",
+                "url": "https://example.com/articles/already-pushed?utm_source=again",
+                "score": 0.91,
+                "score_breakdown": "base llm=0.81; trusted source +0.10",
+            },
+            {
+                "candidate_id": "cand_same_title",
+                "extracted_id": "ext_same_title",
+                "title": "Fresh funding round for agent startup",
+                "url": "https://example.com/articles/new-url",
+                "score": 0.93,
+                "score_breakdown": "base llm=0.83; trusted source +0.10",
+            },
+            {
+                "candidate_id": "cand_allowed",
+                "extracted_id": "ext_allowed",
+                "title": "OpenAI ships enterprise agent governance update",
+                "url": "https://example.com/articles/openai-governance-update",
+                "score": 0.88,
+                "score_breakdown": "base llm=0.78; trusted source +0.10",
+            },
+        ],
+    )
+
+    assert response.success is True
+    assert response.data is not None
+    assert response.data["cooldown_hours"] == 24
+    assert response.data["push_count"] == 1
+
+    pushes = {push["candidate_id"]: push for push in response.data["pushes"]}
+    assert pushes["cand_same_url"]["should_push"] is False
+    assert "canonical_url already exists in push_history" in pushes["cand_same_url"][
+        "decision_reason"
+    ]
+    assert pushes["cand_same_title"]["should_push"] is False
+    assert "within cooldown 24h" in pushes["cand_same_title"]["decision_reason"]
+    assert pushes["cand_allowed"]["should_push"] is True

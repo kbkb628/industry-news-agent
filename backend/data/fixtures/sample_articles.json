@@ -1,0 +1,40 @@
+{
+  "articles": [
+    {
+      "article_id": "art_openai_rss",
+      "candidate_id": "cand_rss_openai",
+      "topic_ids": ["topic_ai_agent"],
+      "source_type": "rss",
+      "source_name": "AI Daily RSS",
+      "title": "OpenAI launches AI agent automation workflow for enterprises",
+      "url": "https://example.com/articles/openai-ai-agent-workflow",
+      "published_at": "2026-06-08T09:00:00Z",
+      "raw_summary": "OpenAI released an enterprise AI agent workflow.",
+      "content": "OpenAI released a new enterprise AI agent workflow for large teams. The automation update improves deployment reliability and governance for enterprise operations."
+    },
+    {
+      "article_id": "art_openai_search_dup",
+      "candidate_id": "cand_search_openai_dup",
+      "topic_ids": ["topic_ai_agent"],
+      "source_type": "search",
+      "source_name": "AI Search",
+      "title": "OpenAI launches AI agent automation workflow for enterprises",
+      "url": "https://example.com/articles/openai-ai-agent-workflow?utm_source=search",
+      "published_at": "2026-06-08T09:05:00Z",
+      "raw_summary": "Search result duplicate of the OpenAI enterprise AI agent launch.",
+      "content": "OpenAI released a new enterprise AI agent workflow for large teams. The automation update improves deployment reliability and governance for enterprise operations."
+    },
+    {
+      "article_id": "art_rumor_search",
+      "candidate_id": "cand_search_rumor",
+      "topic_ids": ["topic_ai_agent"],
+      "source_type": "search",
+      "source_name": "AI Search",
+      "title": "Rumor says startup may build an automation assistant",
+      "url": "https://example.com/articles/startup-rumor-automation-assistant",
+      "published_at": "2026-06-08T11:00:00Z",
+      "raw_summary": "Unverified report about a possible automation assistant.",
+      "content": "A rumor claims a startup may build an automation assistant next year. The report is unverified and offers no launch details for the company."
+    }
+  ]
+}

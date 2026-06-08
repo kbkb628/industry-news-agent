@@ -1,0 +1,18 @@
+{
+  "sources": [
+    {
+      "source_id": "src_rss_ai_daily",
+      "source_type": "rss",
+      "name": "AI Daily RSS",
+      "feed_url": "https://example.com/rss/ai-daily",
+      "topic_ids": ["topic_ai_agent"]
+    },
+    {
+      "source_id": "src_search_ai",
+      "source_type": "search",
+      "name": "AI Search",
+      "query": "AI Agent OpenAI enterprise automation",
+      "topic_ids": ["topic_ai_agent"]
+    }
+  ]
+}
