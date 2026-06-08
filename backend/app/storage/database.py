@@ -47,6 +47,14 @@ def get_session_factory(settings: Settings | None = None) -> sessionmaker[Sessio
     return build_session_factory(get_engine(settings))
 
 
+def get_db() -> Session:
+    session = get_session_factory()()
+    try:
+        yield session
+    finally:
+        session.close()
+
+
 def reset_engine_registry(database_url: str | None = None) -> None:
     if database_url is not None:
         engine = _ENGINE_REGISTRY.pop(database_url, None)
