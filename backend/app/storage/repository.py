@@ -2,13 +2,13 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from datetime import datetime
-from typing import Protocol
+from typing import Any, Protocol
 
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from app.storage.models import Topic
+from app.storage.models import EvalResult, MonitorRun, PushRecord, RunEvent, Topic
 
 
 @dataclass(frozen=True, slots=True)
@@ -48,6 +48,88 @@ class TopicRepositoryProtocol(Protocol):
     def get_topic(self, topic_id: str) -> TopicRecord | None: ...
 
 
+@dataclass(frozen=True, slots=True)
+class MonitorRunUpsertData:
+    run_id: str
+    topic_id: str
+    status: str
+    state_snapshot: dict[str, Any]
+    error_summary: str | None
+    started_at: datetime | None
+    finished_at: datetime | None
+
+
+@dataclass(frozen=True, slots=True)
+class MonitorRunRecord:
+    run_id: str
+    topic_id: str
+    status: str
+    state_snapshot: dict[str, Any]
+    error_summary: str | None
+    started_at: datetime | None
+    finished_at: datetime | None
+    created_at: datetime
+
+
+@dataclass(frozen=True, slots=True)
+class PushRecordCreateData:
+    run_id: str
+    topic_id: str
+    candidate_id: str
+    extracted_id: str | None
+    title: str
+    url: str
+    summary: str | None
+    should_push: bool
+    score: float
+    decision_reason: str | None
+    pushed_at: datetime | None
+
+
+@dataclass(frozen=True, slots=True)
+class RunEventCreateData:
+    run_id: str
+    topic_id: str
+    event_type: str
+    node: str
+    message: str
+    payload: dict[str, Any]
+    elapsed_ms: int | None
+
+
+@dataclass(frozen=True, slots=True)
+class EvalResultCreateData:
+    run_id: str
+    topic_id: str
+    retrieved_count: int
+    deduped_count: int
+    dedup_rate: float
+    push_count: int
+    duplicate_push_count: int
+    tool_success_rate: float
+    fetch_success_rate: float
+    trace_completeness: float
+    suggestions: tuple[str, ...]
+
+
+class MonitorRunRepositoryProtocol(Protocol):
+    def upsert_monitor_run(self, payload: MonitorRunUpsertData) -> MonitorRunRecord: ...
+
+    def list_push_history(self, topic_id: str) -> list[dict[str, Any]]: ...
+
+    def create_push_records(
+        self,
+        payloads: tuple[PushRecordCreateData, ...],
+    ) -> list[dict[str, Any]]: ...
+
+    def create_run_events(
+        self,
+        payloads: tuple[RunEventCreateData, ...],
+    ) -> list[dict[str, Any]]: ...
+
+    def create_eval_result(self, payload: EvalResultCreateData) -> dict[str, Any]: ...
+
+
 class UnimplementedTopicRepository:
     def __init__(self, session: Session | None = None) -> None:
         self.session = session
@@ -82,6 +164,19 @@ def _to_topic_record(model: Topic) -> TopicRecord:
         schedule_cron=model.schedule_cron,
         created_at=model.created_at,
         updated_at=model.updated_at,
+    )
+
+
+def _to_monitor_run_record(model: MonitorRun) -> MonitorRunRecord:
+    return MonitorRunRecord(
+        run_id=model.run_id,
+        topic_id=model.topic_id,
+        status=model.status,
+        state_snapshot=dict(model.state_snapshot),
+        error_summary=model.error_summary,
+        started_at=model.started_at,
+        finished_at=model.finished_at,
+        created_at=model.created_at,
     )
 
 
@@ -127,3 +222,221 @@ def build_topic_repository(session: Session | None = None) -> TopicRepositoryPro
     if session is None:
         return UnimplementedTopicRepository(session=session)
     return SqlAlchemyTopicRepository(session=session)
+
+
+class UnimplementedMonitorRunRepository:
+    def __init__(self, session: Session | None = None) -> None:
+        self.session = session
+
+    def upsert_monitor_run(self, payload: MonitorRunUpsertData) -> MonitorRunRecord:
+        raise NotImplementedError(
+            "Monitor run persistence is deferred until a database session is provided."
+        )
+
+    def list_push_history(self, topic_id: str) -> list[dict[str, Any]]:
+        raise NotImplementedError(
+            "Push history persistence is deferred until a database session is provided."
+        )
+
+    def create_push_records(
+        self,
+        payloads: tuple[PushRecordCreateData, ...],
+    ) -> list[dict[str, Any]]:
+        raise NotImplementedError(
+            "Push record persistence is deferred until a database session is provided."
+        )
+
+    def create_run_events(
+        self,
+        payloads: tuple[RunEventCreateData, ...],
+    ) -> list[dict[str, Any]]:
+        raise NotImplementedError(
+            "Event persistence is deferred until a database session is provided."
+        )
+
+    def create_eval_result(self, payload: EvalResultCreateData) -> dict[str, Any]:
+        raise NotImplementedError(
+            "Eval result persistence is deferred until a database session is provided."
+        )
+
+
+class SqlAlchemyMonitorRunRepository:
+    def __init__(self, session: Session) -> None:
+        self.session = session
+
+    def _commit(self) -> None:
+        try:
+            self.session.commit()
+        except SQLAlchemyError:
+            self.session.rollback()
+            raise
+
+    def upsert_monitor_run(self, payload: MonitorRunUpsertData) -> MonitorRunRecord:
+        monitor_run = self.session.get(MonitorRun, payload.run_id)
+        if monitor_run is None:
+            monitor_run = MonitorRun(
+                run_id=payload.run_id,
+                topic_id=payload.topic_id,
+                status=payload.status,
+                state_snapshot=dict(payload.state_snapshot),
+                error_summary=payload.error_summary,
+                started_at=payload.started_at,
+                finished_at=payload.finished_at,
+            )
+            self.session.add(monitor_run)
+        else:
+            monitor_run.topic_id = payload.topic_id
+            monitor_run.status = payload.status
+            monitor_run.state_snapshot = dict(payload.state_snapshot)
+            monitor_run.error_summary = payload.error_summary
+            monitor_run.started_at = payload.started_at
+            monitor_run.finished_at = payload.finished_at
+
+        self._commit()
+        self.session.refresh(monitor_run)
+        return _to_monitor_run_record(monitor_run)
+
+    def list_push_history(self, topic_id: str) -> list[dict[str, Any]]:
+        history = self.session.scalars(
+            select(PushRecord)
+            .where(PushRecord.topic_id == topic_id)
+            .where(PushRecord.should_push.is_(True))
+            .order_by(PushRecord.pushed_at.desc(), PushRecord.created_at.desc())
+        ).all()
+        return [
+            {
+                "push_id": record.push_id,
+                "run_id": record.run_id,
+                "topic_id": record.topic_id,
+                "candidate_id": record.candidate_id,
+                "extracted_id": record.extracted_id,
+                "title": record.title,
+                "url": record.url,
+                "summary": record.summary,
+                "should_push": record.should_push,
+                "score": record.score,
+                "decision_reason": record.decision_reason,
+                "pushed_at": record.pushed_at,
+            }
+            for record in history
+        ]
+
+    def create_push_records(
+        self,
+        payloads: tuple[PushRecordCreateData, ...],
+    ) -> list[dict[str, Any]]:
+        models: list[PushRecord] = []
+        for payload in payloads:
+            model = PushRecord(
+                run_id=payload.run_id,
+                topic_id=payload.topic_id,
+                candidate_id=payload.candidate_id,
+                extracted_id=payload.extracted_id,
+                title=payload.title,
+                url=payload.url,
+                summary=payload.summary,
+                should_push=payload.should_push,
+                score=payload.score,
+                decision_reason=payload.decision_reason,
+                pushed_at=payload.pushed_at,
+            )
+            self.session.add(model)
+            models.append(model)
+
+        self._commit()
+        for model in models:
+            self.session.refresh(model)
+        return [
+            {
+                "push_id": model.push_id,
+                "run_id": model.run_id,
+                "topic_id": model.topic_id,
+                "candidate_id": model.candidate_id,
+                "extracted_id": model.extracted_id,
+                "title": model.title,
+                "url": model.url,
+                "summary": model.summary,
+                "should_push": model.should_push,
+                "score": model.score,
+                "decision_reason": model.decision_reason,
+                "pushed_at": model.pushed_at,
+            }
+            for model in models
+        ]
+
+    def create_run_events(
+        self,
+        payloads: tuple[RunEventCreateData, ...],
+    ) -> list[dict[str, Any]]:
+        models: list[RunEvent] = []
+        for payload in payloads:
+            model = RunEvent(
+                run_id=payload.run_id,
+                topic_id=payload.topic_id,
+                event_type=payload.event_type,
+                node=payload.node,
+                message=payload.message,
+                payload=dict(payload.payload),
+                elapsed_ms=payload.elapsed_ms,
+            )
+            self.session.add(model)
+            models.append(model)
+
+        self._commit()
+        for model in models:
+            self.session.refresh(model)
+        return [
+            {
+                "event_id": model.event_id,
+                "run_id": model.run_id,
+                "topic_id": model.topic_id,
+                "event_type": model.event_type,
+                "node": model.node,
+                "message": model.message,
+                "payload": dict(model.payload),
+                "elapsed_ms": model.elapsed_ms,
+                "created_at": model.created_at,
+            }
+            for model in models
+        ]
+
+    def create_eval_result(self, payload: EvalResultCreateData) -> dict[str, Any]:
+        model = EvalResult(
+            run_id=payload.run_id,
+            topic_id=payload.topic_id,
+            retrieved_count=payload.retrieved_count,
+            deduped_count=payload.deduped_count,
+            dedup_rate=payload.dedup_rate,
+            push_count=payload.push_count,
+            duplicate_push_count=payload.duplicate_push_count,
+            tool_success_rate=payload.tool_success_rate,
+            fetch_success_rate=payload.fetch_success_rate,
+            trace_completeness=payload.trace_completeness,
+            suggestions=list(payload.suggestions),
+        )
+        self.session.add(model)
+        self._commit()
+        self.session.refresh(model)
+        return {
+            "eval_id": model.eval_id,
+            "run_id": model.run_id,
+            "topic_id": model.topic_id,
+            "retrieved_count": model.retrieved_count,
+            "deduped_count": model.deduped_count,
+            "dedup_rate": model.dedup_rate,
+            "push_count": model.push_count,
+            "duplicate_push_count": model.duplicate_push_count,
+            "tool_success_rate": model.tool_success_rate,
+            "fetch_success_rate": model.fetch_success_rate,
+            "trace_completeness": model.trace_completeness,
+            "suggestions": list(model.suggestions),
+            "created_at": model.created_at,
+        }
+
+
+def build_monitor_run_repository(
+    session: Session | None = None,
+) -> MonitorRunRepositoryProtocol:
+    if session is None:
+        return UnimplementedMonitorRunRepository(session=session)
+    return SqlAlchemyMonitorRunRepository(session=session)
