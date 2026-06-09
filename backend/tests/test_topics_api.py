@@ -87,6 +87,35 @@ def test_create_topic_returns_creation_receipt() -> None:
     }
 
 
+def test_topics_html_page_renders() -> None:
+    repository = FakeTopicRepository()
+
+    with _build_client(repository) as client:
+        response = client.get("/")
+
+    assert response.status_code == 200
+    assert "行业资讯结构化推送智能体" in response.text
+    assert "监控主题" in response.text
+
+
+def test_admin_html_pages_render() -> None:
+    repository = FakeTopicRepository()
+
+    with _build_client(repository) as client:
+        pushes_response = client.get("/pushes")
+        run_detail_response = client.get("/runs/run_demo_001")
+        events_response = client.get("/runs/run_demo_001/events")
+
+    assert pushes_response.status_code == 200
+    assert "推送记录" in pushes_response.text
+    assert run_detail_response.status_code == 200
+    assert "运行状态" in run_detail_response.text
+    assert "run_demo_001" in run_detail_response.text
+    assert events_response.status_code == 200
+    assert "事件时间线" in events_response.text
+    assert "run_demo_001" in events_response.text
+
+
 @pytest.mark.parametrize("failing_method", ["commit", "refresh"])
 def test_create_topic_rolls_back_session_when_persistence_fails(
     failing_method: str,
