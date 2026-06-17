@@ -5,6 +5,7 @@ from threading import Event, Lock, Thread
 import time
 
 import pytest
+from pydantic import ValidationError
 from redis import RedisError
 
 import app.rag.keyword_retriever as keyword_retriever_module
@@ -123,6 +124,31 @@ def test_settings_accept_history_index_provider_values() -> None:
     assert settings.opensearch_base_url == "http://localhost:9200"
     assert settings.opensearch_index_name == "industry-news-candidates"
     assert settings.opensearch_timeout_seconds == 4.0
+
+
+def test_settings_accept_semantic_dedup_values() -> None:
+    settings = Settings(
+        database_url="postgresql+psycopg://user:pass@localhost:5432/news_agent",
+        redis_url="redis://localhost:6379/0",
+        semantic_dedup_provider="local",
+        semantic_dedup_threshold=0.82,
+    )
+
+    assert settings.semantic_dedup_provider == "local"
+    assert settings.semantic_dedup_threshold == 0.82
+
+
+@pytest.mark.parametrize("threshold", [0.0, -0.1, 1.1])
+def test_settings_reject_invalid_semantic_dedup_threshold(
+    threshold: float,
+) -> None:
+    with pytest.raises(ValidationError):
+        Settings(
+            database_url="postgresql+psycopg://user:pass@localhost:5432/news_agent",
+            redis_url="redis://localhost:6379/0",
+            semantic_dedup_provider="local",
+            semantic_dedup_threshold=threshold,
+        )
 
 
 def test_settings_read_connection_values_from_environment(monkeypatch) -> None:
@@ -1449,6 +1475,181 @@ def test_task6_dedup_uses_content_fingerprint_in_addition_to_url_and_title() -> 
     kept_articles = dedup_response.data["articles"]
     assert [article["candidate_id"] for article in kept_articles] == ["cand_a", "cand_b"]
     assert dedup_response.data["dropped_candidate_ids"] == ["cand_c"]
+    assert dedup_response.data["drop_reasons"]["cand_c"] == {
+        "reason": "exact_duplicate",
+        "matched_key": "canonical_url_normalized_title_content_fingerprint",
+    }
+    assert dedup_response.data["semantic_dropped_candidate_ids"] == []
+    assert dedup_response.data["semantic_drop_reasons"] == {}
+    assert dedup_response.metadata["semantic_dedup_provider"] is None
+
+
+def test_local_semantic_dedup_drops_similar_title_and_summary() -> None:
+    from app.tools.semantic_dedup import LocalSemanticDedupStrategy
+
+    strategy = LocalSemanticDedupStrategy(threshold=0.55)
+    articles = [
+        {
+            "candidate_id": "cand_a",
+            "title": "OpenAI launches enterprise agent workflow",
+            "summary": "OpenAI released an enterprise agent automation workflow.",
+        },
+        {
+            "candidate_id": "cand_b",
+            "title": "OpenAI releases enterprise agent workflow",
+            "summary": "OpenAI launched an enterprise workflow for agent automation.",
+        },
+        {
+            "candidate_id": "cand_c",
+            "title": "Chip startup raises new funding",
+            "summary": "A semiconductor startup announced funding.",
+        },
+    ]
+
+    result = strategy.deduplicate(articles)
+
+    assert [item["candidate_id"] for item in result.kept_articles] == ["cand_a", "cand_c"]
+    assert result.dropped_candidate_ids == ["cand_b"]
+    assert result.drop_reasons["cand_b"]["reason"] == "semantic_similarity"
+    assert result.drop_reasons["cand_b"]["matched_candidate_id"] == "cand_a"
+
+
+def test_dedup_tool_applies_semantic_strategy_after_exact_dedup() -> None:
+    from app.tools.dedup_tool import DedupCandidatesTool
+    from app.tools.semantic_dedup import LocalSemanticDedupStrategy
+
+    tool = DedupCandidatesTool(
+        semantic_strategy=LocalSemanticDedupStrategy(threshold=0.55)
+    )
+
+    response = tool(
+        articles=[
+            {
+                "candidate_id": "cand_a",
+                "title": "OpenAI launches enterprise agent workflow",
+                "url": "https://example.com/a",
+                "summary": "OpenAI released an enterprise agent automation workflow.",
+                "content": "OpenAI released an enterprise agent automation workflow.",
+            },
+            {
+                "candidate_id": "cand_b",
+                "title": "OpenAI releases enterprise agent workflow",
+                "url": "https://example.com/b",
+                "summary": "OpenAI launched an enterprise workflow for agent automation.",
+                "content": "OpenAI launched an enterprise workflow for agent automation.",
+            },
+        ],
+    )
+
+    assert response.data is not None
+    assert [item["candidate_id"] for item in response.data["articles"]] == ["cand_a"]
+    assert response.data["dropped_candidate_ids"] == ["cand_b"]
+    assert response.data["semantic_dropped_candidate_ids"] == ["cand_b"]
+    assert response.metadata["semantic_dedup_provider"] == "local"
+
+
+def test_build_default_tool_registry_enables_local_semantic_dedup() -> None:
+    from app.tools.registry import build_default_tool_registry
+
+    settings = Settings(
+        database_url="postgresql+psycopg://user:pass@localhost:5432/news_agent",
+        redis_url="redis://localhost:6379/0",
+        semantic_dedup_provider="local",
+        semantic_dedup_threshold=0.55,
+    )
+    registry = build_default_tool_registry(llm=MockLLM(), settings=settings)
+    gateway = LocalToolGateway()
+    registry.register_into(gateway)
+
+    response = gateway.call(
+        "deduplicate_items",
+        articles=[
+            {
+                "candidate_id": "cand_a",
+                "title": "OpenAI launches enterprise agent workflow",
+                "url": "https://example.com/a",
+                "summary": "OpenAI released an enterprise agent automation workflow.",
+                "content": "OpenAI released an enterprise agent automation workflow.",
+            },
+            {
+                "candidate_id": "cand_b",
+                "title": "OpenAI releases enterprise agent workflow",
+                "url": "https://example.com/b",
+                "summary": "OpenAI launched an enterprise workflow for agent automation.",
+                "content": "OpenAI launched an enterprise workflow for agent automation.",
+            },
+        ],
+    )
+
+    assert response.data is not None
+    assert response.metadata["semantic_dedup_provider"] == "local"
+    assert response.data["semantic_dropped_candidate_ids"] == ["cand_b"]
+
+
+def test_build_default_tool_registry_keeps_semantic_dedup_disabled_by_default() -> None:
+    from app.tools.registry import build_default_tool_registry
+
+    registry = build_default_tool_registry(llm=MockLLM())
+    gateway = LocalToolGateway()
+    registry.register_into(gateway)
+
+    response = gateway.call(
+        "deduplicate_items",
+        articles=[
+            {
+                "candidate_id": "cand_a",
+                "title": "OpenAI launches enterprise agent workflow",
+                "url": "https://example.com/a",
+                "summary": "OpenAI released an enterprise agent automation workflow.",
+                "content": "OpenAI released an enterprise agent automation workflow.",
+            },
+            {
+                "candidate_id": "cand_b",
+                "title": "OpenAI releases enterprise agent workflow",
+                "url": "https://example.com/b",
+                "summary": "OpenAI launched an enterprise workflow for agent automation.",
+                "content": "OpenAI launched an enterprise workflow for agent automation.",
+            },
+        ],
+    )
+
+    assert response.data is not None
+    assert [item["candidate_id"] for item in response.data["articles"]] == [
+        "cand_a",
+        "cand_b",
+    ]
+    assert response.data["semantic_dropped_candidate_ids"] == []
+    assert response.data["semantic_drop_reasons"] == {}
+    assert response.metadata["semantic_dedup_provider"] is None
+
+
+def test_semantic_dedup_missing_candidate_id_returns_tool_failure() -> None:
+    from app.tools.registry import build_default_tool_registry
+
+    settings = Settings(
+        database_url="postgresql+psycopg://user:pass@localhost:5432/news_agent",
+        redis_url="redis://localhost:6379/0",
+        semantic_dedup_provider="local",
+    )
+    registry = build_default_tool_registry(llm=MockLLM(), settings=settings)
+    gateway = LocalToolGateway()
+    registry.register_into(gateway)
+
+    response = gateway.call(
+        "deduplicate_items",
+        articles=[
+            {
+                "title": "OpenAI launches enterprise agent workflow",
+                "url": "https://example.com/a",
+                "summary": "OpenAI released an enterprise agent automation workflow.",
+            },
+        ],
+    )
+
+    assert response.success is False
+    assert response.error is not None
+    assert response.error.code == "tool_execution_failed"
+    assert "candidate_id" in response.error.message
 
 
 def test_task6_extract_degrades_to_raw_summary_mode_when_fetch_fails() -> None:

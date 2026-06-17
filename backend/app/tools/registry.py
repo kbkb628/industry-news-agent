@@ -18,6 +18,7 @@ from app.tools.search_tool import (
     SearchCandidatesTool,
     SearchProviderFallbackTool,
 )
+from app.tools.semantic_dedup import LocalSemanticDedupStrategy
 
 
 class ToolRegistry:
@@ -97,6 +98,16 @@ def _build_browser_fetch_tool(
     )
 
 
+def _build_dedup_tool(*, settings: Settings | None = None) -> DedupCandidatesTool:
+    if settings is not None and settings.semantic_dedup_provider == "local":
+        return DedupCandidatesTool(
+            semantic_strategy=LocalSemanticDedupStrategy(
+                threshold=settings.semantic_dedup_threshold,
+            )
+        )
+    return DedupCandidatesTool()
+
+
 def build_default_tool_registry(
     *,
     llm: BaseLLMClient | None = None,
@@ -125,7 +136,7 @@ def build_default_tool_registry(
         ),
     )
     registry.register("extract_article", ExtractCandidatesTool(llm=resolved_llm))
-    registry.register("deduplicate_items", DedupCandidatesTool())
+    registry.register("deduplicate_items", _build_dedup_tool(settings=settings))
     registry.register("score_candidate", ScoreCandidatesTool(llm=resolved_llm))
     registry.register("decide_push", DecidePushTool())
     return registry

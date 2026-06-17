@@ -22,6 +22,7 @@ Included in the current codebase:
 - explicit browser fetch fallback metadata and events
 - optional Playwright MCP-compatible browser fetch provider behind the HTTP fallback path
 - optional OpenSearch-compatible candidate history full-text index projection
+- optional deterministic local semantic-like dedup after exact dedup
 - deterministic MockEvalJudge adapter for the LLM-as-Judge evaluation contract
 - optional OpenAI-compatible LLM-as-Judge provider with mock fallback
 - local Docker Compose stack for backend, PostgreSQL, and Redis
@@ -33,6 +34,7 @@ Not claimed by the current implementation:
 - production Elasticsearch/OpenSearch cluster hardening
 - vector database retrieval
 - embedding indexing with external model embeddings
+- production semantic clustering service
 - production deployment hardening
 
 ## Environment
@@ -101,6 +103,19 @@ Index failures are recorded as run events/errors and do not masquerade as
 successful indexing. This does not implement a vector database or external
 embedding pipeline.
 
+Optional Phase 2 semantic-dedup variables:
+
+- `SEMANTIC_DEDUP_PROVIDER=none` keeps the default exact dedup behavior.
+- `SEMANTIC_DEDUP_PROVIDER=local` enables deterministic local token-vector
+  similarity after exact URL/title/content-fingerprint dedup.
+- `SEMANTIC_DEDUP_THRESHOLD` defaults to `0.88`.
+
+The local semantic-like path compares article title, summary, raw summary, and
+content tokens with cosine similarity. It keeps the first matching item and
+records later near-duplicates in `semantic_dropped_candidate_ids` and
+`semantic_drop_reasons`. This is not an external embedding service, vector
+database, or production semantic clustering implementation.
+
 Example `.env`:
 
 ```env
@@ -121,6 +136,9 @@ HISTORY_INDEX_PROVIDER=none
 # HISTORY_INDEX_PROVIDER=opensearch
 # OPENSEARCH_BASE_URL=http://localhost:9200
 # OPENSEARCH_INDEX_NAME=industry-news-candidates
+SEMANTIC_DEDUP_PROVIDER=none
+# SEMANTIC_DEDUP_PROVIDER=local
+# SEMANTIC_DEDUP_THRESHOLD=0.88
 ```
 
 ## Install
