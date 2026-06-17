@@ -19,6 +19,7 @@ Included in the current codebase:
 - Redis-backed run queue with in-memory fallback
 - Redis Stream consumer-group flow for queued monitor runs
 - worker retry, timeout, active-run guard, and governance events
+- optional OneSearch-compatible MCP gateway boundary for `search_news`
 - optional OpenWebSearch provider path with mock search fallback
 - explicit browser fetch fallback metadata and events
 - optional Playwright MCP-compatible browser fetch provider behind the HTTP fallback path
@@ -32,6 +33,8 @@ Included in the current codebase:
 Not claimed by the current implementation:
 
 - general autonomous browsing or a production browser fleet
+- verified live OneSearch MCP deployment
+- raw MCP protocol session management
 - verified Microsoft Playwright MCP live-service deployment
 - production Elasticsearch/OpenSearch cluster hardening
 - vector database retrieval
@@ -54,6 +57,22 @@ Required environment variables:
 
 - `DATABASE_URL`
 - `REDIS_URL`
+
+Optional Phase 2 MCP gateway variables:
+
+- `MCP_GATEWAY_PROVIDER=local` keeps the default in-process `LocalToolGateway`.
+- `MCP_GATEWAY_PROVIDER=onesearch` enables an optional OneSearch-compatible
+  gateway boundary only when `ONESEARCH_BASE_URL` is also configured.
+- `ONESEARCH_BASE_URL` points at a compatible HTTP wrapper exposing
+  `POST /search` with a JSON body of `{"query": "...", "max_results": 10}`.
+- `ONESEARCH_TIMEOUT_SECONDS` defaults to `10.0`.
+- `ONESEARCH_MAX_RESULTS` defaults to `10`.
+
+The OneSearch path currently applies only to `search_news`. All other tools
+remain local/in-process. If the OneSearch provider is unavailable, the runtime
+degrades visibly to deterministic local `mock_search` behavior and records the
+fallback in tool metadata, run events, and eval metrics. This is an integration
+boundary, not a claim of verified live MCP service deployment.
 
 Optional Phase 2 search-provider variables:
 
@@ -140,6 +159,11 @@ Example `.env`:
 ```env
 DATABASE_URL=postgresql+psycopg://user:pass@localhost:5432/news_agent
 REDIS_URL=redis://localhost:6379/0
+MCP_GATEWAY_PROVIDER=local
+# MCP_GATEWAY_PROVIDER=onesearch
+# ONESEARCH_BASE_URL=http://localhost:8090
+# ONESEARCH_TIMEOUT_SECONDS=10.0
+# ONESEARCH_MAX_RESULTS=10
 SEARCH_PROVIDER=mock
 # SEARCH_PROVIDER=open_websearch
 # OPEN_WEBSEARCH_BASE_URL=http://localhost:8080

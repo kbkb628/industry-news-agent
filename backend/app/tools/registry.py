@@ -122,13 +122,15 @@ def build_default_tool_registry(
     registry = ToolRegistry()
     registry.register("rss_fetch", RSSCandidatesTool())
     registry.register("mock_search", SearchCandidatesTool())
+    search_tool: ToolHandler = SearchCandidatesTool()
     if settings is not None:
         search_provider_tool = _build_search_provider_tool(
             settings=settings,
             search_http_client=search_http_client,
         )
         if search_provider_tool is not None:
-            registry.register("search_news", search_provider_tool)
+            search_tool = search_provider_tool
+    registry.register("search_news", search_tool)
     registry.register(
         "fetch_article_content",
         _build_browser_fetch_tool(

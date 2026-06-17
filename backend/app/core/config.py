@@ -1,4 +1,5 @@
 from pathlib import Path
+from typing import Literal
 
 from pydantic import Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
@@ -18,6 +19,10 @@ class Settings(BaseSettings):
     database_url: str = Field(...)
     redis_url: str = Field(...)
     default_push_threshold: float = Field(default=DEFAULT_PUSH_THRESHOLD)
+    mcp_gateway_provider: Literal["local", "onesearch"] = Field(default="local")
+    onesearch_base_url: str | None = Field(default=None)
+    onesearch_timeout_seconds: float = Field(default=10.0, gt=0.0)
+    onesearch_max_results: int = Field(default=10, gt=0)
     search_provider: str = Field(default="mock")
     open_websearch_base_url: str | None = Field(default=None)
     open_websearch_timeout_seconds: float = Field(default=10.0)

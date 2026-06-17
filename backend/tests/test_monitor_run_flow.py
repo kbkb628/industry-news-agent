@@ -499,6 +499,214 @@ def test_monitor_graph_records_provider_and_browser_fallback_events() -> None:
     assert browser_event["payload"]["fallback"] == "browser_fetch"
 
 
+def test_monitor_graph_records_onesearch_provider_fallback_event() -> None:
+    class RecordingMonitorRunRepository:
+        def __init__(self) -> None:
+            self.monitor_runs: list[object] = []
+            self.run_events: list[dict[str, object]] = []
+            self.eval_results: list[dict[str, object]] = []
+
+        def upsert_monitor_run(self, payload: object) -> object:
+            self.monitor_runs.append(payload)
+            return payload
+
+        def list_push_history(self, topic_id: str) -> list[dict[str, object]]:
+            return []
+
+        def create_push_records(
+            self,
+            payloads: tuple[object, ...],
+        ) -> list[dict[str, object]]:
+            return []
+
+        def upsert_candidate_records(
+            self,
+            payloads: tuple[object, ...],
+        ) -> list[dict[str, object]]:
+            return []
+
+        def list_candidate_records(self, run_id: str) -> list[dict[str, object]]:
+            return []
+
+        def upsert_extracted_item_records(
+            self,
+            payloads: tuple[object, ...],
+        ) -> list[dict[str, object]]:
+            return []
+
+        def list_extracted_item_records(self, run_id: str) -> list[dict[str, object]]:
+            return []
+
+        def upsert_decision_records(
+            self,
+            payloads: tuple[object, ...],
+        ) -> list[dict[str, object]]:
+            return []
+
+        def list_decision_records(self, run_id: str) -> list[dict[str, object]]:
+            return []
+
+        def create_run_events(
+            self,
+            payloads: tuple[object, ...],
+        ) -> list[dict[str, object]]:
+            persisted = [
+                {
+                    "run_id": payload.run_id,
+                    "topic_id": payload.topic_id,
+                    "event_type": payload.event_type,
+                    "node": payload.node,
+                    "message": payload.message,
+                    "payload": payload.payload,
+                    "elapsed_ms": payload.elapsed_ms,
+                }
+                for payload in payloads
+            ]
+            self.run_events.extend(persisted)
+            return persisted
+
+        def create_eval_result(self, payload: object) -> dict[str, object]:
+            persisted = {
+                "eval_id": "eval_001",
+                "run_id": payload.run_id,
+                "topic_id": payload.topic_id,
+                "retrieved_count": payload.retrieved_count,
+                "deduped_count": payload.deduped_count,
+                "dedup_rate": payload.dedup_rate,
+                "push_count": payload.push_count,
+                "duplicate_push_count": payload.duplicate_push_count,
+                "tool_success_rate": payload.tool_success_rate,
+                "fetch_success_rate": payload.fetch_success_rate,
+                "trace_completeness": payload.trace_completeness,
+                "raw_summary_count": payload.raw_summary_count,
+                "browser_fallback_count": payload.browser_fallback_count,
+                "provider_fallback_count": payload.provider_fallback_count,
+                "judge_mode": payload.judge_mode,
+                "judge_score": payload.judge_score,
+                "judge_reason": payload.judge_reason,
+                "judge_issues": list(payload.judge_issues),
+                "suggestions": list(payload.suggestions),
+            }
+            self.eval_results.append(persisted)
+            return persisted
+
+    repository = RecordingMonitorRunRepository()
+
+    gateway = LocalToolGateway()
+    gateway.register(
+        "rss_fetch",
+        lambda run_id, topic: ToolResponse.success(
+            tool_name="rss_fetch",
+            summary="No RSS candidates.",
+            data={"run_id": run_id, "candidates": []},
+        ),
+    )
+    gateway.register(
+        "mock_search",
+        lambda run_id, topic: ToolResponse.success(
+            tool_name="search_news",
+            summary="onesearch_mcp failed; used mock_search fallback.",
+            data={"run_id": run_id, "candidates": []},
+            metadata={
+                "provider": "onesearch_mcp",
+                "fallback_provider": "mock_search",
+                "used_fallback": True,
+                "fallback_reason": "onesearch unavailable",
+            },
+        ),
+    )
+    gateway.register(
+        "fetch_article_content",
+        lambda candidates: ToolResponse.success(
+            tool_name="fetch_article_content",
+            summary="No fetched contents.",
+            data={"candidates": []},
+        ),
+    )
+    gateway.register(
+        "extract_article",
+        lambda run_id, topic, candidates: ToolResponse.success(
+            tool_name="extract_article",
+            summary="No extracted items.",
+            data={"articles": [], "skipped_candidate_ids": []},
+        ),
+    )
+    gateway.register(
+        "deduplicate_items",
+        lambda articles: ToolResponse.success(
+            tool_name="deduplicate_items",
+            summary="No deduped items.",
+            data={"articles": [], "deduped_count": 0, "dropped_candidate_ids": []},
+        ),
+    )
+    gateway.register(
+        "score_candidate",
+        lambda topic, articles: ToolResponse.success(
+            tool_name="score_candidate",
+            summary="No scored items.",
+            data={"articles": []},
+        ),
+    )
+    gateway.register(
+        "decide_push",
+        lambda run_id, topic, articles, push_history: ToolResponse.success(
+            tool_name="decide_push",
+            summary="No push decisions.",
+            data={"pushes": [], "push_count": 0},
+        ),
+    )
+
+    graph = build_monitor_graph(
+        llm=MockLLM(),
+        gateway=gateway,
+        run_repository=repository,
+    )
+
+    result = graph.invoke(
+        {
+            "run_id": "run_onesearch_event",
+            "topic_id": "topic_ai_agent",
+            "topic": {
+                "topic_id": "topic_ai_agent",
+                "name": "AI Agent",
+                "description": "Track enterprise AI agent launches.",
+                "seed_keywords": ["OpenAI", "enterprise"],
+                "trusted_sources": ["AI Search"],
+                "exclude_keywords": [],
+                "push_threshold": 0.72,
+                "cooldown_hours": 24,
+                "enabled": True,
+            },
+            "seed_keywords": ["OpenAI", "enterprise"],
+            "expanded_queries": [],
+            "business_context": {},
+            "source_plan": ["search_news"],
+            "candidate_items": [],
+            "fetched_contents": [],
+            "extracted_items": [],
+            "deduped_items": [],
+            "scored_items": [],
+            "final_decisions": [],
+            "decision_reasons": [],
+            "push_records": [],
+            "push_history": [],
+            "tool_results": [],
+            "eval_result": {},
+            "events": [],
+            "errors": [],
+            "status": "created",
+        }
+    )
+
+    fallback_event = next(
+        event for event in result["events"] if event["event_type"] == "fallback_used"
+    )
+    assert fallback_event["payload"]["provider"] == "onesearch_mcp"
+    assert fallback_event["payload"]["fallback_provider"] == "mock_search"
+    assert fallback_event["payload"]["fallback_reason"] == "onesearch unavailable"
+    assert result["eval_result"]["provider_fallback_count"] == 1
+
+
 def test_evaluate_run_indexes_candidate_history_when_opensearch_enabled() -> None:
     class FakeResponse:
         def raise_for_status(self) -> None:

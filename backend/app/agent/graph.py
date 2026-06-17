@@ -22,7 +22,9 @@ from app.agent.state import MonitorState
 from app.core.config import Settings
 from app.llm.base import BaseLLMClient
 from app.llm.mock_client import MockLLM
+from app.mcp.gateway import ToolGateway
 from app.mcp.local_gateway import LocalToolGateway
+from app.mcp.onesearch_gateway import OneSearchMCPGateway
 from app.storage.repository import MonitorRunRepositoryProtocol
 from app.tools.registry import build_default_tool_registry
 
@@ -31,20 +33,32 @@ def _build_default_gateway(
     llm: BaseLLMClient,
     settings: Settings | None,
     notification_http_client: Any | None = None,
-) -> LocalToolGateway:
-    gateway = LocalToolGateway()
+) -> ToolGateway:
+    local_gateway = LocalToolGateway()
     build_default_tool_registry(
         llm=llm,
         settings=settings,
         notification_http_client=notification_http_client,
-    ).register_into(gateway)
-    return gateway
+    ).register_into(local_gateway)
+    if (
+        settings is None
+        or settings.mcp_gateway_provider != "onesearch"
+        or not settings.onesearch_base_url
+    ):
+        return local_gateway
+
+    return OneSearchMCPGateway(
+        base_url=settings.onesearch_base_url,
+        fallback_gateway=local_gateway,
+        timeout_seconds=settings.onesearch_timeout_seconds,
+        max_results=settings.onesearch_max_results,
+    )
 
 
 def build_monitor_graph(
     *,
     llm: BaseLLMClient | None = None,
-    gateway: LocalToolGateway | None = None,
+    gateway: ToolGateway | None = None,
     run_repository: MonitorRunRepositoryProtocol | None = None,
     settings: Settings | None = None,
     history_index_http_client: Any | None = None,

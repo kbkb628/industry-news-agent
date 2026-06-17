@@ -152,6 +152,31 @@ def test_settings_accept_notification_webhook_values() -> None:
     assert settings.notification_timeout_seconds == 3.5
 
 
+def test_settings_accept_onesearch_gateway_provider_values() -> None:
+    settings = Settings(
+        database_url="postgresql+psycopg://user:pass@localhost:5432/news_agent",
+        redis_url="redis://localhost:6379/0",
+        mcp_gateway_provider="onesearch",
+        onesearch_base_url="http://localhost:8090",
+        onesearch_timeout_seconds=4.5,
+        onesearch_max_results=7,
+    )
+
+    assert settings.mcp_gateway_provider == "onesearch"
+    assert settings.onesearch_base_url == "http://localhost:8090"
+    assert settings.onesearch_timeout_seconds == 4.5
+    assert settings.onesearch_max_results == 7
+
+
+def test_settings_reject_invalid_onesearch_gateway_provider_value() -> None:
+    with pytest.raises(ValidationError):
+        Settings(
+            database_url="postgresql+psycopg://user:pass@localhost:5432/news_agent",
+            redis_url="redis://localhost:6379/0",
+            mcp_gateway_provider="one_search",
+        )
+
+
 def test_notification_tool_skips_when_provider_disabled() -> None:
     from app.tools.notification_tool import NotificationSendTool
 
@@ -1502,6 +1527,7 @@ def test_task6_tool_registry_registers_minimal_candidate_pipeline() -> None:
     assert registry.list_tool_names() == [
         "rss_fetch",
         "mock_search",
+        "search_news",
         "fetch_article_content",
         "extract_article",
         "deduplicate_items",
@@ -1945,6 +1971,218 @@ def test_build_default_tool_registry_uses_open_websearch_provider_when_enabled()
     assert response.metadata["provider"] == "open_websearch"
     assert response.metadata["used_fallback"] is False
     assert http_client.requests[0]["url"] == "http://localhost:8080/search"
+
+
+def test_onesearch_gateway_calls_wrapper_and_maps_results() -> None:
+    from app.mcp.local_gateway import LocalToolGateway
+    from app.mcp.onesearch_gateway import OneSearchMCPGateway
+    from app.tools.responses import ToolResponse
+
+    class FakeResponse:
+        def raise_for_status(self) -> None:
+            return None
+
+        def json(self) -> dict[str, object]:
+            return {
+                "results": [
+                    {
+                        "title": "OpenAI ships enterprise agent workflow",
+                        "url": "https://example.com/agent-workflow",
+                        "snippet": "Enterprise workflow update.",
+                        "source": "example.com",
+                        "published_at": "2026-06-17T10:00:00Z",
+                    }
+                ]
+            }
+
+    class FakeHttpClient:
+        def __init__(self) -> None:
+            self.requests: list[dict[str, object]] = []
+
+        def post(self, url: str, **kwargs: object) -> FakeResponse:
+            self.requests.append({"url": url, **kwargs})
+            return FakeResponse()
+
+    http_client = FakeHttpClient()
+    fallback_gateway = LocalToolGateway()
+    fallback_gateway.register(
+        "fetch_article_content",
+        lambda **kwargs: ToolResponse.success(
+            tool_name="fetch_article_content",
+            summary="local fetch",
+            data={"candidates": []},
+        ),
+    )
+    gateway = OneSearchMCPGateway(
+        base_url="http://localhost:8090",
+        http_client=http_client,
+        fallback_gateway=fallback_gateway,
+        timeout_seconds=4.0,
+        max_results=5,
+    )
+
+    response = gateway.call(
+        "search_news",
+        run_id="run_onesearch_001",
+        topic={
+            "topic_id": "topic_ai_agent",
+            "name": "AI Agent",
+            "seed_keywords": ["OpenAI", "enterprise"],
+        },
+    )
+
+    assert response.success is True
+    assert response.data is not None
+    assert response.data["candidates"][0]["source_name"] == "example.com"
+    assert response.metadata["provider"] == "onesearch_mcp"
+    assert response.metadata["used_fallback"] is False
+    assert http_client.requests[0]["url"] == "http://localhost:8090/search"
+    assert http_client.requests[0]["json"] == {
+        "query": "AI Agent OpenAI enterprise",
+        "max_results": 5,
+    }
+    assert http_client.requests[0]["timeout"] == 4.0
+
+
+def test_onesearch_gateway_falls_back_to_local_mock_search_when_provider_fails() -> None:
+    from app.mcp.local_gateway import LocalToolGateway
+    from app.mcp.onesearch_gateway import OneSearchMCPGateway
+    from app.tools.responses import ToolResponse
+
+    class FailingHttpClient:
+        def post(self, url: str, **kwargs: object) -> object:
+            raise RuntimeError("onesearch unavailable")
+
+    fallback_gateway = LocalToolGateway()
+    fallback_gateway.register(
+        "search_news",
+        lambda run_id, topic: ToolResponse.success(
+            tool_name="search_news",
+            summary="Used local mock search fallback.",
+            data={
+                "run_id": run_id,
+                "candidates": [
+                    {
+                        "candidate_id": "cand_local_001",
+                        "run_id": run_id,
+                        "topic_id": topic["topic_id"],
+                        "source_type": "search",
+                        "source_name": "AI Search",
+                        "title": "Fallback item",
+                        "url": "https://example.com/fallback",
+                        "published_at": None,
+                        "raw_summary": "Fallback summary",
+                        "fetch_status": "pending",
+                    }
+                ],
+            },
+            metadata={
+                "provider": "mock_search",
+                "used_fallback": False,
+            },
+        ),
+    )
+    gateway = OneSearchMCPGateway(
+        base_url="http://localhost:8090",
+        http_client=FailingHttpClient(),
+        fallback_gateway=fallback_gateway,
+        timeout_seconds=4.0,
+        max_results=5,
+    )
+
+    response = gateway.call(
+        "search_news",
+        run_id="run_onesearch_fallback",
+        topic={
+            "topic_id": "topic_ai_agent",
+            "name": "AI Agent",
+            "seed_keywords": ["OpenAI", "enterprise"],
+        },
+    )
+
+    assert response.success is True
+    assert response.metadata["provider"] == "onesearch_mcp"
+    assert response.metadata["fallback_provider"] == "mock_search"
+    assert response.metadata["used_fallback"] is True
+    assert response.metadata["fallback_reason"] == "onesearch unavailable"
+    assert response.data is not None
+    assert response.data["candidates"][0]["title"] == "Fallback item"
+
+
+def test_onesearch_gateway_delegates_non_search_tools_to_fallback_gateway() -> None:
+    from app.mcp.local_gateway import LocalToolGateway
+    from app.mcp.onesearch_gateway import OneSearchMCPGateway
+    from app.tools.responses import ToolResponse
+
+    fallback_gateway = LocalToolGateway()
+    fallback_gateway.register(
+        "fetch_article_content",
+        lambda **kwargs: ToolResponse.success(
+            tool_name="fetch_article_content",
+            summary="delegated",
+            data={"candidates": [{"candidate_id": "cand_001"}]},
+            metadata={"provider": "local_gateway"},
+        ),
+    )
+    gateway = OneSearchMCPGateway(
+        base_url="http://localhost:8090",
+        fallback_gateway=fallback_gateway,
+    )
+
+    response = gateway.call(
+        "fetch_article_content",
+        candidates=[{"candidate_id": "cand_001"}],
+    )
+
+    assert response.success is True
+    assert response.summary == "delegated"
+    assert response.data == {"candidates": [{"candidate_id": "cand_001"}]}
+
+
+def test_build_monitor_graph_uses_local_gateway_by_default() -> None:
+    from app.agent.graph import _build_default_gateway
+    from app.mcp.local_gateway import LocalToolGateway
+
+    settings = Settings(
+        database_url="postgresql+psycopg://user:pass@localhost:5432/news_agent",
+        redis_url="redis://localhost:6379/0",
+    )
+
+    gateway = _build_default_gateway(MockLLM(), settings)
+
+    assert isinstance(gateway, LocalToolGateway)
+
+
+def test_build_monitor_graph_uses_onesearch_gateway_when_configured() -> None:
+    from app.agent.graph import _build_default_gateway
+    from app.mcp.onesearch_gateway import OneSearchMCPGateway
+
+    settings = Settings(
+        database_url="postgresql+psycopg://user:pass@localhost:5432/news_agent",
+        redis_url="redis://localhost:6379/0",
+        mcp_gateway_provider="onesearch",
+        onesearch_base_url="http://localhost:8090",
+    )
+
+    gateway = _build_default_gateway(MockLLM(), settings)
+
+    assert isinstance(gateway, OneSearchMCPGateway)
+
+
+def test_build_monitor_graph_degrades_to_local_gateway_when_onesearch_config_is_incomplete() -> None:
+    from app.agent.graph import _build_default_gateway
+    from app.mcp.local_gateway import LocalToolGateway
+
+    settings = Settings(
+        database_url="postgresql+psycopg://user:pass@localhost:5432/news_agent",
+        redis_url="redis://localhost:6379/0",
+        mcp_gateway_provider="onesearch",
+        onesearch_base_url=None,
+    )
+
+    gateway = _build_default_gateway(MockLLM(), settings)
+
+    assert isinstance(gateway, LocalToolGateway)
 
 
 def test_task6_search_provider_falls_back_to_mock_when_real_provider_fails() -> None:
