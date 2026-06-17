@@ -3,11 +3,12 @@ from __future__ import annotations
 from datetime import UTC, datetime
 from typing import Any
 
-from app.agent.planner import build_source_plan
+from app.agent.planner_agent import PlannerAgent
 from app.core.config import Settings
 from app.eval.rule_scorer import score_run
 from app.eval.judge import build_eval_judge
 from app.llm.base import BaseLLMClient
+from app.llm.mock_client import MockLLM
 from app.mcp.local_gateway import LocalToolGateway
 from app.observability.event_logger import append_event
 from app.rag.hybrid_retriever import retrieve_hybrid_context
@@ -164,7 +165,17 @@ def expand_queries_node(state: dict[str, Any], llm: BaseLLMClient) -> dict[str, 
 
 
 def plan_sources_node(state: dict[str, Any]) -> dict[str, Any]:
-    state["source_plan"] = build_source_plan(state["topic"])
+    if not state.get("business_memory"):
+        state["business_memory"] = {
+            "seed_keywords": list(state.get("seed_keywords", [])),
+            "business_context": dict(state.get("business_context", {})),
+            "push_history": list(state.get("push_history", [])),
+            "trusted_sources": list(state.get("topic", {}).get("trusted_sources", [])),
+        }
+    if not state.get("planner_output"):
+        state["planner_output"] = {}
+
+    PlannerAgent(llm=MockLLM()).run(state)
     return append_event(
         state,
         "plan_sources",

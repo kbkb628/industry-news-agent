@@ -1290,6 +1290,142 @@ def test_mock_llm_expand_keywords_keeps_generator_inputs_stable() -> None:
     assert expanded_keywords.count("openai") == 1
 
 
+def test_planner_agent_builds_context_aware_plan() -> None:
+    from app.agent.planner_agent import PlannerAgent
+
+    agent = PlannerAgent(llm=MockLLM())
+    trusted_state = {
+        "topic": {
+            "name": "AI Agent Funding",
+            "trusted_sources": ["techcrunch.com", "github.com"],
+        },
+        "business_memory": {
+            "seed_keywords": ["AI Agent", "funding"],
+            "business_context": {
+                "documents": [
+                    {"title": "Trusted sources improve push quality"},
+                    {"title": "Funding events matter for this topic"},
+                ]
+            },
+            "push_history": [{"title": "Previous funding alert"}],
+            "trusted_sources": ["techcrunch.com", "github.com"],
+        },
+        "planner_output": {},
+    }
+    untrusted_state = {
+        "topic": {
+            "name": "AI Agent Funding",
+            "trusted_sources": [],
+        },
+        "business_memory": {
+            "seed_keywords": ["AI Agent", "funding"],
+            "business_context": {"documents": []},
+            "push_history": [],
+            "trusted_sources": [],
+        },
+        "planner_output": {},
+    }
+
+    trusted_result = agent.run(trusted_state)
+    untrusted_result = agent.run(untrusted_state)
+    trusted_output = trusted_result["planner_output"]
+    untrusted_output = untrusted_result["planner_output"]
+
+    assert trusted_output["expanded_queries"]
+    assert trusted_output["query_plan"]
+    assert trusted_output["source_plan"]
+    assert trusted_output["retrieval_strategy"]["mode"] == "rss_first"
+    assert trusted_output["source_plan"][0]["tool_name"] == "rss_fetch"
+    assert trusted_output["source_plan"][0]["trusted_sources"] == [
+        "techcrunch.com",
+        "github.com",
+    ]
+    assert trusted_output["planning_reasons"]
+
+    assert untrusted_output["expanded_queries"]
+    assert untrusted_output["query_plan"]
+    assert untrusted_output["source_plan"]
+    assert untrusted_output["retrieval_strategy"]["mode"] == "search_first"
+    assert untrusted_output["source_plan"][0]["tool_name"] == "mock_search"
+    assert untrusted_output["source_plan"][0].get("trusted_sources", []) == []
+    assert untrusted_output["planning_reasons"]
+
+
+def test_legacy_build_source_plan_keeps_tool_name_list_contract() -> None:
+    from app.agent.planner import build_source_plan
+
+    source_plan = build_source_plan(
+        {
+            "name": "AI Agent Funding",
+            "trusted_sources": ["techcrunch.com", "github.com"],
+        }
+    )
+
+    assert source_plan == ["rss_fetch", "mock_search"]
+
+
+def test_plan_sources_node_populates_planner_output_and_legacy_source_plan() -> None:
+    from app.agent.nodes import plan_sources_node
+
+    state = {
+        "topic": {
+            "topic_id": "topic_ai_agent",
+            "name": "AI Agent Funding",
+            "trusted_sources": ["techcrunch.com", "github.com"],
+        },
+        "seed_keywords": ["AI Agent", "funding"],
+        "business_context": {
+            "documents": [
+                {"title": "Trusted sources improve push quality"},
+                {"title": "Funding events matter for this topic"},
+            ]
+        },
+        "push_history": [{"title": "Previous funding alert"}],
+        "expanded_queries": ["ai agent funding"],
+        "planner_output": {},
+        "events": [],
+        "errors": [],
+        "run_id": "run_001",
+        "topic_id": "topic_ai_agent",
+    }
+
+    result = plan_sources_node(state)
+
+    assert result["planner_output"]["source_plan"][0]["tool_name"] == "rss_fetch"
+    assert result["planner_output"]["retrieval_strategy"]["mode"] == "rss_first"
+    assert result["source_plan"] == ["rss_fetch", "mock_search"]
+
+
+def test_plan_sources_node_preserves_existing_expanded_queries() -> None:
+    from app.agent.nodes import plan_sources_node
+
+    state = {
+        "topic": {
+            "topic_id": "topic_ai_agent",
+            "name": "AI Agent Funding",
+            "trusted_sources": ["techcrunch.com", "github.com"],
+        },
+        "seed_keywords": ["AI Agent", "funding"],
+        "business_context": {
+            "documents": [
+                {"title": "Trusted sources improve push quality"},
+            ]
+        },
+        "push_history": [{"title": "Previous funding alert"}],
+        "expanded_queries": ["custom-expanded-query"],
+        "planner_output": {},
+        "events": [],
+        "errors": [],
+        "run_id": "run_001",
+        "topic_id": "topic_ai_agent",
+    }
+
+    result = plan_sources_node(state)
+
+    assert result["expanded_queries"] == ["custom-expanded-query"]
+    assert result["planner_output"]["expanded_queries"] == ["custom-expanded-query"]
+
+
 def test_knowledge_loader_and_keyword_retriever_support_local_rag() -> None:
     documents = load_knowledge_base(DEFAULT_KNOWLEDGE_BASE_PATH)
     retriever = KeywordRetriever(documents)
