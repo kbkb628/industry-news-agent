@@ -17,6 +17,8 @@ from app.rag.knowledge_loader import (
     load_knowledge_base,
 )
 from app.rag.bm25_retriever import BM25Retriever
+from app.rag.hybrid_retriever import retrieve_hybrid_context
+from app.rag.local_vector_retriever import LocalVectorRetriever
 from app.tools.responses import ToolResponse
 
 from app.core.config import Settings, get_settings
@@ -380,6 +382,70 @@ def test_bm25_retriever_ranks_term_frequency_with_length_normalization() -> None
     ]
     assert results[0].score > results[1].score
     assert all(result.metadata["retriever"] == "bm25" for result in results)
+
+
+def test_local_vector_retriever_uses_cosine_similarity_over_document_terms() -> None:
+    documents = [
+        KnowledgeDocument(
+            doc_id="kb_source_quality",
+            title="Trusted source quality",
+            content="Trusted domains improve source quality for industry monitoring.",
+            keywords=["trusted", "source", "quality"],
+        ),
+        KnowledgeDocument(
+            doc_id="kb_scoring",
+            title="Scoring pipeline",
+            content="Relevance scoring combines business value and evidence quality.",
+            keywords=["scoring", "business", "evidence"],
+        ),
+        KnowledgeDocument(
+            doc_id="kb_extract",
+            title="Article extraction",
+            content="Extraction creates concise summaries and normalized keywords.",
+            keywords=["summary", "keywords"],
+        ),
+    ]
+
+    results = LocalVectorRetriever(documents).retrieve(
+        "trusted source quality",
+        top_k=2,
+    )
+
+    assert [result.document.doc_id for result in results] == [
+        "kb_source_quality",
+        "kb_scoring",
+    ]
+    assert results[0].score > results[1].score
+    assert all(result.metadata["retriever"] == "embedding_like" for result in results)
+
+
+def test_hybrid_retriever_returns_reranked_multi_route_context() -> None:
+    documents = [
+        KnowledgeDocument(
+            doc_id="kb_source_quality",
+            title="Trusted source quality",
+            content="Trusted domains improve source quality for industry monitoring.",
+            keywords=["trusted", "source", "quality"],
+        ),
+        KnowledgeDocument(
+            doc_id="kb_business_value",
+            title="Business value scoring",
+            content="Business value and evidence quality improve candidate scoring.",
+            keywords=["business", "scoring", "evidence"],
+        ),
+    ]
+
+    context = retrieve_hybrid_context(
+        documents,
+        "trusted source quality",
+        top_k=2,
+    )
+
+    assert context["retrieval_mode"] == "hybrid_keyword_bm25_embedding_rerank"
+    assert context["retrievers"] == ["keyword", "bm25", "embedding_like"]
+    assert context["documents"][0]["doc_id"] == "kb_source_quality"
+    assert context["documents"][0]["rerank_score"] >= context["documents"][1]["rerank_score"]
+    assert "embedding_like" in context["documents"][0]["scores"]
 
 
 def test_local_tool_gateway_registers_and_calls_local_tools() -> None:
