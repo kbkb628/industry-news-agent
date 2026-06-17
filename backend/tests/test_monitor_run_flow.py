@@ -766,8 +766,11 @@ class InMemoryMonitorRunRepository:
             return self.eval_results.get(run_id)
         if not self.eval_results:
             return None
-        latest_run_id = sorted(self.eval_results.keys())[-1]
-        return self.eval_results[latest_run_id]
+        return sorted(
+            self.eval_results.values(),
+            key=lambda result: (result["created_at"], result["eval_id"]),
+            reverse=True,
+        )[0]
 
     def get_eval_summary(self) -> dict[str, object] | None:
         if not self.eval_results:
@@ -1129,6 +1132,53 @@ def test_eval_run_route_does_not_expose_request_body_contract() -> None:
 
     eval_operation = schema["paths"]["/api/eval/run"]["post"]
     assert "requestBody" not in eval_operation
+
+
+def test_eval_run_route_uses_created_at_for_latest_eval() -> None:
+    topic_repository = InMemoryTopicRepository()
+    run_repository = InMemoryMonitorRunRepository()
+    run_repository.eval_results["run_999"] = {
+        "eval_id": "eval_001",
+        "run_id": "run_999",
+        "topic_id": "topic_ai_agent",
+        "retrieved_count": 1,
+        "deduped_count": 1,
+        "dedup_rate": 0.0,
+        "push_count": 0,
+        "duplicate_push_count": 0,
+        "tool_success_rate": 1.0,
+        "fetch_success_rate": 1.0,
+        "trace_completeness": 1.0,
+        "raw_summary_count": 0,
+        "browser_fallback_count": 0,
+        "provider_fallback_count": 0,
+        "suggestions": [],
+        "created_at": datetime(2026, 6, 9, 12, 0, tzinfo=UTC),
+    }
+    run_repository.eval_results["run_001"] = {
+        "eval_id": "eval_002",
+        "run_id": "run_001",
+        "topic_id": "topic_ai_agent",
+        "retrieved_count": 2,
+        "deduped_count": 2,
+        "dedup_rate": 0.0,
+        "push_count": 1,
+        "duplicate_push_count": 0,
+        "tool_success_rate": 1.0,
+        "fetch_success_rate": 1.0,
+        "trace_completeness": 1.0,
+        "raw_summary_count": 0,
+        "browser_fallback_count": 0,
+        "provider_fallback_count": 0,
+        "suggestions": [],
+        "created_at": datetime(2026, 6, 9, 13, 0, tzinfo=UTC),
+    }
+
+    with _build_monitor_client(topic_repository, run_repository) as client:
+        response = client.post("/api/eval/run")
+
+    assert response.status_code == 200
+    assert response.json()["run_id"] == "run_001"
 
 
 def test_eval_summary_returns_quality_trend_metrics() -> None:
