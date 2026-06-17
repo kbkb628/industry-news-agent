@@ -1,6 +1,7 @@
 import json
 from datetime import UTC, datetime
 from pathlib import Path
+from threading import Event, Lock, Thread
 import time
 
 import pytest
@@ -86,6 +87,26 @@ def test_settings_accept_eval_judge_provider_values() -> None:
     assert settings.judge_api_key == "test-key"
     assert settings.judge_model == "judge-model"
     assert settings.judge_timeout_seconds == 3.5
+
+
+def test_settings_accept_browser_fetch_provider_values() -> None:
+    settings = Settings(
+        database_url="postgresql+psycopg://user:pass@localhost:5432/news_agent",
+        redis_url="redis://localhost:6379/0",
+        browser_fetch_provider="playwright_mcp",
+        playwright_mcp_base_url="http://localhost:8931",
+        playwright_mcp_timeout_seconds=4.0,
+        browser_allowed_domains=["example.com", "news.example.com"],
+        browser_max_concurrency=1,
+        browser_max_content_chars=2048,
+    )
+
+    assert settings.browser_fetch_provider == "playwright_mcp"
+    assert settings.playwright_mcp_base_url == "http://localhost:8931"
+    assert settings.playwright_mcp_timeout_seconds == 4.0
+    assert settings.browser_allowed_domains == ["example.com", "news.example.com"]
+    assert settings.browser_max_concurrency == 1
+    assert settings.browser_max_content_chars == 2048
 
 
 def test_settings_read_connection_values_from_environment(monkeypatch) -> None:
@@ -1558,6 +1579,68 @@ def test_task6_search_provider_falls_back_to_mock_when_real_provider_fails() -> 
     assert len(response.data["candidates"]) == 2
 
 
+def test_build_default_tool_registry_wires_playwright_mcp_browser_fallback() -> None:
+    from app.core.config import Settings
+    from app.tools.registry import build_default_tool_registry
+
+    class FakeBrowserResponse:
+        def raise_for_status(self) -> None:
+            return None
+
+        def json(self) -> dict[str, object]:
+            return {"content": "dynamic browser content"}
+
+    class FakeBrowserClient:
+        def __init__(self) -> None:
+            self.requests: list[dict[str, object]] = []
+
+        def post(self, url: str, **kwargs: object) -> FakeBrowserResponse:
+            self.requests.append({"url": url, **kwargs})
+            return FakeBrowserResponse()
+
+    class FailingHTTPClient:
+        def get(self, url: str, **kwargs: object) -> object:
+            raise RuntimeError("plain http failed")
+
+    settings = Settings(
+        database_url="postgresql+psycopg://user:pass@localhost:5432/news_agent",
+        redis_url="redis://localhost:6379/0",
+        browser_fetch_provider="playwright_mcp",
+        playwright_mcp_base_url="http://localhost:8931",
+        browser_allowed_domains=["example.com"],
+    )
+    browser_client = FakeBrowserClient()
+    registry = build_default_tool_registry(
+        llm=MockLLM(),
+        settings=settings,
+        fetch_http_client=FailingHTTPClient(),
+        browser_http_client=browser_client,
+    )
+    gateway = LocalToolGateway()
+    registry.register_into(gateway)
+
+    response = gateway.call(
+        "fetch_article_content",
+        candidates=[
+            {
+                "candidate_id": "cand_dynamic",
+                "url": "https://example.com/articles/dynamic",
+                "raw_summary": "Dynamic summary",
+            }
+        ],
+    )
+
+    assert response.success is True
+    assert response.data is not None
+    candidate = response.data["candidates"][0]
+    assert candidate["fetch_status"] == "fetched"
+    assert candidate["fetch_method"] == "browser_fallback"
+    assert candidate["content"] == "dynamic browser content"
+    assert response.metadata["used_browser_fallback"] is True
+    assert response.metadata["browser_provider"] == "playwright_mcp"
+    assert browser_client.requests[0]["url"] == "http://localhost:8931/fetch"
+
+
 def test_browser_fetch_tool_marks_browser_fallback_when_http_fetch_fails() -> None:
     from app.tools.browser_fetch_tool import BrowserFetchTool
 
@@ -1592,6 +1675,164 @@ def test_browser_fetch_tool_marks_browser_fallback_when_http_fetch_fails() -> No
         "http failed for https://example.com/articles/browser-fallback"
     )
     assert response.metadata["used_browser_fallback"] is True
+
+
+def test_browser_fetch_tool_does_not_use_browser_when_http_fetch_succeeds() -> None:
+    from app.tools.browser_fetch_tool import BrowserFetchTool
+
+    calls: list[str] = []
+
+    def http_fetcher(url: str) -> str:
+        return f"http content for {url}"
+
+    def browser_fetcher(url: str) -> str:
+        calls.append(url)
+        return "browser content"
+
+    tool = BrowserFetchTool(
+        fetcher=http_fetcher,
+        browser_fetcher=browser_fetcher,
+        browser_provider="playwright_mcp",
+    )
+
+    response = tool(
+        candidates=[
+            {
+                "candidate_id": "cand_http_first",
+                "url": "https://example.com/articles/http-first",
+                "raw_summary": "HTTP summary",
+            }
+        ]
+    )
+
+    assert response.success is True
+    assert response.data is not None
+    candidate = response.data["candidates"][0]
+    assert candidate["fetch_status"] == "fetched"
+    assert candidate["fetch_method"] == "http"
+    assert candidate["content"] == (
+        "http content for https://example.com/articles/http-first"
+    )
+    assert calls == []
+    assert response.metadata["used_browser_fallback"] is False
+
+
+def test_playwright_mcp_browser_fetcher_calls_allowed_domain_and_truncates() -> None:
+    from app.tools.browser_fetch_tool import PlaywrightMCPBrowserFetcher
+
+    class FakeResponse:
+        def raise_for_status(self) -> None:
+            return None
+
+        def json(self) -> dict[str, object]:
+            return {"content": "abcdef"}
+
+    class FakeClient:
+        def __init__(self) -> None:
+            self.requests: list[dict[str, object]] = []
+
+        def post(self, url: str, **kwargs: object) -> FakeResponse:
+            self.requests.append({"url": url, **kwargs})
+            return FakeResponse()
+
+    client = FakeClient()
+    fetcher = PlaywrightMCPBrowserFetcher(
+        base_url="http://localhost:8931",
+        allowed_domains=["example.com"],
+        http_client=client,
+        timeout_seconds=3.0,
+        max_content_chars=4,
+    )
+
+    content = fetcher("https://example.com/articles/dynamic")
+
+    assert content == "abcd"
+    assert client.requests[0]["url"] == "http://localhost:8931/fetch"
+    assert client.requests[0]["json"] == {"url": "https://example.com/articles/dynamic"}
+    assert client.requests[0]["timeout"] == 3.0
+
+
+def test_playwright_mcp_browser_fetcher_rejects_disallowed_domain() -> None:
+    from app.tools.browser_fetch_tool import PlaywrightMCPBrowserFetcher
+
+    fetcher = PlaywrightMCPBrowserFetcher(
+        base_url="http://localhost:8931",
+        allowed_domains=["example.com"],
+    )
+
+    with pytest.raises(ValueError, match="not allowed"):
+        fetcher("https://evil.example.net/story")
+
+
+def test_playwright_mcp_browser_fetcher_limits_concurrent_calls() -> None:
+    from app.tools.browser_fetch_tool import PlaywrightMCPBrowserFetcher
+
+    class SlowResponse:
+        def raise_for_status(self) -> None:
+            return None
+
+        def json(self) -> dict[str, object]:
+            return {"content": "browser content"}
+
+    class SlowClient:
+        def __init__(self) -> None:
+            self.active_calls = 0
+            self.max_active_calls = 0
+            self.first_call_entered = Event()
+            self.release_first_call = Event()
+            self.lock = Lock()
+
+        def post(self, url: str, **kwargs: object) -> SlowResponse:
+            with self.lock:
+                self.active_calls += 1
+                self.max_active_calls = max(self.max_active_calls, self.active_calls)
+                is_first_call = not self.first_call_entered.is_set()
+                if is_first_call:
+                    self.first_call_entered.set()
+            if is_first_call:
+                assert self.release_first_call.wait(timeout=1.0)
+            with self.lock:
+                self.active_calls -= 1
+            return SlowResponse()
+
+    client = SlowClient()
+    fetcher = PlaywrightMCPBrowserFetcher(
+        base_url="http://localhost:8931",
+        allowed_domains=["example.com"],
+        http_client=client,
+        max_concurrency=1,
+    )
+    results: list[str] = []
+    errors: list[BaseException] = []
+
+    def fetch_in_thread(url: str) -> None:
+        try:
+            results.append(fetcher(url))
+        except BaseException as exc:
+            errors.append(exc)
+
+    first_thread = Thread(
+        target=fetch_in_thread,
+        args=("https://example.com/first",),
+    )
+    second_thread = Thread(
+        target=fetch_in_thread,
+        args=("https://example.com/second",),
+    )
+
+    first_thread.start()
+    assert client.first_call_entered.wait(timeout=1.0)
+    second_thread.start()
+    time.sleep(0.05)
+    client.release_first_call.set()
+    first_thread.join(timeout=1.0)
+    second_thread.join(timeout=1.0)
+
+    assert not first_thread.is_alive()
+    assert not second_thread.is_alive()
+    assert errors == []
+    assert sorted(results) == ["browser content", "browser content"]
+    assert client.max_active_calls == 1
 
 
 def test_task6_fetch_preserves_candidate_identity_when_urls_canonicalize_equal(

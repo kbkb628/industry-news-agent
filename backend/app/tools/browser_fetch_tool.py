@@ -1,7 +1,9 @@
 from __future__ import annotations
 
 from collections.abc import Callable
+from threading import BoundedSemaphore
 from typing import Any
+from urllib.parse import urlparse
 
 try:
     import httpx
@@ -11,17 +13,69 @@ except ImportError:  # pragma: no cover - fallback only matters outside tests.
 from app.tools.base import FixtureTool, canonicalize_url
 
 
+class PlaywrightMCPBrowserFetcher:
+    def __init__(
+        self,
+        *,
+        base_url: str,
+        allowed_domains: list[str],
+        http_client: Any | None = None,
+        timeout_seconds: float = 10.0,
+        max_concurrency: int = 1,
+        max_content_chars: int = 20000,
+    ) -> None:
+        self.base_url = base_url.rstrip("/")
+        self.allowed_domains = tuple(domain.lower() for domain in allowed_domains)
+        self.http_client = http_client
+        self.timeout_seconds = timeout_seconds
+        self._semaphore = BoundedSemaphore(max(1, max_concurrency))
+        self.max_content_chars = max_content_chars
+
+    def __call__(self, url: str) -> str:
+        self._validate_allowed_url(url)
+        client = self.http_client
+        if client is None:
+            if httpx is None:
+                raise RuntimeError("httpx is unavailable for Playwright MCP fetches.")
+            client = httpx
+
+        with self._semaphore:
+            response = client.post(
+                f"{self.base_url}/fetch",
+                json={"url": url},
+                timeout=self.timeout_seconds,
+            )
+        response.raise_for_status()
+        payload = response.json()
+        content = payload.get("content") or payload.get("text") or payload.get("markdown")
+        if not isinstance(content, str):
+            raise RuntimeError("Playwright MCP response did not include text content.")
+        return content[: self.max_content_chars]
+
+    def _validate_allowed_url(self, url: str) -> None:
+        host = (urlparse(url).hostname or "").lower()
+        if not host:
+            raise ValueError("Browser fetch URL must include a host.")
+        if not any(
+            host == domain or host.endswith(f".{domain}")
+            for domain in self.allowed_domains
+        ):
+            raise ValueError(f"Browser fetch domain is not allowed: {host}")
+
+
 class BrowserFetchTool(FixtureTool):
     def __init__(
         self,
         *,
         fetcher: Callable[[str], str] | None = None,
         browser_fetcher: Callable[[str], str] | None = None,
+        browser_provider: str | None = None,
         timeout_seconds: float = 10.0,
     ) -> None:
         super().__init__("fetch_article_content")
         self.fetcher = fetcher
         self.browser_fetcher = browser_fetcher
+        self.browser_provider = browser_provider
         self.timeout_seconds = timeout_seconds
 
     def __call__(self, *, candidates: list[dict[str, Any]]) -> object:
@@ -84,5 +138,8 @@ class BrowserFetchTool(FixtureTool):
         return self.success(
             summary=f"Fetched {len(fetched_candidates)} candidate page(s).",
             data={"candidates": fetched_candidates},
-            metadata={"used_browser_fallback": used_browser_fallback},
+            metadata={
+                "used_browser_fallback": used_browser_fallback,
+                "browser_provider": self.browser_provider,
+            },
         )

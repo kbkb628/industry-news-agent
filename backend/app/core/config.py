@@ -26,6 +26,12 @@ class Settings(BaseSettings):
     judge_api_key: str | None = Field(default=None)
     judge_model: str = Field(default="gpt-4o-mini")
     judge_timeout_seconds: float = Field(default=10.0)
+    browser_fetch_provider: str = Field(default="none")
+    playwright_mcp_base_url: str | None = Field(default=None)
+    playwright_mcp_timeout_seconds: float = Field(default=10.0)
+    browser_allowed_domains: list[str] = Field(default_factory=list)
+    browser_max_concurrency: int = Field(default=1)
+    browser_max_content_chars: int = Field(default=20000)
 
 def get_settings() -> Settings:
     return Settings()

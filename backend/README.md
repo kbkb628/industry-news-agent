@@ -20,13 +20,15 @@ Included in the current codebase:
 - worker retry, timeout, active-run guard, and governance events
 - optional OpenWebSearch provider path with mock search fallback
 - explicit browser fetch fallback metadata and events
+- optional Playwright MCP-compatible browser fetch provider behind the HTTP fallback path
 - deterministic MockEvalJudge adapter for the LLM-as-Judge evaluation contract
 - optional OpenAI-compatible LLM-as-Judge provider with mock fallback
 - local Docker Compose stack for backend, PostgreSQL, and Redis
 
 Not claimed by the current implementation:
 
-- Playwright MCP execution as a live external browser service
+- general autonomous browsing or a production browser fleet
+- verified Microsoft Playwright MCP live-service deployment
 - Elasticsearch or vector retrieval
 - embedding indexing
 - production deployment hardening
@@ -62,6 +64,25 @@ Optional Phase 2 eval judge variables:
 - `JUDGE_MODEL` defaults to `gpt-4o-mini`.
 - `JUDGE_TIMEOUT_SECONDS` defaults to `10.0`.
 
+Optional Phase 2 browser fallback variables:
+
+- `BROWSER_FETCH_PROVIDER=none` keeps browser fallback disabled.
+- `BROWSER_FETCH_PROVIDER=playwright_mcp` enables the optional
+  Playwright MCP-compatible browser fetch provider only when
+  `PLAYWRIGHT_MCP_BASE_URL` and `BROWSER_ALLOWED_DOMAINS` are also configured.
+- `PLAYWRIGHT_MCP_BASE_URL` points at a compatible HTTP wrapper exposing
+  `POST /fetch` with a JSON body of `{"url": "..."}`.
+- `PLAYWRIGHT_MCP_TIMEOUT_SECONDS` defaults to `10.0`.
+- `BROWSER_ALLOWED_DOMAINS` limits which article domains may use browser fallback.
+- `BROWSER_MAX_CONCURRENCY` defaults to `1`; the current fallback path is
+  synchronous and does not implement a browser worker pool.
+- `BROWSER_MAX_CONTENT_CHARS` defaults to `20000`.
+
+Browser fallback is intentionally last in the fetch chain: fixture/local content
+first, plain HTTP second, browser provider only after HTTP failure. Failed browser
+fallbacks remain visible as failed candidate fetches instead of being presented
+as complete article content.
+
 Example `.env`:
 
 ```env
@@ -74,6 +95,10 @@ JUDGE_PROVIDER=mock
 # JUDGE_PROVIDER=openai_compatible
 # JUDGE_BASE_URL=https://api.openai.com/v1
 # JUDGE_API_KEY=replace-me
+BROWSER_FETCH_PROVIDER=none
+# BROWSER_FETCH_PROVIDER=playwright_mcp
+# PLAYWRIGHT_MCP_BASE_URL=http://localhost:8931
+# BROWSER_ALLOWED_DOMAINS='["example.com","news.example.com"]'
 ```
 
 ## Install
