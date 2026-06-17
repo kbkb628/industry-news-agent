@@ -482,6 +482,42 @@ def test_reporting_endpoints_return_persisted_monitor_artifacts() -> None:
     assert eval_response.json()["push_count"] == 1
 
 
+def test_mvp_closed_loop_end_to_end() -> None:
+    topic_repository = InMemoryTopicRepository()
+    run_repository = InMemoryMonitorRunRepository()
+
+    with _build_monitor_client(topic_repository, run_repository) as client:
+        topic = _create_monitor_topic(client)
+        run_payload = client.post(f"/api/monitor/{topic['topic_id']}/run").json()
+        run_id = run_payload["run_id"]
+        _wait_until(
+            lambda: run_repository.get_monitor_run(run_id) is not None
+            and run_repository.get_monitor_run(run_id).status == "completed"
+        )
+
+        run_response = client.get(f"/api/monitor/runs/{run_id}")
+        candidate_response = client.get(f"/api/monitor/runs/{run_id}/candidates")
+        event_response = client.get(f"/api/monitor/runs/{run_id}/events")
+        push_response = client.get(f"/api/topics/{topic['topic_id']}/pushes")
+        eval_response = client.post("/api/eval/run")
+
+    assert run_payload["status"] == "running"
+    assert run_response.status_code == 200
+    assert run_response.json()["status"] == "completed"
+    assert candidate_response.status_code == 200
+    assert candidate_response.json()["run_id"] == run_id
+    assert candidate_response.json()["candidates"]
+    assert event_response.status_code == 200
+    assert event_response.json()["run_id"] == run_id
+    assert event_response.json()["events"]
+    assert push_response.status_code == 200
+    assert push_response.json()["topic_id"] == topic["topic_id"]
+    assert push_response.json()["pushes"]
+    assert eval_response.status_code == 200
+    assert eval_response.json()["run_id"] == run_id
+    assert eval_response.json()["push_count"] >= 0
+
+
 def test_eval_run_route_does_not_expose_request_body_contract() -> None:
     topic_repository = InMemoryTopicRepository()
     run_repository = InMemoryMonitorRunRepository()
