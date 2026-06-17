@@ -13,6 +13,28 @@ from app.schemas.push_schema import PushListResponse, PushRecord
 from app.schemas.tool_schema import ToolError, ToolExecutionResult
 
 
+def test_multi_agent_state_contract_sections_exist() -> None:
+    from app.agent.contracts import (
+        build_empty_business_memory,
+        build_empty_evaluation_output,
+        build_empty_extraction_output,
+        build_empty_planner_output,
+        build_empty_retrieval_output,
+        build_empty_run_context,
+    )
+
+    run_context = build_empty_run_context(run_id="run_001", topic_id="topic_001")
+
+    assert run_context["run_id"] == "run_001"
+    assert run_context["topic_id"] == "topic_001"
+    assert run_context["status"] == "created"
+    assert build_empty_business_memory()["push_history"] == []
+    assert build_empty_planner_output()["source_plan"] == []
+    assert build_empty_retrieval_output()["candidate_pool"] == []
+    assert build_empty_extraction_output()["evidence_items"] == []
+    assert build_empty_evaluation_output()["final_decisions"] == []
+
+
 def test_monitor_run_status_rejects_unknown_value() -> None:
     with pytest.raises(ValidationError):
         MonitorRunStateResponse(

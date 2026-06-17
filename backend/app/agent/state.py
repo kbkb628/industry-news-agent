@@ -2,8 +2,23 @@ from __future__ import annotations
 
 from typing import Any, TypedDict
 
+from app.agent.contracts import (
+    BusinessMemory,
+    EvaluationOutput,
+    ExtractionOutput,
+    PlannerOutput,
+    RetrievalOutput,
+    RunContext,
+)
+
 
 class MonitorState(TypedDict, total=False):
+    run_context: RunContext
+    business_memory: BusinessMemory
+    planner_output: PlannerOutput
+    retrieval_output: RetrievalOutput
+    extraction_output: ExtractionOutput
+    evaluation_output: EvaluationOutput
     run_id: str
     topic_id: str
     trigger: str
