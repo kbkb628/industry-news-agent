@@ -25,6 +25,7 @@ from app.core.config import Settings, get_settings
 from app.eval.rule_scorer import score_run
 from app.scheduler.worker import (
     InMemoryRunQueue,
+    RedisStreamRunQueue,
     RunQueueMessage,
     build_run_queue,
 )
@@ -636,6 +637,116 @@ def test_build_run_queue_falls_back_to_in_memory_when_redis_ping_fails(
     queue = build_run_queue()
 
     assert isinstance(queue, InMemoryRunQueue)
+
+
+def test_redis_stream_run_queue_uses_consumer_group_ack_flow() -> None:
+    class FakeRedisStreamClient:
+        def __init__(self) -> None:
+            self.created_groups: list[dict[str, object]] = []
+            self.added: list[dict[str, object]] = []
+            self.acked: list[dict[str, object]] = []
+
+        def xgroup_create(
+            self,
+            name: str,
+            groupname: str,
+            id: str,
+            mkstream: bool,
+        ) -> None:
+            self.created_groups.append(
+                {
+                    "name": name,
+                    "groupname": groupname,
+                    "id": id,
+                    "mkstream": mkstream,
+                }
+            )
+
+        def xadd(self, name: str, fields: dict[str, str]) -> str:
+            self.added.append({"name": name, "fields": fields})
+            return "1710000000000-0"
+
+        def xreadgroup(
+            self,
+            groupname: str,
+            consumername: str,
+            streams: dict[str, str],
+            count: int,
+            block: int,
+        ) -> list[tuple[bytes, list[tuple[bytes, dict[bytes, bytes]]]]]:
+            assert groupname == "monitor-workers"
+            assert consumername == "worker-1"
+            assert streams == {"industry_news_agent:run_stream": ">"}
+            assert count == 1
+            assert block == 0
+            return [
+                (
+                    b"industry_news_agent:run_stream",
+                    [
+                        (
+                            b"1710000000000-0",
+                            {
+                                b"topic_id": b"topic_ai_agent",
+                                b"trigger": b"scheduler",
+                                b"enqueued_at": b"2026-06-09T12:00:00Z",
+                            },
+                        )
+                    ],
+                )
+            ]
+
+        def xack(self, name: str, groupname: str, id: bytes) -> int:
+            self.acked.append({"name": name, "groupname": groupname, "id": id})
+            return 1
+
+    client = FakeRedisStreamClient()
+    queue = RedisStreamRunQueue(
+        client,
+        stream_key="industry_news_agent:run_stream",
+        group_name="monitor-workers",
+        consumer_name="worker-1",
+    )
+
+    enqueue_result = queue.enqueue(
+        RunQueueMessage(
+            topic_id="topic_ai_agent",
+            trigger="scheduler",
+            enqueued_at=datetime(2026, 6, 9, 12, 0, tzinfo=UTC),
+        )
+    )
+    message = queue.dequeue()
+
+    assert enqueue_result["status"] == "queued"
+    assert enqueue_result["message_id"] == "1710000000000-0"
+    assert message is not None
+    assert message.topic_id == "topic_ai_agent"
+    assert message.trigger == "scheduler"
+    assert message.enqueued_at == datetime(2026, 6, 9, 12, 0, tzinfo=UTC)
+    assert client.created_groups == [
+        {
+            "name": "industry_news_agent:run_stream",
+            "groupname": "monitor-workers",
+            "id": "0",
+            "mkstream": True,
+        }
+    ]
+    assert client.added == [
+        {
+            "name": "industry_news_agent:run_stream",
+            "fields": {
+                "topic_id": "topic_ai_agent",
+                "trigger": "scheduler",
+                "enqueued_at": "2026-06-09T12:00:00Z",
+            },
+        }
+    ]
+    assert client.acked == [
+        {
+            "name": "industry_news_agent:run_stream",
+            "groupname": "monitor-workers",
+            "id": b"1710000000000-0",
+        }
+    ]
 
 
 def test_run_queue_message_default_timestamp_is_per_instance() -> None:

@@ -16,13 +16,13 @@ Included in the current codebase:
 - minimal HTML admin pages for topics, pushes, run detail, and events
 - APScheduler topic jobs that enqueue worker runs
 - Redis-backed run queue with in-memory fallback
+- Redis Stream consumer-group flow for queued monitor runs
 - worker retry, timeout, active-run guard, and governance events
 - optional OpenWebSearch provider path with mock search fallback
 - explicit browser fetch fallback metadata and events
 
 Not claimed by the current implementation:
 
-- Redis Stream worker groups
 - Playwright MCP execution as a live external browser service
 - Elasticsearch or vector retrieval
 - embedding indexing

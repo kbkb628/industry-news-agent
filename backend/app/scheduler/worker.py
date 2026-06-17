@@ -5,7 +5,6 @@ from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from concurrent.futures import ThreadPoolExecutor, TimeoutError as FuturesTimeoutError
 from copy import deepcopy
-import json
 from threading import Event
 import uuid
 from typing import Any, Protocol
@@ -65,10 +64,40 @@ class InMemoryRunQueue:
         return self._queue.popleft()
 
 
-class RedisRunQueue:
-    def __init__(self, redis_client: Any, *, queue_key: str = "industry_news_agent:run_queue") -> None:
+class RedisStreamRunQueue:
+    def __init__(
+        self,
+        redis_client: Any,
+        *,
+        stream_key: str = "industry_news_agent:run_stream",
+        group_name: str = "monitor-workers",
+        consumer_name: str = "monitor-worker-1",
+        block_ms: int = 0,
+    ) -> None:
         self.redis_client = redis_client
-        self.queue_key = queue_key
+        self.stream_key = stream_key
+        self.group_name = group_name
+        self.consumer_name = consumer_name
+        self.block_ms = block_ms
+        self._ensure_group()
+
+    @staticmethod
+    def _to_text(value: Any) -> str:
+        if isinstance(value, bytes):
+            return value.decode("utf-8")
+        return str(value)
+
+    def _ensure_group(self) -> None:
+        try:
+            self.redis_client.xgroup_create(
+                name=self.stream_key,
+                groupname=self.group_name,
+                id="0",
+                mkstream=True,
+            )
+        except RedisError as exc:
+            if "BUSYGROUP" not in str(exc):
+                raise
 
     def enqueue(self, message: RunQueueMessage) -> dict[str, Any]:
         payload = {
@@ -76,20 +105,39 @@ class RedisRunQueue:
             "trigger": message.trigger,
             "enqueued_at": message.enqueued_at.isoformat().replace("+00:00", "Z"),
         }
-        self.redis_client.rpush(self.queue_key, json.dumps(payload))
+        message_id = self.redis_client.xadd(self.stream_key, payload)
         return {
             "topic_id": message.topic_id,
             "trigger": message.trigger,
             "status": "queued",
             "enqueued_at": message.enqueued_at,
+            "message_id": self._to_text(message_id),
         }
 
     def dequeue(self) -> RunQueueMessage | None:
-        raw_payload = self.redis_client.lpop(self.queue_key)
-        if raw_payload is None:
+        streams = self.redis_client.xreadgroup(
+            groupname=self.group_name,
+            consumername=self.consumer_name,
+            streams={self.stream_key: ">"},
+            count=1,
+            block=self.block_ms,
+        )
+        if not streams:
             return None
 
-        payload = json.loads(raw_payload)
+        stream_name, messages = streams[0]
+        if not messages:
+            return None
+        message_id, raw_payload = messages[0]
+        payload = {
+            self._to_text(key): self._to_text(value)
+            for key, value in raw_payload.items()
+        }
+        self.redis_client.xack(
+            self._to_text(stream_name),
+            self.group_name,
+            message_id,
+        )
         return RunQueueMessage(
             topic_id=str(payload["topic_id"]),
             trigger=str(payload["trigger"]),
@@ -103,7 +151,7 @@ def build_run_queue(settings: Settings | None = None) -> RunQueueProtocol:
         redis_client.ping()
     except (RedisError, ValidationError):
         return InMemoryRunQueue()
-    return RedisRunQueue(redis_client)
+    return RedisStreamRunQueue(redis_client)
 
 
 class MonitorWorkerService:
