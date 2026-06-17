@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from typing import Any
+
 from langgraph.graph import END, StateGraph
 
 from app.agent.nodes import (
@@ -40,6 +42,7 @@ def build_monitor_graph(
     gateway: LocalToolGateway | None = None,
     run_repository: MonitorRunRepositoryProtocol | None = None,
     settings: Settings | None = None,
+    history_index_http_client: Any | None = None,
 ):
     resolved_llm = llm or MockLLM()
     resolved_gateway = gateway or _build_default_gateway(resolved_llm, settings)
@@ -85,7 +88,12 @@ def build_monitor_graph(
     )
     graph.add_node(
         "evaluate_run_node",
-        lambda state: evaluate_run_node(state, run_repository, settings),
+        lambda state: evaluate_run_node(
+            state,
+            run_repository,
+            settings,
+            history_index_http_client,
+        ),
     )
 
     graph.set_entry_point("load_topic_node")

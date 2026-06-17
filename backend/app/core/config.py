@@ -32,6 +32,10 @@ class Settings(BaseSettings):
     browser_allowed_domains: list[str] = Field(default_factory=list)
     browser_max_concurrency: int = Field(default=1)
     browser_max_content_chars: int = Field(default=20000)
+    history_index_provider: str = Field(default="none")
+    opensearch_base_url: str | None = Field(default=None)
+    opensearch_index_name: str = Field(default="industry-news-candidates")
+    opensearch_timeout_seconds: float = Field(default=10.0)
 
 def get_settings() -> Settings:
     return Settings()

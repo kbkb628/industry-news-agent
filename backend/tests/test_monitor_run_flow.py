@@ -12,6 +12,8 @@ from fastapi.testclient import TestClient
 from app.api.monitor import get_monitor_graph, get_monitor_run_repository
 from app.api.topics import get_topic_repository
 from app.agent.graph import build_monitor_graph
+from app.agent.nodes import evaluate_run_node
+from app.core.config import Settings
 from app.llm.mock_client import MockLLM
 from app.main import create_app
 from app.mcp.local_gateway import LocalToolGateway
@@ -490,6 +492,357 @@ def test_monitor_graph_records_provider_and_browser_fallback_events() -> None:
     assert provider_event["payload"]["provider"] == "open_websearch"
     assert provider_event["payload"]["fallback_provider"] == "mock_search"
     assert browser_event["payload"]["fallback"] == "browser_fetch"
+
+
+def test_evaluate_run_indexes_candidate_history_when_opensearch_enabled() -> None:
+    class FakeResponse:
+        def raise_for_status(self) -> None:
+            return None
+
+    class FakeIndexClient:
+        def __init__(self) -> None:
+            self.requests: list[dict[str, object]] = []
+
+        def put(self, url: str, **kwargs: object) -> FakeResponse:
+            self.requests.append({"url": url, **kwargs})
+            return FakeResponse()
+
+    class RecordingRepository:
+        def __init__(self) -> None:
+            self.candidate_records: list[dict[str, object]] = []
+            self.eval_results: list[dict[str, object]] = []
+            self.monitor_runs: list[object] = []
+            self.run_events: list[dict[str, object]] = []
+
+        def upsert_extracted_item_records(
+            self,
+            payloads: tuple[object, ...],
+        ) -> list[dict[str, object]]:
+            return []
+
+        def upsert_decision_records(
+            self,
+            payloads: tuple[object, ...],
+        ) -> list[dict[str, object]]:
+            return []
+
+        def upsert_candidate_records(
+            self,
+            payloads: tuple[object, ...],
+        ) -> list[dict[str, object]]:
+            persisted = [
+                {
+                    "candidate_id": payload.candidate_id,
+                    "run_id": payload.run_id,
+                    "topic_id": payload.topic_id,
+                    "source_type": payload.source_type,
+                    "source_name": payload.source_name,
+                    "title": payload.title,
+                    "url": payload.url,
+                    "raw_summary": payload.raw_summary,
+                    "content": payload.content,
+                    "score": payload.score,
+                    "decision": payload.decision,
+                    "decision_reason": payload.decision_reason,
+                }
+                for payload in payloads
+            ]
+            self.candidate_records.extend(persisted)
+            return persisted
+
+        def create_run_events(
+            self,
+            payloads: tuple[object, ...],
+        ) -> list[dict[str, object]]:
+            persisted = [
+                {
+                    "run_id": payload.run_id,
+                    "topic_id": payload.topic_id,
+                    "event_type": payload.event_type,
+                    "node": payload.node,
+                    "message": payload.message,
+                    "payload": payload.payload,
+                    "elapsed_ms": payload.elapsed_ms,
+                    "created_at": datetime(2026, 6, 9, tzinfo=UTC),
+                }
+                for payload in payloads
+            ]
+            self.run_events.extend(persisted)
+            return persisted
+
+        def create_eval_result(self, payload: object) -> dict[str, object]:
+            persisted = {
+                "eval_id": "eval_001",
+                "run_id": payload.run_id,
+                "topic_id": payload.topic_id,
+                "retrieved_count": payload.retrieved_count,
+                "deduped_count": payload.deduped_count,
+                "dedup_rate": payload.dedup_rate,
+                "push_count": payload.push_count,
+                "duplicate_push_count": payload.duplicate_push_count,
+                "tool_success_rate": payload.tool_success_rate,
+                "fetch_success_rate": payload.fetch_success_rate,
+                "trace_completeness": payload.trace_completeness,
+                "raw_summary_count": payload.raw_summary_count,
+                "browser_fallback_count": payload.browser_fallback_count,
+                "provider_fallback_count": payload.provider_fallback_count,
+                "judge_mode": payload.judge_mode,
+                "judge_score": payload.judge_score,
+                "judge_reason": payload.judge_reason,
+                "judge_issues": list(payload.judge_issues),
+                "suggestions": list(payload.suggestions),
+                "created_at": datetime(2026, 6, 9, tzinfo=UTC),
+            }
+            self.eval_results.append(persisted)
+            return persisted
+
+        def upsert_monitor_run(self, payload: object) -> object:
+            self.monitor_runs.append(payload)
+            return payload
+
+    repository = RecordingRepository()
+    index_client = FakeIndexClient()
+    settings = Settings(
+        database_url="postgresql+psycopg://user:pass@localhost:5432/news_agent",
+        redis_url="redis://localhost:6379/0",
+        history_index_provider="opensearch",
+        opensearch_base_url="http://localhost:9200",
+        opensearch_index_name="industry-news-candidates",
+    )
+    state = {
+        "run_id": "run_index_history",
+        "topic_id": "topic_ai_agent",
+        "topic": {"topic_id": "topic_ai_agent"},
+        "candidate_items": [
+            {
+                "candidate_id": "cand_001",
+                "run_id": "run_index_history",
+                "topic_id": "topic_ai_agent",
+                "source_type": "search",
+                "source_name": "OpenWebSearch",
+                "title": "OpenAI ships agent workflow",
+                "url": "https://example.com/agent",
+                "published_at": None,
+                "raw_summary": "Agent workflow update.",
+            }
+        ],
+        "fetched_contents": [
+            {
+                "candidate_id": "cand_001",
+                "fetch_status": "fetched",
+                "content": "Full article body.",
+            }
+        ],
+        "extracted_items": [],
+        "scored_items": [{"candidate_id": "cand_001", "score": 0.91}],
+        "final_decisions": [
+            {
+                "candidate_id": "cand_001",
+                "run_id": "run_index_history",
+                "topic_id": "topic_ai_agent",
+                "extracted_id": None,
+                "source_type": "search",
+                "source_name": "OpenWebSearch",
+                "title": "OpenAI ships agent workflow",
+                "url": "https://example.com/agent",
+                "published_at": None,
+                "summary": "Agent workflow update.",
+                "score": 0.91,
+                "should_push": True,
+                "decision_reason": "Above threshold",
+            }
+        ],
+        "events": [],
+        "errors": [],
+        "tool_results": [],
+    }
+
+    result = evaluate_run_node(
+        state,
+        run_repository=repository,
+        settings=settings,
+        history_index_http_client=index_client,
+    )
+
+    assert result["status"] == "completed"
+    assert result["history_index_result"] == {
+        "indexed_count": 1,
+        "provider": "opensearch",
+    }
+    assert len(repository.candidate_records) == 1
+    assert index_client.requests[0]["url"] == (
+        "http://localhost:9200/industry-news-candidates/_doc/run_index_history-cand_001"
+    )
+    index_event = next(
+        event for event in result["events"] if event["node"] == "index_history"
+    )
+    assert index_event["event_type"] == "node_completed"
+    assert index_event["payload"]["indexed_count"] == 1
+
+
+def test_evaluate_run_records_history_index_failure_without_failing_run() -> None:
+    class FailingIndexClient:
+        def put(self, url: str, **kwargs: object) -> object:
+            raise RuntimeError("opensearch unavailable")
+
+    class RecordingRepository:
+        def __init__(self) -> None:
+            self.candidate_records: list[dict[str, object]] = []
+            self.run_events: list[dict[str, object]] = []
+
+        def upsert_extracted_item_records(
+            self,
+            payloads: tuple[object, ...],
+        ) -> list[dict[str, object]]:
+            return []
+
+        def upsert_decision_records(
+            self,
+            payloads: tuple[object, ...],
+        ) -> list[dict[str, object]]:
+            return []
+
+        def upsert_candidate_records(
+            self,
+            payloads: tuple[object, ...],
+        ) -> list[dict[str, object]]:
+            persisted = [
+                {
+                    "candidate_id": payload.candidate_id,
+                    "run_id": payload.run_id,
+                    "topic_id": payload.topic_id,
+                    "source_type": payload.source_type,
+                    "source_name": payload.source_name,
+                    "title": payload.title,
+                    "url": payload.url,
+                    "raw_summary": payload.raw_summary,
+                    "content": payload.content,
+                    "score": payload.score,
+                    "decision": payload.decision,
+                    "decision_reason": payload.decision_reason,
+                }
+                for payload in payloads
+            ]
+            self.candidate_records.extend(persisted)
+            return persisted
+
+        def create_run_events(
+            self,
+            payloads: tuple[object, ...],
+        ) -> list[dict[str, object]]:
+            persisted = [
+                {
+                    "run_id": payload.run_id,
+                    "topic_id": payload.topic_id,
+                    "event_type": payload.event_type,
+                    "node": payload.node,
+                    "message": payload.message,
+                    "payload": payload.payload,
+                    "elapsed_ms": payload.elapsed_ms,
+                    "created_at": datetime(2026, 6, 9, tzinfo=UTC),
+                }
+                for payload in payloads
+            ]
+            self.run_events.extend(persisted)
+            return persisted
+
+        def create_eval_result(self, payload: object) -> dict[str, object]:
+            return {
+                "eval_id": "eval_001",
+                "run_id": payload.run_id,
+                "topic_id": payload.topic_id,
+                "retrieved_count": payload.retrieved_count,
+                "deduped_count": payload.deduped_count,
+                "dedup_rate": payload.dedup_rate,
+                "push_count": payload.push_count,
+                "duplicate_push_count": payload.duplicate_push_count,
+                "tool_success_rate": payload.tool_success_rate,
+                "fetch_success_rate": payload.fetch_success_rate,
+                "trace_completeness": payload.trace_completeness,
+                "raw_summary_count": payload.raw_summary_count,
+                "browser_fallback_count": payload.browser_fallback_count,
+                "provider_fallback_count": payload.provider_fallback_count,
+                "judge_mode": payload.judge_mode,
+                "judge_score": payload.judge_score,
+                "judge_reason": payload.judge_reason,
+                "judge_issues": list(payload.judge_issues),
+                "suggestions": list(payload.suggestions),
+                "created_at": datetime(2026, 6, 9, tzinfo=UTC),
+            }
+
+        def upsert_monitor_run(self, payload: object) -> object:
+            return payload
+
+    repository = RecordingRepository()
+    settings = Settings(
+        database_url="postgresql+psycopg://user:pass@localhost:5432/news_agent",
+        redis_url="redis://localhost:6379/0",
+        history_index_provider="opensearch",
+        opensearch_base_url="http://localhost:9200",
+    )
+    state = {
+        "run_id": "run_index_failure",
+        "topic_id": "topic_ai_agent",
+        "topic": {"topic_id": "topic_ai_agent"},
+        "candidate_items": [
+            {
+                "candidate_id": "cand_001",
+                "run_id": "run_index_failure",
+                "topic_id": "topic_ai_agent",
+                "source_type": "search",
+                "source_name": "OpenWebSearch",
+                "title": "OpenAI ships agent workflow",
+                "url": "https://example.com/agent",
+                "published_at": None,
+                "raw_summary": "Agent workflow update.",
+            }
+        ],
+        "fetched_contents": [
+            {
+                "candidate_id": "cand_001",
+                "fetch_status": "fetched",
+                "content": "Full article body.",
+            }
+        ],
+        "extracted_items": [],
+        "scored_items": [{"candidate_id": "cand_001", "score": 0.91}],
+        "final_decisions": [
+            {
+                "candidate_id": "cand_001",
+                "run_id": "run_index_failure",
+                "topic_id": "topic_ai_agent",
+                "extracted_id": None,
+                "source_type": "search",
+                "source_name": "OpenWebSearch",
+                "title": "OpenAI ships agent workflow",
+                "url": "https://example.com/agent",
+                "published_at": None,
+                "summary": "Agent workflow update.",
+                "score": 0.91,
+                "should_push": True,
+                "decision_reason": "Above threshold",
+            }
+        ],
+        "events": [],
+        "errors": [],
+        "tool_results": [],
+    }
+
+    result = evaluate_run_node(
+        state,
+        run_repository=repository,
+        settings=settings,
+        history_index_http_client=FailingIndexClient(),
+    )
+
+    assert result["status"] == "completed"
+    assert len(repository.candidate_records) == 1
+    assert result["errors"][-1]["code"] == "history_index_failed"
+    failed_event = next(
+        event for event in result["events"] if event["node"] == "index_history"
+    )
+    assert failed_event["event_type"] == "node_failed"
+    assert "opensearch unavailable" in failed_event["payload"]["error_message"]
 
 
 class InMemoryTopicRepository:

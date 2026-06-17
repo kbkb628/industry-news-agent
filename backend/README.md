@@ -21,6 +21,7 @@ Included in the current codebase:
 - optional OpenWebSearch provider path with mock search fallback
 - explicit browser fetch fallback metadata and events
 - optional Playwright MCP-compatible browser fetch provider behind the HTTP fallback path
+- optional OpenSearch-compatible candidate history full-text index projection
 - deterministic MockEvalJudge adapter for the LLM-as-Judge evaluation contract
 - optional OpenAI-compatible LLM-as-Judge provider with mock fallback
 - local Docker Compose stack for backend, PostgreSQL, and Redis
@@ -29,8 +30,9 @@ Not claimed by the current implementation:
 
 - general autonomous browsing or a production browser fleet
 - verified Microsoft Playwright MCP live-service deployment
-- Elasticsearch or vector retrieval
-- embedding indexing
+- production Elasticsearch/OpenSearch cluster hardening
+- vector database retrieval
+- embedding indexing with external model embeddings
 - production deployment hardening
 
 ## Environment
@@ -83,6 +85,22 @@ first, plain HTTP second, browser provider only after HTTP failure. Failed brows
 fallbacks remain visible as failed candidate fetches instead of being presented
 as complete article content.
 
+Optional Phase 2 history-index variables:
+
+- `HISTORY_INDEX_PROVIDER=none` keeps the external history index disabled.
+- `HISTORY_INDEX_PROVIDER=opensearch` enables the optional OpenSearch-compatible
+  candidate history full-text projection when `OPENSEARCH_BASE_URL` is configured.
+- `OPENSEARCH_BASE_URL` points at an OpenSearch/Elasticsearch-compatible HTTP
+  service root.
+- `OPENSEARCH_INDEX_NAME` defaults to `industry-news-candidates`.
+- `OPENSEARCH_TIMEOUT_SECONDS` defaults to `10.0`.
+
+The history index is a projection of persisted candidate records during final
+evaluation as the monitor run completes. PostgreSQL remains the source of truth.
+Index failures are recorded as run events/errors and do not masquerade as
+successful indexing. This does not implement a vector database or external
+embedding pipeline.
+
 Example `.env`:
 
 ```env
@@ -99,6 +117,10 @@ BROWSER_FETCH_PROVIDER=none
 # BROWSER_FETCH_PROVIDER=playwright_mcp
 # PLAYWRIGHT_MCP_BASE_URL=http://localhost:8931
 # BROWSER_ALLOWED_DOMAINS='["example.com","news.example.com"]'
+HISTORY_INDEX_PROVIDER=none
+# HISTORY_INDEX_PROVIDER=opensearch
+# OPENSEARCH_BASE_URL=http://localhost:9200
+# OPENSEARCH_INDEX_NAME=industry-news-candidates
 ```
 
 ## Install

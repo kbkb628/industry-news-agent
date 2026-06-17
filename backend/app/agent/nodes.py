@@ -12,6 +12,7 @@ from app.mcp.local_gateway import LocalToolGateway
 from app.observability.event_logger import append_event
 from app.rag.hybrid_retriever import retrieve_hybrid_context
 from app.rag.knowledge_loader import load_knowledge_base
+from app.search.history_index import build_history_index
 from app.storage.repository import (
     CandidateRecordUpsertData,
     DecisionRecordUpsertData,
@@ -585,6 +586,7 @@ def evaluate_run_node(
     state: dict[str, Any],
     run_repository: MonitorRunRepositoryProtocol | None = None,
     settings: Settings | None = None,
+    history_index_http_client: Any | None = None,
 ) -> dict[str, Any]:
     append_event(state, "evaluate_run", "Evaluated run metrics and trace completeness.")
     state["eval_result"] = score_run(state)
@@ -602,6 +604,52 @@ def evaluate_run_node(
         state["candidate_records"] = run_repository.upsert_candidate_records(
             _build_candidate_payloads(state)
         )
+        history_index = build_history_index(
+            settings=settings,
+            http_client=history_index_http_client,
+        )
+        try:
+            state["history_index_result"] = history_index.index_candidates(
+                list(state["candidate_records"])
+            )
+            if state["history_index_result"].get("provider") != "none":
+                append_event(
+                    state,
+                    "index_history",
+                    "Indexed candidate history projection.",
+                    payload={
+                        "provider": state["history_index_result"].get("provider"),
+                        "indexed_count": state["history_index_result"].get(
+                            "indexed_count",
+                            0,
+                        ),
+                    },
+                )
+        except Exception as exc:
+            errors = list(state.get("errors", []))
+            errors.append(
+                {
+                    "tool_name": "history_index",
+                    "code": "history_index_failed",
+                    "message": str(exc),
+                    "details": {
+                        "provider": (
+                            settings.history_index_provider if settings else None
+                        )
+                    },
+                }
+            )
+            state["errors"] = errors
+            append_event(
+                state,
+                "index_history",
+                "Failed to index candidate history projection.",
+                event_type="node_failed",
+                payload={
+                    "provider": settings.history_index_provider if settings else None,
+                    "error_message": str(exc),
+                },
+            )
         run_repository.create_run_events(
             tuple(
                 RunEventCreateData(

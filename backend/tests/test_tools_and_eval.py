@@ -109,6 +109,22 @@ def test_settings_accept_browser_fetch_provider_values() -> None:
     assert settings.browser_max_content_chars == 2048
 
 
+def test_settings_accept_history_index_provider_values() -> None:
+    settings = Settings(
+        database_url="postgresql+psycopg://user:pass@localhost:5432/news_agent",
+        redis_url="redis://localhost:6379/0",
+        history_index_provider="opensearch",
+        opensearch_base_url="http://localhost:9200",
+        opensearch_index_name="industry-news-candidates",
+        opensearch_timeout_seconds=4.0,
+    )
+
+    assert settings.history_index_provider == "opensearch"
+    assert settings.opensearch_base_url == "http://localhost:9200"
+    assert settings.opensearch_index_name == "industry-news-candidates"
+    assert settings.opensearch_timeout_seconds == 4.0
+
+
 def test_settings_read_connection_values_from_environment(monkeypatch) -> None:
     monkeypatch.setenv(
         "DATABASE_URL",
@@ -1833,6 +1849,111 @@ def test_playwright_mcp_browser_fetcher_limits_concurrent_calls() -> None:
     assert errors == []
     assert sorted(results) == ["browser content", "browser content"]
     assert client.max_active_calls == 1
+
+
+def test_opensearch_history_index_posts_candidate_documents() -> None:
+    from app.search.history_index import OpenSearchHistoryIndex
+
+    class FakeResponse:
+        def raise_for_status(self) -> None:
+            return None
+
+    class FakeClient:
+        def __init__(self) -> None:
+            self.requests: list[dict[str, object]] = []
+
+        def put(self, url: str, **kwargs: object) -> FakeResponse:
+            self.requests.append({"url": url, **kwargs})
+            return FakeResponse()
+
+    client = FakeClient()
+    index = OpenSearchHistoryIndex(
+        base_url="http://localhost:9200",
+        index_name="industry-news-candidates",
+        http_client=client,
+        timeout_seconds=3.0,
+    )
+
+    result = index.index_candidates(
+        [
+            {
+                "candidate_id": "cand_001",
+                "run_id": "run_001",
+                "topic_id": "topic_ai",
+                "source_type": "search",
+                "source_name": "OpenWebSearch",
+                "title": "OpenAI ships agent workflow",
+                "url": "https://example.com/agent",
+                "raw_summary": "Agent workflow update.",
+                "content": "Full article body.",
+                "score": 0.91,
+                "decision": "push",
+                "decision_reason": "Above threshold",
+            }
+        ]
+    )
+
+    assert result == {"indexed_count": 1, "provider": "opensearch"}
+    assert client.requests[0]["url"] == (
+        "http://localhost:9200/industry-news-candidates/_doc/run_001-cand_001"
+    )
+    assert client.requests[0]["timeout"] == 3.0
+    assert client.requests[0]["json"]["title"] == "OpenAI ships agent workflow"
+    assert client.requests[0]["json"]["content"] == "Full article body."
+
+
+def test_opensearch_history_index_serializes_datetime_and_quotes_document_id() -> None:
+    from app.search.history_index import OpenSearchHistoryIndex
+
+    class FakeResponse:
+        def raise_for_status(self) -> None:
+            return None
+
+    class FakeClient:
+        def __init__(self) -> None:
+            self.requests: list[dict[str, object]] = []
+
+        def put(self, url: str, **kwargs: object) -> FakeResponse:
+            self.requests.append({"url": url, **kwargs})
+            return FakeResponse()
+
+    client = FakeClient()
+    index = OpenSearchHistoryIndex(
+        base_url="http://localhost:9200",
+        index_name="industry-news-candidates",
+        http_client=client,
+    )
+
+    index.index_candidates(
+        [
+            {
+                "candidate_id": "cand/001",
+                "run_id": "run 001",
+                "topic_id": "topic_ai",
+                "title": "OpenAI ships agent workflow",
+                "url": "https://example.com/agent",
+                "created_at": datetime(2026, 6, 9, 12, 0, tzinfo=UTC),
+            }
+        ]
+    )
+
+    assert client.requests[0]["url"] == (
+        "http://localhost:9200/industry-news-candidates/_doc/run%20001-cand%2F001"
+    )
+    assert client.requests[0]["json"]["created_at"] == "2026-06-09T12:00:00Z"
+
+
+def test_build_history_index_returns_noop_without_complete_opensearch_settings() -> None:
+    from app.search.history_index import NoopHistoryIndex, build_history_index
+
+    settings = Settings(
+        database_url="postgresql+psycopg://user:pass@localhost:5432/news_agent",
+        redis_url="redis://localhost:6379/0",
+        history_index_provider="opensearch",
+        opensearch_base_url=None,
+    )
+
+    assert isinstance(build_history_index(settings=settings), NoopHistoryIndex)
 
 
 def test_task6_fetch_preserves_candidate_identity_when_urls_canonicalize_equal(
