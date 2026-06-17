@@ -18,6 +18,7 @@ from app.llm.mock_client import MockLLM
 from app.storage.redis_store import build_redis_client
 from app.storage.repository import (
     MonitorRunRepositoryProtocol,
+    RunEventCreateData,
     TopicRepositoryProtocol,
     build_monitor_run_repository,
     build_topic_repository,
@@ -118,6 +119,58 @@ class MonitorWorkerService:
         self.max_retries = max_retries
         self.invocation_timeout_seconds = invocation_timeout_seconds
 
+    @staticmethod
+    def _serialize_payload_value(value: Any) -> Any:
+        if isinstance(value, datetime):
+            return value.isoformat().replace("+00:00", "Z")
+        if isinstance(value, dict):
+            return {
+                str(key): MonitorWorkerService._serialize_payload_value(item)
+                for key, item in value.items()
+            }
+        if isinstance(value, list):
+            return [MonitorWorkerService._serialize_payload_value(item) for item in value]
+        if isinstance(value, tuple):
+            return [MonitorWorkerService._serialize_payload_value(item) for item in value]
+        return value
+
+    def _build_queue_metrics(self, message: RunQueueMessage) -> dict[str, Any]:
+        dequeued_at = datetime.now(UTC)
+        queue_wait_ms = max(
+            0,
+            int((dequeued_at - message.enqueued_at).total_seconds() * 1000),
+        )
+        return {
+            "trigger": message.trigger,
+            "enqueued_at": message.enqueued_at,
+            "dequeued_at": dequeued_at,
+            "queue_wait_ms": queue_wait_ms,
+        }
+
+    def _persist_governance_event(
+        self,
+        *,
+        run_id: str,
+        topic_id: str,
+        event_type: str,
+        node: str,
+        message: str,
+        payload: dict[str, Any],
+    ) -> None:
+        self.run_repository.create_run_events(
+            (
+                RunEventCreateData(
+                    run_id=run_id,
+                    topic_id=topic_id,
+                    event_type=event_type,
+                    node=node,
+                    message=message,
+                    payload=self._serialize_payload_value(payload),
+                    elapsed_ms=None,
+                ),
+            )
+        )
+
     def _invoke_graph_with_timeout(
         self,
         graph: Any,
@@ -147,8 +200,20 @@ class MonitorWorkerService:
                 "trigger": message.trigger,
                 "status": "missing_topic",
             }
+        queue_metrics = self._build_queue_metrics(message)
         active_run = self.run_repository.get_active_run_for_topic(topic.topic_id)
         if active_run is not None:
+            self._persist_governance_event(
+                run_id=active_run.run_id,
+                topic_id=topic.topic_id,
+                event_type="governance_skipped",
+                node="worker_active_run_guard",
+                message="Skipped queued run because a monitor run is already active for the topic.",
+                payload={
+                    **queue_metrics,
+                    "active_run_id": active_run.run_id,
+                },
+            )
             return {
                 "run_id": active_run.run_id,
                 "topic_id": topic.topic_id,
@@ -162,6 +227,14 @@ class MonitorWorkerService:
         base_state["retry_count"] = 0
         base_state["max_retries"] = self.max_retries
         _persist_initial_run(self.run_repository, base_state)
+        self._persist_governance_event(
+            run_id=run_id,
+            topic_id=topic.topic_id,
+            event_type="queue_dequeued",
+            node="worker_dequeue",
+            message="Dequeued queued monitor run for worker execution.",
+            payload=queue_metrics,
+        )
 
         last_error: Exception | None = None
         for attempt in range(self.max_retries + 1):
@@ -181,6 +254,31 @@ class MonitorWorkerService:
                 last_error = exc
                 if attempt >= self.max_retries:
                     attempt_state["retry_count"] = attempt + 1
+                    failure_node = (
+                        "worker_timeout" if isinstance(exc, TimeoutError) else "worker_failed"
+                    )
+                    failure_event_type = (
+                        "governance_timeout"
+                        if isinstance(exc, TimeoutError)
+                        else "governance_failed"
+                    )
+                    self._persist_governance_event(
+                        run_id=run_id,
+                        topic_id=topic.topic_id,
+                        event_type=failure_event_type,
+                        node=failure_node,
+                        message=(
+                            "Worker invocation timed out and the queued run was marked failed."
+                            if isinstance(exc, TimeoutError)
+                            else "Worker invocation failed and the queued run was marked failed."
+                        ),
+                        payload={
+                            "attempt": attempt + 1,
+                            "max_retries": self.max_retries,
+                            "error_message": str(exc),
+                            **queue_metrics,
+                        },
+                    )
                     _mark_run_failed(self.run_repository, attempt_state, exc)
                     return {
                         "run_id": run_id,
@@ -189,6 +287,19 @@ class MonitorWorkerService:
                         "status": "failed",
                         "retry_count": attempt,
                     }
+                self._persist_governance_event(
+                    run_id=run_id,
+                    topic_id=topic.topic_id,
+                    event_type="governance_retry",
+                    node="worker_retry",
+                    message="Worker invocation failed and will be retried.",
+                    payload={
+                        "attempt": attempt + 1,
+                        "max_retries": self.max_retries,
+                        "error_message": str(exc),
+                        **queue_metrics,
+                    },
+                )
                 _persist_initial_run(self.run_repository, attempt_state)
 
         if last_error is not None:

@@ -676,6 +676,12 @@ def test_worker_skips_duplicate_active_run_for_same_topic() -> None:
     assert result["topic_id"] == topic.topic_id
     assert result["status"] == "skipped_active_run"
     assert len(run_repository.monitor_runs) == 1
+    assert len(run_repository.run_events) == 1
+    skip_event = run_repository.run_events[0]
+    assert skip_event["event_type"] == "governance_skipped"
+    assert skip_event["node"] == "worker_active_run_guard"
+    assert skip_event["payload"]["active_run_id"] == active_run.run_id
+    assert skip_event["payload"]["queue_wait_ms"] >= 0
 
 
 def test_scheduler_job_enqueues_and_worker_processes_topic_run() -> None:
@@ -872,6 +878,14 @@ def test_worker_retries_once_before_marking_run_failed(monkeypatch) -> None:
     run_record = run_repository.get_monitor_run(result["run_id"])
     assert run_record is not None
     assert run_record.status == "running" or run_record.status == "completed"
+    events = run_repository.list_run_events(result["run_id"])
+    dequeue_event = next(event for event in events if event["node"] == "worker_dequeue")
+    retry_event = next(event for event in events if event["node"] == "worker_retry")
+    assert dequeue_event["payload"]["queue_wait_ms"] >= 0
+    assert retry_event["event_type"] == "governance_retry"
+    assert retry_event["payload"]["attempt"] == 1
+    assert retry_event["payload"]["max_retries"] == 1
+    assert retry_event["payload"]["error_message"] == "transient failure"
 
 
 def test_worker_times_out_and_marks_failed_run(monkeypatch) -> None:
@@ -925,3 +939,11 @@ def test_worker_times_out_and_marks_failed_run(monkeypatch) -> None:
     assert run_record is not None
     assert run_record.status == "failed"
     assert "timed out" in (run_record.error_summary or "")
+    events = run_repository.list_run_events(result["run_id"])
+    dequeue_event = next(event for event in events if event["node"] == "worker_dequeue")
+    failure_event = next(event for event in events if event["node"] == "worker_timeout")
+    assert dequeue_event["payload"]["queue_wait_ms"] >= 0
+    assert failure_event["event_type"] == "governance_timeout"
+    assert failure_event["payload"]["max_retries"] == 0
+    assert failure_event["payload"]["attempt"] == 1
+    assert "timed out" in failure_event["payload"]["error_message"]
