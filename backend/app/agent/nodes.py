@@ -3,7 +3,16 @@ from __future__ import annotations
 from datetime import UTC, datetime
 from typing import Any
 
+from app.agent.contracts import (
+    build_empty_business_memory,
+    build_empty_evaluation_output,
+    build_empty_extraction_output,
+    build_empty_planner_output,
+    build_empty_retrieval_output,
+    build_empty_run_context,
+)
 from app.agent.extraction_agent import ExtractionAgent
+from app.agent.evaluation_agent import EvaluationAgent
 from app.agent.planner_agent import PlannerAgent
 from app.agent.retrieval_agent import RetrievalAgent
 from app.core.config import Settings
@@ -120,10 +129,40 @@ def load_topic_node(
     state: dict[str, Any],
     run_repository: MonitorRunRepositoryProtocol | None = None,
 ) -> dict[str, Any]:
+    return supervisor_bootstrap_node(state, run_repository)
+
+
+def supervisor_bootstrap_node(
+    state: dict[str, Any],
+    run_repository: MonitorRunRepositoryProtocol | None = None,
+) -> dict[str, Any]:
     state["status"] = "running"
     if run_repository is not None:
         state["push_history"] = run_repository.list_push_history(str(state["topic_id"]))
+    state["run_context"] = {
+        **build_empty_run_context(
+            run_id=str(state["run_id"]),
+            topic_id=str(state["topic_id"]),
+        ),
+        "topic": dict(state.get("topic", {})),
+        "trigger": str(state.get("trigger", "manual")),
+        "status": "running",
+        "errors": list(state.get("errors", [])),
+        "events": list(state.get("events", [])),
+    }
+    state["business_memory"] = {
+        **build_empty_business_memory(),
+        "seed_keywords": list(state.get("seed_keywords", [])),
+        "business_context": dict(state.get("business_context", {})),
+        "push_history": list(state.get("push_history", [])),
+        "trusted_sources": list(state.get("topic", {}).get("trusted_sources", [])),
+    }
+    state.setdefault("planner_output", build_empty_planner_output())
+    state.setdefault("retrieval_output", build_empty_retrieval_output())
+    state.setdefault("extraction_output", build_empty_extraction_output())
+    state.setdefault("evaluation_output", build_empty_evaluation_output())
     append_event(state, "load_topic", "Loaded topic configuration.")
+    state["run_context"]["events"] = list(state.get("events", []))
     if run_repository is not None:
         run_repository.upsert_monitor_run(_build_monitor_run_payload(state))
     return state
@@ -141,6 +180,8 @@ def retrieve_business_context_node(state: dict[str, Any]) -> dict[str, Any]:
         query,
         top_k=3,
     )
+    if state.get("business_memory"):
+        state["business_memory"]["business_context"] = dict(state["business_context"])
     return append_event(
         state,
         "retrieve_business_context",
@@ -158,6 +199,8 @@ def expand_queries_node(state: dict[str, Any], llm: BaseLLMClient) -> dict[str, 
         topic_name=str(state["topic"]["name"]),
         seed_keywords=state.get("seed_keywords", []),
     )
+    if state.get("planner_output"):
+        state["planner_output"]["expanded_queries"] = list(state["expanded_queries"])
     return append_event(
         state,
         "expand_queries",
@@ -345,13 +388,14 @@ def persist_push_records_node(
     run_repository: MonitorRunRepositoryProtocol | None = None,
     gateway: LocalToolGateway | None = None,
 ) -> dict[str, Any]:
+    evaluation_output = dict(state.get("evaluation_output", {}))
+    final_decisions = list(
+        evaluation_output.get("final_decisions", state.get("final_decisions", []))
+    )
     pushed_at = datetime.now(UTC)
     candidate_push_records = [
-        {
-            **dict(item),
-            "pushed_at": pushed_at,
-        }
-        for item in state.get("final_decisions", [])
+        {**dict(item), "pushed_at": pushed_at}
+        for item in final_decisions
         if item.get("should_push")
     ]
     if run_repository is not None:
@@ -389,6 +433,8 @@ def persist_push_records_node(
         ]
     else:
         state["push_records"] = candidate_push_records
+    if state.get("evaluation_output"):
+        state["evaluation_output"]["push_records"] = list(state["push_records"])
     append_event(
         state,
         "persist_push_records",
@@ -626,12 +672,68 @@ def evaluate_run_node(
     settings: Settings | None = None,
     history_index_http_client: Any | None = None,
 ) -> dict[str, Any]:
-    append_event(state, "evaluate_run", "Evaluated run metrics and trace completeness.")
-    state["eval_result"] = score_run(state)
-    state["eval_result"].update(
-        build_eval_judge(settings=settings).judge(state["eval_result"])
+    _ = run_repository, history_index_http_client
+    if not state.get("evaluation_output"):
+        state["evaluation_output"] = build_empty_evaluation_output()
+    if not state.get("evaluation_output", {}).get("eval_result"):
+        append_event(state, "evaluate_run", "Evaluated run metrics and trace completeness.")
+        state["eval_result"] = score_run(state)
+        state["eval_result"].update(
+            build_eval_judge(settings=settings).judge(state["eval_result"])
+        )
+        state["evaluation_output"]["eval_result"] = dict(state["eval_result"])
+    else:
+        state["eval_result"] = dict(state["evaluation_output"]["eval_result"])
+    state["status"] = "completed"
+    return state
+
+
+def supervisor_finalize_node(
+    state: dict[str, Any],
+    run_repository: MonitorRunRepositoryProtocol | None = None,
+    settings: Settings | None = None,
+    history_index_http_client: Any | None = None,
+) -> dict[str, Any]:
+    retrieval_output = dict(state.get("retrieval_output", {}))
+    extraction_output = dict(state.get("extraction_output", {}))
+    evaluation_output = dict(state.get("evaluation_output", {}))
+
+    state["candidate_items"] = list(
+        retrieval_output.get("candidate_pool", state.get("candidate_items", []))
+    )
+    state["fetched_contents"] = list(
+        extraction_output.get("fetched_contents", state.get("fetched_contents", []))
+    )
+    state["extracted_items"] = list(
+        extraction_output.get("evidence_items", state.get("extracted_items", []))
+    )
+    state["deduped_items"] = list(
+        evaluation_output.get("deduped_items", state.get("deduped_items", []))
+    )
+    state["scored_items"] = list(
+        evaluation_output.get("scored_items", state.get("scored_items", []))
+    )
+    state["final_decisions"] = list(
+        evaluation_output.get("final_decisions", state.get("final_decisions", []))
+    )
+    state["decision_reasons"] = list(
+        evaluation_output.get("decision_reasons", state.get("decision_reasons", []))
+    )
+    state["push_records"] = list(
+        evaluation_output.get("push_records", state.get("push_records", []))
+    )
+    state["eval_result"] = dict(
+        evaluation_output.get("eval_result", state.get("eval_result", {}))
     )
     state["status"] = "completed"
+
+    if state.get("run_context"):
+        state["run_context"]["status"] = "completed"
+        state["run_context"]["errors"] = list(state.get("errors", []))
+        state["run_context"]["events"] = list(state.get("events", []))
+    if state.get("business_memory"):
+        state["business_memory"]["push_history"] = list(state.get("push_history", []))
+
     if run_repository is not None:
         state["extracted_records"] = run_repository.upsert_extracted_item_records(
             _build_extracted_item_payloads(state)
@@ -706,31 +808,35 @@ def evaluate_run_node(
                 for event in state.get("events", [])
             )
         )
-        state["eval_result"] = run_repository.create_eval_result(
-            EvalResultCreateData(
-                run_id=str(state["run_id"]),
-                topic_id=str(state["topic_id"]),
-                retrieved_count=int(state["eval_result"]["retrieved_count"]),
-                deduped_count=int(state["eval_result"]["deduped_count"]),
-                dedup_rate=float(state["eval_result"]["dedup_rate"]),
-                push_count=int(state["eval_result"]["push_count"]),
-                duplicate_push_count=int(state["eval_result"]["duplicate_push_count"]),
-                tool_success_rate=float(state["eval_result"]["tool_success_rate"]),
-                fetch_success_rate=float(state["eval_result"]["fetch_success_rate"]),
-                trace_completeness=float(state["eval_result"]["trace_completeness"]),
-                raw_summary_count=int(state["eval_result"]["raw_summary_count"]),
-                browser_fallback_count=int(
-                    state["eval_result"]["browser_fallback_count"]
-                ),
-                provider_fallback_count=int(
-                    state["eval_result"]["provider_fallback_count"]
-                ),
-                judge_mode=str(state["eval_result"]["judge_mode"]),
-                judge_score=float(state["eval_result"]["judge_score"]),
-                judge_reason=str(state["eval_result"]["judge_reason"]),
-                judge_issues=tuple(state["eval_result"].get("judge_issues", [])),
-                suggestions=tuple(state["eval_result"].get("suggestions", [])),
+        if state.get("eval_result"):
+            state["eval_result"] = run_repository.create_eval_result(
+                EvalResultCreateData(
+                    run_id=str(state["run_id"]),
+                    topic_id=str(state["topic_id"]),
+                    retrieved_count=int(state["eval_result"]["retrieved_count"]),
+                    deduped_count=int(state["eval_result"]["deduped_count"]),
+                    dedup_rate=float(state["eval_result"]["dedup_rate"]),
+                    push_count=int(state["eval_result"]["push_count"]),
+                    duplicate_push_count=int(state["eval_result"]["duplicate_push_count"]),
+                    tool_success_rate=float(state["eval_result"]["tool_success_rate"]),
+                    fetch_success_rate=float(state["eval_result"]["fetch_success_rate"]),
+                    trace_completeness=float(state["eval_result"]["trace_completeness"]),
+                    raw_summary_count=int(state["eval_result"]["raw_summary_count"]),
+                    browser_fallback_count=int(
+                        state["eval_result"]["browser_fallback_count"]
+                    ),
+                    provider_fallback_count=int(
+                        state["eval_result"]["provider_fallback_count"]
+                    ),
+                    judge_mode=str(state["eval_result"]["judge_mode"]),
+                    judge_score=float(state["eval_result"]["judge_score"]),
+                    judge_reason=str(state["eval_result"]["judge_reason"]),
+                    judge_issues=tuple(state["eval_result"].get("judge_issues", [])),
+                    suggestions=tuple(state["eval_result"].get("suggestions", [])),
+                )
             )
-        )
+            if state.get("evaluation_output"):
+                state["evaluation_output"]["eval_result"] = dict(state["eval_result"])
         run_repository.upsert_monitor_run(_build_monitor_run_payload(state))
+
     return state

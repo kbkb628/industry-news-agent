@@ -5,20 +5,15 @@ from typing import Any
 from langgraph.graph import END, StateGraph
 
 from app.agent.nodes import (
-    decide_push_node,
-    deduplicate_items_node,
-    evaluate_run_node,
-    expand_queries_node,
-    extract_structured_items_node,
-    fetch_contents_node,
-    load_topic_node,
-    persist_push_records_node,
-    plan_sources_node,
     retrieve_business_context_node,
-    retrieve_candidates_node,
-    score_items_node,
+    supervisor_bootstrap_node,
+    supervisor_finalize_node,
 )
 from app.agent.state import MonitorState
+from app.agent.evaluation_agent import EvaluationAgent
+from app.agent.extraction_agent import ExtractionAgent
+from app.agent.planner_agent import PlannerAgent
+from app.agent.retrieval_agent import RetrievalAgent
 from app.core.config import Settings
 from app.llm.base import BaseLLMClient
 from app.llm.mock_client import MockLLM
@@ -73,69 +68,92 @@ def build_monitor_graph(
 
     graph = StateGraph(MonitorState)
     graph.add_node(
-        "load_topic_node",
-        lambda state: load_topic_node(state, run_repository),
-    )
-    graph.add_node("retrieve_business_context_node", retrieve_business_context_node)
-    graph.add_node(
-        "expand_queries_node",
-        lambda state: expand_queries_node(state, resolved_llm),
-    )
-    graph.add_node("plan_sources_node", plan_sources_node)
-    graph.add_node(
-        "retrieve_candidates_node",
-        lambda state: retrieve_candidates_node(state, resolved_gateway),
+        "supervisor_bootstrap",
+        lambda state: supervisor_bootstrap_node(state, run_repository),
     )
     graph.add_node(
-        "fetch_contents_node",
-        lambda state: fetch_contents_node(state, resolved_gateway),
-    )
-    graph.add_node(
-        "extract_structured_items_node",
-        lambda state: extract_structured_items_node(state, resolved_gateway),
-    )
-    graph.add_node(
-        "deduplicate_items_node",
-        lambda state: deduplicate_items_node(state, resolved_gateway),
-    )
-    graph.add_node(
-        "score_items_node",
-        lambda state: score_items_node(state, resolved_gateway),
-    )
-    graph.add_node(
-        "decide_push_node",
-        lambda state: decide_push_node(state, resolved_gateway),
-    )
-    graph.add_node(
-        "persist_push_records_node",
-        lambda state: persist_push_records_node(
+        "planner_agent",
+        lambda state: _run_planner_stage(
             state,
-            run_repository,
-            resolved_gateway,
+            llm=resolved_llm,
         ),
     )
     graph.add_node(
-        "evaluate_run_node",
-        lambda state: evaluate_run_node(
+        "retrieval_agent",
+        lambda state: RetrievalAgent(gateway=resolved_gateway).run(state),
+    )
+    graph.add_node(
+        "extraction_agent",
+        lambda state: _run_extraction_stage(state, gateway=resolved_gateway),
+    )
+    graph.add_node(
+        "evaluation_agent",
+        lambda state: EvaluationAgent(
+            gateway=resolved_gateway,
+            settings=settings,
+        ).run(state),
+    )
+    graph.add_node(
+        "supervisor_finalize",
+        lambda state: _run_supervisor_finalize_stage(
             state,
             run_repository,
+            resolved_gateway,
             settings,
             history_index_http_client,
         ),
     )
 
-    graph.set_entry_point("load_topic_node")
-    graph.add_edge("load_topic_node", "retrieve_business_context_node")
-    graph.add_edge("retrieve_business_context_node", "expand_queries_node")
-    graph.add_edge("expand_queries_node", "plan_sources_node")
-    graph.add_edge("plan_sources_node", "retrieve_candidates_node")
-    graph.add_edge("retrieve_candidates_node", "fetch_contents_node")
-    graph.add_edge("fetch_contents_node", "extract_structured_items_node")
-    graph.add_edge("extract_structured_items_node", "deduplicate_items_node")
-    graph.add_edge("deduplicate_items_node", "score_items_node")
-    graph.add_edge("score_items_node", "decide_push_node")
-    graph.add_edge("decide_push_node", "persist_push_records_node")
-    graph.add_edge("persist_push_records_node", "evaluate_run_node")
-    graph.add_edge("evaluate_run_node", END)
+    graph.set_entry_point("supervisor_bootstrap")
+    graph.add_edge("supervisor_bootstrap", "planner_agent")
+    graph.add_edge("planner_agent", "retrieval_agent")
+    graph.add_edge("retrieval_agent", "extraction_agent")
+    graph.add_edge("extraction_agent", "evaluation_agent")
+    graph.add_edge("evaluation_agent", "supervisor_finalize")
+    graph.add_edge("supervisor_finalize", END)
 
     return graph.compile()
+
+
+def _run_planner_stage(
+    state: dict[str, Any],
+    *,
+    llm: BaseLLMClient,
+) -> dict[str, Any]:
+    retrieve_business_context_node(state)
+    state["planner_output"] = state.get("planner_output", {})
+    return PlannerAgent(llm=llm).run(state)
+
+
+def _run_extraction_stage(
+    state: dict[str, Any],
+    *,
+    gateway: ToolGateway,
+) -> dict[str, Any]:
+    agent = ExtractionAgent(gateway=gateway)
+    agent.fetch_contents(state)
+    agent.extract_evidence(state)
+    return state
+
+
+def _run_supervisor_finalize_stage(
+    state: dict[str, Any],
+    run_repository: MonitorRunRepositoryProtocol | None,
+    gateway: ToolGateway,
+    settings: Settings | None,
+    history_index_http_client: Any | None,
+) -> dict[str, Any]:
+    from app.agent.nodes import persist_push_records_node
+
+    persist_push_records_node(
+        state,
+        run_repository=run_repository,
+        gateway=gateway,
+    )
+    state = supervisor_finalize_node(
+        state,
+        run_repository=run_repository,
+        settings=settings,
+        history_index_http_client=history_index_http_client,
+    )
+    return state

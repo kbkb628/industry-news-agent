@@ -12,7 +12,7 @@ from fastapi.testclient import TestClient
 from app.api.monitor import get_monitor_graph, get_monitor_run_repository
 from app.api.topics import get_topic_repository
 from app.agent.graph import build_monitor_graph
-from app.agent.nodes import evaluate_run_node, persist_push_records_node
+from app.agent.nodes import evaluate_run_node, persist_push_records_node, supervisor_finalize_node
 from app.core.config import Settings
 from app.llm.mock_client import MockLLM
 from app.main import create_app
@@ -239,6 +239,140 @@ def test_fetch_and_extract_nodes_preserve_stage_split() -> None:
     extracted_state = extract_structured_items_node(fetched_state, gateway)
 
     assert extracted_state["extracted_items"][0]["extracted_id"] == "ext_001"
+
+
+def test_evaluation_agent_writes_evaluation_output_and_legacy_fields() -> None:
+    from app.agent.evaluation_agent import EvaluationAgent
+
+    gateway = LocalToolGateway()
+    gateway.register(
+        "deduplicate_items",
+        lambda articles: ToolResponse.success(
+            tool_name="deduplicate_items",
+            summary="Deduplicated articles.",
+            data={"articles": list(articles), "dropped_candidate_ids": []},
+        ),
+    )
+    gateway.register(
+        "score_candidate",
+        lambda topic, articles: ToolResponse.success(
+            tool_name="score_candidate",
+            summary="Scored articles.",
+            data={
+                "articles": [
+                    {
+                        **dict(article),
+                        "score": 0.91,
+                        "score_breakdown": "Above threshold.",
+                    }
+                    for article in articles
+                ]
+            },
+        ),
+    )
+    gateway.register(
+        "decide_push",
+        lambda run_id, topic, articles, push_history: ToolResponse.success(
+            tool_name="decide_push",
+            summary="Calculated push decisions.",
+            data={
+                "pushes": [
+                    {
+                        **dict(article),
+                        "run_id": run_id,
+                        "topic_id": topic["topic_id"],
+                        "should_push": True,
+                        "decision_reason": "Above threshold",
+                    }
+                    for article in articles
+                ],
+                "push_count": len(articles),
+            },
+        ),
+    )
+    state = {
+        "run_id": "run_001",
+        "topic_id": "topic_001",
+        "topic": {"topic_id": "topic_001", "name": "AI Agent"},
+        "push_history": [],
+        "extraction_output": {
+            "evidence_items": [
+                {
+                    "extracted_id": "ext_001",
+                    "candidate_id": "cand_001",
+                    "run_id": "run_001",
+                    "topic_id": "topic_001",
+                    "source_type": "search",
+                    "source_name": "Mock Search",
+                    "title": "AI Agent funding update",
+                    "url": "https://example.com/funding",
+                    "summary": "Funding summary.",
+                }
+            ]
+        },
+        "evaluation_output": {},
+        "tool_results": [],
+        "errors": [],
+        "events": [],
+    }
+
+    result = EvaluationAgent(gateway=gateway).run(state)
+
+    assert result["evaluation_output"]["final_decisions"][0]["candidate_id"] == "cand_001"
+    assert result["evaluation_output"]["eval_result"]["push_count"] == 1
+    assert result["final_decisions"] == result["evaluation_output"]["final_decisions"]
+    assert result["eval_result"] == result["evaluation_output"]["eval_result"]
+
+
+def test_supervisor_finalize_mirrors_structured_outputs_to_legacy_fields() -> None:
+    from app.agent.nodes import supervisor_finalize_node
+
+    state = {
+        "run_id": "run_001",
+        "topic_id": "topic_001",
+        "retrieval_output": {
+            "candidate_pool": [{"candidate_id": "cand_001"}],
+        },
+        "extraction_output": {
+            "fetched_contents": [{"candidate_id": "cand_001"}],
+            "evidence_items": [{"extracted_id": "ext_001", "candidate_id": "cand_001"}],
+        },
+        "evaluation_output": {
+            "deduped_items": [{"candidate_id": "cand_001"}],
+            "scored_items": [{"candidate_id": "cand_001", "score": 0.91}],
+            "final_decisions": [{"candidate_id": "cand_001", "should_push": True}],
+            "decision_reasons": ["Above threshold"],
+            "push_records": [{"push_id": "push_001"}],
+            "eval_result": {"push_count": 1},
+        },
+        "events": [],
+        "errors": [],
+        "tool_results": [],
+        "status": "running",
+    }
+
+    result = supervisor_finalize_node(state)
+
+    assert result["candidate_items"] == result["retrieval_output"]["candidate_pool"]
+    assert result["fetched_contents"] == result["extraction_output"]["fetched_contents"]
+    assert result["extracted_items"] == result["extraction_output"]["evidence_items"]
+    assert result["final_decisions"] == result["evaluation_output"]["final_decisions"]
+    assert result["eval_result"] == result["evaluation_output"]["eval_result"]
+
+
+def test_build_monitor_graph_uses_stage_level_multi_agent_nodes() -> None:
+    from app.agent.graph import build_monitor_graph
+
+    graph = build_monitor_graph(llm=MockLLM())
+
+    node_names = set(graph.get_graph().nodes.keys())
+
+    assert "supervisor_bootstrap" in node_names
+    assert "planner_agent" in node_names
+    assert "retrieval_agent" in node_names
+    assert "extraction_agent" in node_names
+    assert "evaluation_agent" in node_names
+    assert "supervisor_finalize" in node_names
 
 
 def test_monitor_graph_runs_to_completion() -> None:
@@ -920,7 +1054,7 @@ def test_monitor_graph_records_onesearch_provider_fallback_event() -> None:
     assert result["eval_result"]["provider_fallback_count"] == 1
 
 
-def test_evaluate_run_indexes_candidate_history_when_opensearch_enabled() -> None:
+def test_supervisor_finalize_indexes_candidate_history_when_opensearch_enabled() -> None:
     class FakeResponse:
         def raise_for_status(self) -> None:
             return None
@@ -1039,51 +1173,76 @@ def test_evaluate_run_indexes_candidate_history_when_opensearch_enabled() -> Non
         "run_id": "run_index_history",
         "topic_id": "topic_ai_agent",
         "topic": {"topic_id": "topic_ai_agent"},
-        "candidate_items": [
-            {
-                "candidate_id": "cand_001",
-                "run_id": "run_index_history",
-                "topic_id": "topic_ai_agent",
-                "source_type": "search",
-                "source_name": "OpenWebSearch",
-                "title": "OpenAI ships agent workflow",
-                "url": "https://example.com/agent",
-                "published_at": None,
-                "raw_summary": "Agent workflow update.",
-            }
-        ],
-        "fetched_contents": [
-            {
-                "candidate_id": "cand_001",
-                "fetch_status": "fetched",
-                "content": "Full article body.",
-            }
-        ],
-        "extracted_items": [],
-        "scored_items": [{"candidate_id": "cand_001", "score": 0.91}],
-        "final_decisions": [
-            {
-                "candidate_id": "cand_001",
-                "run_id": "run_index_history",
-                "topic_id": "topic_ai_agent",
-                "extracted_id": None,
-                "source_type": "search",
-                "source_name": "OpenWebSearch",
-                "title": "OpenAI ships agent workflow",
-                "url": "https://example.com/agent",
-                "published_at": None,
-                "summary": "Agent workflow update.",
-                "score": 0.91,
-                "should_push": True,
-                "decision_reason": "Above threshold",
-            }
-        ],
+        "retrieval_output": {
+            "candidate_pool": [
+                {
+                    "candidate_id": "cand_001",
+                    "run_id": "run_index_history",
+                    "topic_id": "topic_ai_agent",
+                    "source_type": "search",
+                    "source_name": "OpenWebSearch",
+                    "title": "OpenAI ships agent workflow",
+                    "url": "https://example.com/agent",
+                    "published_at": None,
+                    "raw_summary": "Agent workflow update.",
+                }
+            ]
+        },
+        "extraction_output": {
+            "fetched_contents": [
+                {
+                    "candidate_id": "cand_001",
+                    "fetch_status": "fetched",
+                    "content": "Full article body.",
+                }
+            ],
+            "evidence_items": [],
+        },
+        "evaluation_output": {
+            "scored_items": [{"candidate_id": "cand_001", "score": 0.91}],
+            "final_decisions": [
+                {
+                    "candidate_id": "cand_001",
+                    "run_id": "run_index_history",
+                    "topic_id": "topic_ai_agent",
+                    "extracted_id": None,
+                    "source_type": "search",
+                    "source_name": "OpenWebSearch",
+                    "title": "OpenAI ships agent workflow",
+                    "url": "https://example.com/agent",
+                    "published_at": None,
+                    "summary": "Agent workflow update.",
+                    "score": 0.91,
+                    "should_push": True,
+                    "decision_reason": "Above threshold",
+                }
+            ],
+            "eval_result": {
+                "retrieved_count": 1,
+                "deduped_count": 0,
+                "dedup_rate": 1.0,
+                "push_count": 1,
+                "duplicate_push_count": 0,
+                "tool_success_rate": 1.0,
+                "fetch_success_rate": 1.0,
+                "trace_completeness": 1.0,
+                "raw_summary_count": 0,
+                "browser_fallback_count": 0,
+                "provider_fallback_count": 0,
+                "judge_mode": "mock_rule_judge",
+                "judge_score": 1.0,
+                "judge_reason": "Mock judge found no rule-based quality issues.",
+                "judge_issues": [],
+                "suggestions": [],
+            },
+        },
         "events": [],
         "errors": [],
         "tool_results": [],
+        "status": "running",
     }
 
-    result = evaluate_run_node(
+    result = supervisor_finalize_node(
         state,
         run_repository=repository,
         settings=settings,
@@ -1106,7 +1265,7 @@ def test_evaluate_run_indexes_candidate_history_when_opensearch_enabled() -> Non
     assert index_event["payload"]["indexed_count"] == 1
 
 
-def test_evaluate_run_records_history_index_failure_without_failing_run() -> None:
+def test_supervisor_finalize_records_history_index_failure_without_failing_run() -> None:
     class FailingIndexClient:
         def put(self, url: str, **kwargs: object) -> object:
             raise RuntimeError("opensearch unavailable")
@@ -1210,51 +1369,76 @@ def test_evaluate_run_records_history_index_failure_without_failing_run() -> Non
         "run_id": "run_index_failure",
         "topic_id": "topic_ai_agent",
         "topic": {"topic_id": "topic_ai_agent"},
-        "candidate_items": [
-            {
-                "candidate_id": "cand_001",
-                "run_id": "run_index_failure",
-                "topic_id": "topic_ai_agent",
-                "source_type": "search",
-                "source_name": "OpenWebSearch",
-                "title": "OpenAI ships agent workflow",
-                "url": "https://example.com/agent",
-                "published_at": None,
-                "raw_summary": "Agent workflow update.",
-            }
-        ],
-        "fetched_contents": [
-            {
-                "candidate_id": "cand_001",
-                "fetch_status": "fetched",
-                "content": "Full article body.",
-            }
-        ],
-        "extracted_items": [],
-        "scored_items": [{"candidate_id": "cand_001", "score": 0.91}],
-        "final_decisions": [
-            {
-                "candidate_id": "cand_001",
-                "run_id": "run_index_failure",
-                "topic_id": "topic_ai_agent",
-                "extracted_id": None,
-                "source_type": "search",
-                "source_name": "OpenWebSearch",
-                "title": "OpenAI ships agent workflow",
-                "url": "https://example.com/agent",
-                "published_at": None,
-                "summary": "Agent workflow update.",
-                "score": 0.91,
-                "should_push": True,
-                "decision_reason": "Above threshold",
-            }
-        ],
+        "retrieval_output": {
+            "candidate_pool": [
+                {
+                    "candidate_id": "cand_001",
+                    "run_id": "run_index_failure",
+                    "topic_id": "topic_ai_agent",
+                    "source_type": "search",
+                    "source_name": "OpenWebSearch",
+                    "title": "OpenAI ships agent workflow",
+                    "url": "https://example.com/agent",
+                    "published_at": None,
+                    "raw_summary": "Agent workflow update.",
+                }
+            ]
+        },
+        "extraction_output": {
+            "fetched_contents": [
+                {
+                    "candidate_id": "cand_001",
+                    "fetch_status": "fetched",
+                    "content": "Full article body.",
+                }
+            ],
+            "evidence_items": [],
+        },
+        "evaluation_output": {
+            "scored_items": [{"candidate_id": "cand_001", "score": 0.91}],
+            "final_decisions": [
+                {
+                    "candidate_id": "cand_001",
+                    "run_id": "run_index_failure",
+                    "topic_id": "topic_ai_agent",
+                    "extracted_id": None,
+                    "source_type": "search",
+                    "source_name": "OpenWebSearch",
+                    "title": "OpenAI ships agent workflow",
+                    "url": "https://example.com/agent",
+                    "published_at": None,
+                    "summary": "Agent workflow update.",
+                    "score": 0.91,
+                    "should_push": True,
+                    "decision_reason": "Above threshold",
+                }
+            ],
+            "eval_result": {
+                "retrieved_count": 1,
+                "deduped_count": 0,
+                "dedup_rate": 1.0,
+                "push_count": 1,
+                "duplicate_push_count": 0,
+                "tool_success_rate": 1.0,
+                "fetch_success_rate": 1.0,
+                "trace_completeness": 1.0,
+                "raw_summary_count": 0,
+                "browser_fallback_count": 0,
+                "provider_fallback_count": 0,
+                "judge_mode": "mock_rule_judge",
+                "judge_score": 1.0,
+                "judge_reason": "Mock judge found no rule-based quality issues.",
+                "judge_issues": [],
+                "suggestions": [],
+            },
+        },
         "events": [],
         "errors": [],
         "tool_results": [],
+        "status": "running",
     }
 
-    result = evaluate_run_node(
+    result = supervisor_finalize_node(
         state,
         run_repository=repository,
         settings=settings,
@@ -1269,6 +1453,60 @@ def test_evaluate_run_records_history_index_failure_without_failing_run() -> Non
     )
     assert failed_event["event_type"] == "node_failed"
     assert "opensearch unavailable" in failed_event["payload"]["error_message"]
+
+
+def test_evaluate_run_node_only_closes_status_and_eval_result_without_persisting() -> None:
+    class RecordingRepository:
+        def __init__(self) -> None:
+            self.candidate_records: list[dict[str, object]] = []
+
+        def upsert_extracted_item_records(self, payloads: tuple[object, ...]) -> list[dict[str, object]]:
+            self.candidate_records.append({"unexpected": "extracted"})
+            return []
+
+        def upsert_decision_records(self, payloads: tuple[object, ...]) -> list[dict[str, object]]:
+            self.candidate_records.append({"unexpected": "decision"})
+            return []
+
+        def upsert_candidate_records(self, payloads: tuple[object, ...]) -> list[dict[str, object]]:
+            self.candidate_records.append({"unexpected": "candidate"})
+            return []
+
+        def create_run_events(self, payloads: tuple[object, ...]) -> list[dict[str, object]]:
+            self.candidate_records.append({"unexpected": "events"})
+            return []
+
+        def create_eval_result(self, payload: object) -> dict[str, object]:
+            self.candidate_records.append({"unexpected": "eval"})
+            return {"push_count": payload.push_count}
+
+        def upsert_monitor_run(self, payload: object) -> object:
+            self.candidate_records.append({"unexpected": "run"})
+            return payload
+
+    state = {
+        "run_id": "run_eval_only",
+        "topic_id": "topic_ai_agent",
+        "candidate_items": [{"candidate_id": "cand_001"}],
+        "fetched_contents": [{"candidate_id": "cand_001", "fetch_status": "fetched"}],
+        "extracted_items": [{"candidate_id": "cand_001", "extraction_mode": "structured"}],
+        "deduped_items": [{"candidate_id": "cand_001"}],
+        "scored_items": [{"candidate_id": "cand_001", "score": 0.91}],
+        "final_decisions": [{"candidate_id": "cand_001", "decision_reason": "Above threshold"}],
+        "push_records": [{"push_id": "push_001"}],
+        "evaluation_output": {},
+        "events": [],
+        "errors": [],
+        "tool_results": [],
+        "status": "running",
+    }
+    repository = RecordingRepository()
+
+    result = evaluate_run_node(state, run_repository=repository, settings=None)
+
+    assert result["status"] == "completed"
+    assert result["evaluation_output"]["eval_result"]["push_count"] == 1
+    assert repository.candidate_records == []
 
 
 class InMemoryTopicRepository:
