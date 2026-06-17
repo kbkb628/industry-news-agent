@@ -176,6 +176,8 @@ def test_topics_html_page_renders() -> None:
     assert response.status_code == 200
     assert "行业资讯结构化推送智能体" in response.text
     assert "监控主题" in response.text
+    assert 'href="/quality"' in response.text
+    assert "质量汇总" in response.text
 
 
 def test_admin_html_pages_render() -> None:

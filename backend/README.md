@@ -217,10 +217,12 @@ configuration.
 - `GET /api/topics/{topic_id}/pushes`
 - `GET /api/monitor/runs/{run_id}/events`
 - `POST /api/eval/run`
+- `GET /api/eval/summary`
 
 ## Minimal HTML Pages
 
 - `GET /`
 - `GET /pushes`
+- `GET /quality`
 - `GET /runs/{run_id}`
 - `GET /runs/{run_id}/events`
