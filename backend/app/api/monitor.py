@@ -181,6 +181,12 @@ def run_monitor(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Topic not found",
         )
+    active_run = monitor_repository.get_active_run_for_topic(topic_id)
+    if active_run is not None:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Monitor run already active for topic",
+        )
 
     run_id = f"run_{uuid.uuid4().hex[:12]}"
     initial_state = _build_initial_state(topic, run_id)

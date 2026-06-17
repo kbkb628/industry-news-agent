@@ -125,6 +125,14 @@ class MonitorWorkerService:
                 "trigger": message.trigger,
                 "status": "missing_topic",
             }
+        active_run = self.run_repository.get_active_run_for_topic(topic.topic_id)
+        if active_run is not None:
+            return {
+                "run_id": active_run.run_id,
+                "topic_id": topic.topic_id,
+                "trigger": message.trigger,
+                "status": "skipped_active_run",
+            }
 
         run_id = f"run_{uuid.uuid4().hex[:12]}"
         initial_state = _build_initial_state(topic, run_id)

@@ -226,6 +226,20 @@ class InMemoryMonitorRunRepository:
     def get_monitor_run(self, run_id: str) -> MonitorRunRecord | None:
         return self.monitor_runs.get(run_id)
 
+    def get_active_run_for_topic(self, topic_id: str) -> MonitorRunRecord | None:
+        active_runs = [
+            run
+            for run in self.monitor_runs.values()
+            if run.topic_id == topic_id and run.status == "running"
+        ]
+        if not active_runs:
+            return None
+        return sorted(
+            active_runs,
+            key=lambda run: (run.created_at, run.run_id),
+            reverse=True,
+        )[0]
+
     def list_push_history(self, topic_id: str) -> list[dict[str, object]]:
         return [
             push
@@ -434,6 +448,34 @@ def test_run_monitor_endpoint_returns_before_background_flow_finishes() -> None:
         )
 
 
+def test_run_monitor_rejects_duplicate_active_run_for_same_topic() -> None:
+    topic_repository = InMemoryTopicRepository()
+    run_repository = InMemoryMonitorRunRepository()
+    active_run = MonitorRunRecord(
+        run_id="run_active_001",
+        topic_id="topic_ai_agent",
+        status="running",
+        state_snapshot={
+            "run_id": "run_active_001",
+            "topic_id": "topic_ai_agent",
+            "trigger": "manual",
+            "status": "running",
+        },
+        error_summary=None,
+        started_at=datetime(2026, 6, 9, 12, 0, tzinfo=UTC),
+        finished_at=None,
+        created_at=datetime(2026, 6, 9, 12, 0, tzinfo=UTC),
+    )
+    run_repository.monitor_runs[active_run.run_id] = active_run
+
+    with _build_monitor_client(topic_repository, run_repository) as client:
+        topic = _create_monitor_topic(client)
+        response = client.post(f"/api/monitor/{topic['topic_id']}/run")
+
+    assert response.status_code == 409
+    assert response.json()["detail"] == "Monitor run already active for topic"
+
+
 def test_run_detail_returns_completed_state() -> None:
     topic_repository = InMemoryTopicRepository()
     run_repository = InMemoryMonitorRunRepository()
@@ -579,6 +621,61 @@ def test_worker_consumes_enqueued_topic_run_and_persists_monitor_run() -> None:
     assert run_record is not None
     assert run_record.status == "completed"
     assert run_record.state_snapshot["trigger"] == "scheduler"
+
+
+def test_worker_skips_duplicate_active_run_for_same_topic() -> None:
+    topic_repository = InMemoryTopicRepository()
+    run_repository = InMemoryMonitorRunRepository()
+    topic = topic_repository.create_topic(
+        TopicCreateData(
+            name="AI Agent",
+            description="Track enterprise AI agent launches and deployment updates.",
+            seed_keywords=("OpenAI", "enterprise", "automation"),
+            trusted_sources=("AI Daily RSS", "AI Search"),
+            exclude_keywords=("rumor",),
+            push_threshold=0.72,
+            cooldown_hours=24,
+            enabled=True,
+            schedule_cron="0 */6 * * *",
+        )
+    )
+    active_run = MonitorRunRecord(
+        run_id="run_active_001",
+        topic_id=topic.topic_id,
+        status="running",
+        state_snapshot={
+            "run_id": "run_active_001",
+            "topic_id": topic.topic_id,
+            "trigger": "scheduler",
+            "status": "running",
+        },
+        error_summary=None,
+        started_at=datetime(2026, 6, 9, 12, 0, tzinfo=UTC),
+        finished_at=None,
+        created_at=datetime(2026, 6, 9, 12, 0, tzinfo=UTC),
+    )
+    run_repository.monitor_runs[active_run.run_id] = active_run
+    queue = InMemoryRunQueue()
+    worker = MonitorWorkerService(
+        topic_repository=topic_repository,
+        run_repository=run_repository,
+        llm=MockLLM(),
+        queue=queue,
+    )
+
+    queue.enqueue(
+        RunQueueMessage(
+            topic_id=topic.topic_id,
+            trigger="scheduler",
+        )
+    )
+
+    result = worker.process_next()
+
+    assert result is not None
+    assert result["topic_id"] == topic.topic_id
+    assert result["status"] == "skipped_active_run"
+    assert len(run_repository.monitor_runs) == 1
 
 
 def test_scheduler_job_enqueues_and_worker_processes_topic_run() -> None:

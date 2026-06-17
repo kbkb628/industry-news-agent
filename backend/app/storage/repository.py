@@ -117,6 +117,8 @@ class MonitorRunRepositoryProtocol(Protocol):
 
     def get_monitor_run(self, run_id: str) -> MonitorRunRecord | None: ...
 
+    def get_active_run_for_topic(self, topic_id: str) -> MonitorRunRecord | None: ...
+
     def list_push_history(self, topic_id: str) -> list[dict[str, Any]]: ...
 
     def list_push_records(
@@ -251,6 +253,11 @@ class UnimplementedMonitorRunRepository:
             "Monitor run queries are deferred until a database session is provided."
         )
 
+    def get_active_run_for_topic(self, topic_id: str) -> MonitorRunRecord | None:
+        raise NotImplementedError(
+            "Active run queries are deferred until a database session is provided."
+        )
+
     def list_push_history(self, topic_id: str) -> list[dict[str, Any]]:
         raise NotImplementedError(
             "Push history persistence is deferred until a database session is provided."
@@ -341,6 +348,17 @@ class SqlAlchemyMonitorRunRepository:
 
     def get_monitor_run(self, run_id: str) -> MonitorRunRecord | None:
         monitor_run = self.session.get(MonitorRun, run_id)
+        if monitor_run is None:
+            return None
+        return _to_monitor_run_record(monitor_run)
+
+    def get_active_run_for_topic(self, topic_id: str) -> MonitorRunRecord | None:
+        monitor_run = self.session.scalars(
+            select(MonitorRun)
+            .where(MonitorRun.topic_id == topic_id)
+            .where(MonitorRun.status == "running")
+            .order_by(MonitorRun.created_at.desc(), MonitorRun.run_id.desc())
+        ).first()
         if monitor_run is None:
             return None
         return _to_monitor_run_record(monitor_run)
