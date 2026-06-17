@@ -139,6 +139,23 @@ def test_event_schema_accepts_notification_events() -> None:
     assert response.events[0].node == "notification_send"
 
 
+def test_event_schema_accepts_history_index_node() -> None:
+    event = EventRecord(
+        event_id="event_index_history_001",
+        run_id="run_001",
+        topic_id="topic_001",
+        event_type="node_completed",
+        node="index_history",
+        message="Indexed pushed candidates into the history index.",
+        payload={"provider": "opensearch", "indexed_count": 1},
+    )
+
+    response = EventListResponse(run_id="run_001", events=[event])
+
+    assert response.events[0].event_type == "node_completed"
+    assert response.events[0].node == "index_history"
+
+
 def test_tool_execution_result_carries_error_contract() -> None:
     result = ToolExecutionResult(
         success=False,

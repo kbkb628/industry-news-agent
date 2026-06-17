@@ -29,6 +29,7 @@ class MonitorNodeName(StrEnum):
     DECIDE_PUSH = "decide_push"
     PERSIST_PUSH_RECORDS = "persist_push_records"
     NOTIFICATION_SEND = "notification_send"
+    INDEX_HISTORY = "index_history"
     EVALUATE_RUN = "evaluate_run"
 
 
