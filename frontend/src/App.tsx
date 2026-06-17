@@ -91,7 +91,7 @@ export default function App() {
     <main className="shell">
       <section className="hero">
         <div>
-          <p className="eyebrow">Phase 2 Operations Console</p>
+          <p className="eyebrow">Operations Console</p>
           <h1>Industry News Agent Dashboard</h1>
           <p className="hero-copy">
             Monitor topics, push decisions, trace events, and quality signals

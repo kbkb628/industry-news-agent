@@ -1,1 +1,1 @@
-"""Search index adapters for optional Phase 2 integrations."""
+"""Search index adapters for optional runtime integrations."""

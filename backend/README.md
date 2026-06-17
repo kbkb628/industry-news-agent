@@ -1,10 +1,10 @@
-# Industry News Agent MVP
+# Industry News Agent
 
 ## Scope
 
-This backend implements the `DEVELOPMENT_GUIDE.md` MVP closed loop and the
-current Phase 2 scheduler, worker, governance, and real search-provider
-extension slices.
+This backend implements the core industry-news monitoring project described in
+`DEVELOPMENT_GUIDE.md`, centered on a working end-to-end monitor loop plus a set
+of already completed optional integrations that remain truthful in scope.
 
 Included in the current codebase:
 
@@ -40,7 +40,6 @@ Not claimed by the current implementation:
 - vector database retrieval
 - embedding indexing with external model embeddings
 - production semantic clustering service
-- Slack-specific, email, or enterprise WeChat notification delivery
 - production notification retry or delivery-queue hardening
 - production deployment hardening
 - production frontend deployment, authentication, or authorization
@@ -58,7 +57,7 @@ Required environment variables:
 - `DATABASE_URL`
 - `REDIS_URL`
 
-Optional Phase 2 MCP gateway variables:
+Optional MCP gateway variables:
 
 - `MCP_GATEWAY_PROVIDER=local` keeps the default in-process `LocalToolGateway`.
 - `MCP_GATEWAY_PROVIDER=onesearch` enables an optional OneSearch-compatible
@@ -74,7 +73,7 @@ degrades visibly to deterministic local `mock_search` behavior and records the
 fallback in tool metadata, run events, and eval metrics. This is an integration
 boundary, not a claim of verified live MCP service deployment.
 
-Optional Phase 2 search-provider variables:
+Optional search-provider variables:
 
 - `SEARCH_PROVIDER=mock` keeps the deterministic local `mock_search` path.
 - `SEARCH_PROVIDER=open_websearch` enables the `search_news` tool when
@@ -82,7 +81,7 @@ Optional Phase 2 search-provider variables:
 - `OPEN_WEBSEARCH_BASE_URL` points at an OpenWebSearch-compatible HTTP service.
 - `OPEN_WEBSEARCH_TIMEOUT_SECONDS` defaults to `10.0`.
 
-Optional Phase 2 eval judge variables:
+Optional eval judge variables:
 
 - `JUDGE_PROVIDER=mock` keeps the deterministic local `MockEvalJudge` path.
 - `JUDGE_PROVIDER=openai_compatible` enables live judge calls when
@@ -92,7 +91,7 @@ Optional Phase 2 eval judge variables:
 - `JUDGE_MODEL` defaults to `gpt-4o-mini`.
 - `JUDGE_TIMEOUT_SECONDS` defaults to `10.0`.
 
-Optional Phase 2 browser fallback variables:
+Optional browser fallback variables:
 
 - `BROWSER_FETCH_PROVIDER=none` keeps browser fallback disabled.
 - `BROWSER_FETCH_PROVIDER=playwright_mcp` enables the optional
@@ -111,7 +110,7 @@ first, plain HTTP second, browser provider only after HTTP failure. Failed brows
 fallbacks remain visible as failed candidate fetches instead of being presented
 as complete article content.
 
-Optional Phase 2 history-index variables:
+Optional history-index variables:
 
 - `HISTORY_INDEX_PROVIDER=none` keeps the external history index disabled.
 - `HISTORY_INDEX_PROVIDER=opensearch` enables the optional OpenSearch-compatible
@@ -127,7 +126,7 @@ Index failures are recorded as run events/errors and do not masquerade as
 successful indexing. This does not implement a vector database or external
 embedding pipeline.
 
-Optional Phase 2 semantic-dedup variables:
+Optional semantic-dedup variables:
 
 - `SEMANTIC_DEDUP_PROVIDER=none` keeps the default exact dedup behavior.
 - `SEMANTIC_DEDUP_PROVIDER=local` enables deterministic local token-vector
@@ -140,7 +139,7 @@ records later near-duplicates in `semantic_dropped_candidate_ids` and
 `semantic_drop_reasons`. This is not an external embedding service, vector
 database, or production semantic clustering implementation.
 
-Optional Phase 2 notification variables:
+Optional notification variables:
 
 - `NOTIFICATION_PROVIDER=none` keeps notification delivery disabled. Push records
   are still persisted and the run records an explicit notification skipped event.
@@ -150,8 +149,7 @@ Optional Phase 2 notification variables:
 - `NOTIFICATION_TIMEOUT_SECONDS` defaults to `10.0`.
 
 Webhook notification failures are recorded in run errors/events and do not roll
-back persisted push records. The current implementation does not provide
-Slack-specific formatting, email delivery, enterprise WeChat delivery, or a
+back persisted push records. The current implementation does not provide a
 production notification retry queue.
 
 Example `.env`:
