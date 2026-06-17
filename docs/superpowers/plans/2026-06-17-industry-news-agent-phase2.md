@@ -79,14 +79,18 @@ Evidence:
 - `293bb92 feat: add playwright mcp browser fallback`
 - `c4b23d2 feat: add opensearch history index adapter`
 - `5c687d6 feat: add webhook notification channel`
+- `761f902 feat: add onesearch gateway boundary`
 - `backend/app/tools/registry.py`
 - `backend/app/tools/browser_fetch_tool.py`
+- `backend/app/mcp/onesearch_gateway.py`
 - `backend/app/search/history_index.py`
 - `backend/app/tools/notification_tool.py`
 - `backend/README.md`
 
 Implemented scope:
 
+- Optional OneSearch-compatible MCP gateway boundary for `search_news`, with
+  explicit configuration and deterministic local fallback.
 - Optional OpenWebSearch-compatible provider path with mock fallback.
 - Optional Playwright MCP-compatible browser fetch provider behind the existing
   HTTP fallback path.
@@ -97,6 +101,8 @@ Implemented scope:
 
 Still not claimed:
 
+- verified live OneSearch MCP deployment
+- raw MCP protocol session management
 - verified Microsoft Playwright MCP live-service deployment
 - general autonomous browsing or production browser fleet
 - production Elasticsearch/OpenSearch cluster hardening
@@ -246,23 +252,23 @@ Still not claimed:
 
 ## Remaining Phase 2 Work
 
-### Real OneSearch MCP Gateway Boundary
+### Raw MCP Session Management
 
-Status: not implemented as a true MCP client.
+Status: not implemented and not currently claimed.
 
-Target:
+Current boundary:
 
-- Keep `LocalToolGateway` as deterministic default.
-- Add a real MCP gateway/client boundary only behind explicit configuration.
-- Surface MCP unavailability as events/errors and fall back according to
-  `DEVELOPMENT_GUIDE.md`.
-- Do not let Agent nodes depend directly on a concrete MCP server.
+- `OneSearchMCPGateway` is implemented as an optional OneSearch-compatible HTTP
+  wrapper adapter behind explicit configuration.
+- `LocalToolGateway` remains the deterministic default.
+- MCP/provider unavailability is surfaced through tool metadata, run events,
+  and eval fallback metrics.
 
-Next required step:
+Still not implemented:
 
-- Decide whether this should be a real MCP protocol client, an HTTP wrapper
-  adapter, or a documented integration boundary. The choice must be explicit
-  before implementation.
+- raw MCP protocol session management
+- generalized MCP client lifecycle management
+- verified live third-party MCP service availability claims
 
 ### Provider-Specific Notifications
 
@@ -290,25 +296,25 @@ Not claimed:
 
 The next high-value implementation slice is:
 
-`Real OneSearch MCP gateway boundary -> explicit configuration -> fallback visibility -> README truthfulness`
+`Provider-specific notification -> explicit secrets/config -> failure visibility -> README truthfulness`
 
 Reason:
 
-- It directly addresses `DEVELOPMENT_GUIDE.md` Phase 2's requirement to retain
-  a real MCP integration boundary beyond `LocalToolGateway`.
-- The current code already centralizes tool dispatch behind `ToolGateway`, so
-  the next gain is to add a truthful non-default MCP-backed path instead of
-  widening dashboard scope.
-- It improves architectural credibility without forcing Agent nodes to depend
-  on a concrete third-party service.
+- The generic webhook path is already implemented, so the next truthful gain is
+  to add one concrete provider instead of broadening unverified claims.
+- `DEVELOPMENT_GUIDE.md` explicitly lists Slack, enterprise WeChat, and email
+  as target notification channels beyond webhook.
+- This slice is narrower than raw MCP session management and can reuse the
+  existing persisted push-record and notification event boundary.
 
 Required constraints:
 
-- Keep `LocalToolGateway` as deterministic default behavior.
-- Surface MCP unavailability through tool responses, run errors, and events.
-- Do not claim verified live OneSearch MCP service availability.
-- Do not let Agent nodes or planner logic depend directly on a concrete MCP
-  server implementation.
+- Add one provider at a time.
+- Keep webhook and disabled notification paths working unchanged.
+- Surface provider-specific delivery failures through tool responses, run
+  errors, and notification events.
+- Do not claim retry queues, production delivery guarantees, or providers that
+  are not implemented.
 - Verify backend tests before committing.
 
 ## Verification Baseline
