@@ -21,6 +21,7 @@ Included in the current codebase:
 - optional OpenWebSearch provider path with mock search fallback
 - explicit browser fetch fallback metadata and events
 - deterministic MockEvalJudge adapter for the LLM-as-Judge evaluation contract
+- local Docker Compose stack for backend, PostgreSQL, and Redis
 
 Not claimed by the current implementation:
 
@@ -74,6 +75,22 @@ py -3.12 -m pip install -e ".[dev]"
 cd backend
 py -3.12 -m uvicorn app.main:app --reload
 ```
+
+## Run With Docker Compose
+
+The root `docker-compose.yml` is a local demonstration stack, not a production
+deployment profile. It starts the backend, PostgreSQL, and Redis with mock
+search enabled:
+
+```bash
+docker compose up --build
+```
+
+Then open:
+
+- `http://localhost:8000/health`
+- `http://localhost:8000/`
+- `http://localhost:8000/docs`
 
 ## Test
 
