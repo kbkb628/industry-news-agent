@@ -32,6 +32,7 @@ def score_run(state: dict[str, Any]) -> dict[str, Any]:
     }
     tool_results = list(state.get("tool_results", []))
     fetched_contents = list(state.get("fetched_contents", []))
+    extracted_items = list(state.get("extracted_items", []))
     duplicate_push_count = sum(
         1
         for decision in state.get("final_decisions", [])
@@ -51,6 +52,24 @@ def score_run(state: dict[str, Any]) -> dict[str, Any]:
         )
         fetch_success_rate = round(fetched_ok / len(fetched_contents), 2)
 
+    raw_summary_count = sum(
+        1 for item in extracted_items if item.get("extraction_mode") == "raw_summary"
+    )
+    browser_fallback_count = sum(
+        1
+        for item in fetched_contents
+        if item.get("fetch_method") == "browser_fallback"
+    ) + sum(
+        1
+        for item in tool_results
+        if item.get("metadata", {}).get("used_browser_fallback") is True
+    )
+    provider_fallback_count = sum(
+        1
+        for item in tool_results
+        if item.get("metadata", {}).get("used_fallback") is True
+    )
+
     trace_completeness = round(
         len(REQUIRED_TRACE_NODES & observed_nodes) / len(REQUIRED_TRACE_NODES),
         2,
@@ -68,6 +87,9 @@ def score_run(state: dict[str, Any]) -> dict[str, Any]:
         "tool_success_rate": tool_success_rate,
         "fetch_success_rate": fetch_success_rate,
         "trace_completeness": trace_completeness,
+        "raw_summary_count": raw_summary_count,
+        "browser_fallback_count": browser_fallback_count,
+        "provider_fallback_count": provider_fallback_count,
         "suggestions": build_eval_suggestions(
             push_count=push_count,
             fetch_success_rate=fetch_success_rate,

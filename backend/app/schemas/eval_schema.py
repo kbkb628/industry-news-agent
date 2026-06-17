@@ -19,5 +19,8 @@ class EvalResultResponse(BaseModel):
     tool_success_rate: float = Field(ge=0.0, le=1.0)
     fetch_success_rate: float = Field(default=0.0, ge=0.0, le=1.0)
     trace_completeness: float = Field(default=0.0, ge=0.0, le=1.0)
+    raw_summary_count: int = Field(default=0, ge=0)
+    browser_fallback_count: int = Field(default=0, ge=0)
+    provider_fallback_count: int = Field(default=0, ge=0)
     suggestions: list[str] = Field(default_factory=list)
     created_at: datetime | None = None

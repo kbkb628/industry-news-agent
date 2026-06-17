@@ -22,6 +22,7 @@ from app.rag.local_vector_retriever import LocalVectorRetriever
 from app.tools.responses import ToolResponse
 
 from app.core.config import Settings, get_settings
+from app.eval.rule_scorer import score_run
 from app.scheduler.worker import (
     InMemoryRunQueue,
     RunQueueMessage,
@@ -35,10 +36,17 @@ from app.storage.database import (
     get_session_factory,
     reset_engine_registry,
 )
-from app.storage.models import CandidateRecord, DecisionRecord, ExtractedItemRecord, Topic
+from app.storage.models import (
+    CandidateRecord,
+    DecisionRecord,
+    EvalResult,
+    ExtractedItemRecord,
+    Topic,
+)
 from app.storage.repository import (
     CandidateRecordUpsertData,
     DecisionRecordUpsertData,
+    EvalResultCreateData,
     ExtractedItemRecordUpsertData,
     SqlAlchemyMonitorRunRepository,
 )
@@ -195,6 +203,30 @@ def test_decision_record_model_declares_phase2_memory_columns() -> None:
     }
 
     assert required_columns.issubset(DecisionRecord.__table__.columns.keys())
+
+
+def test_eval_result_model_declares_phase2_memory_columns() -> None:
+    assert EvalResult.__tablename__ == "eval_results"
+    required_columns = {
+        "eval_id",
+        "run_id",
+        "topic_id",
+        "retrieved_count",
+        "deduped_count",
+        "dedup_rate",
+        "push_count",
+        "duplicate_push_count",
+        "tool_success_rate",
+        "fetch_success_rate",
+        "trace_completeness",
+        "raw_summary_count",
+        "browser_fallback_count",
+        "provider_fallback_count",
+        "suggestions",
+        "created_at",
+    }
+
+    assert required_columns.issubset(EvalResult.__table__.columns.keys())
 
 
 def test_sqlalchemy_repository_upserts_and_lists_candidate_records() -> None:
@@ -390,6 +422,87 @@ def test_sqlalchemy_repository_upserts_and_lists_decision_records() -> None:
     assert [decision["decision_id"] for decision in listed] == ["dec_001"]
     assert listed[0]["should_push"] is True
     assert listed[0]["decision_payload"]["should_push"] is True
+
+
+def test_sqlalchemy_repository_persists_richer_eval_metrics() -> None:
+    settings = Settings(
+        database_url="sqlite+pysqlite:///:memory:",
+        redis_url="redis://localhost:6379/0",
+    )
+    engine = build_engine(settings)
+    Base.metadata.create_all(engine)
+    session_factory = build_session_factory(engine)
+
+    with session_factory() as session:
+        repository = SqlAlchemyMonitorRunRepository(session=session)
+        persisted = repository.create_eval_result(
+            EvalResultCreateData(
+                run_id="run_001",
+                topic_id="topic_ai_agent",
+                retrieved_count=9,
+                deduped_count=6,
+                dedup_rate=0.33,
+                push_count=2,
+                duplicate_push_count=1,
+                tool_success_rate=0.8,
+                fetch_success_rate=0.67,
+                trace_completeness=0.92,
+                raw_summary_count=4,
+                browser_fallback_count=2,
+                provider_fallback_count=1,
+                suggestions=("one", "two"),
+            )
+        )
+        loaded = repository.get_eval_result("run_001")
+
+    assert persisted["raw_summary_count"] == 4
+    assert persisted["browser_fallback_count"] == 2
+    assert persisted["provider_fallback_count"] == 1
+    assert loaded is not None
+    assert loaded["raw_summary_count"] == 4
+    assert loaded["browser_fallback_count"] == 2
+    assert loaded["provider_fallback_count"] == 1
+
+
+def test_score_run_reports_phase2_quality_fallback_metrics() -> None:
+    result = score_run(
+        {
+            "candidate_items": [{}, {}, {}],
+            "deduped_items": [{}, {}],
+            "push_records": [{}],
+            "final_decisions": [
+                {"decision_reason": "canonical_url already exists in push_history"},
+                {"decision_reason": "score 0.91 meets threshold"},
+            ],
+            "fetched_contents": [
+                {"fetch_status": "fetched", "fetch_method": "http"},
+                {"fetch_status": "fetched", "fetch_method": "browser_fallback"},
+                {"fetch_status": "failed"},
+            ],
+            "extracted_items": [
+                {"extraction_mode": "raw_summary"},
+                {"extraction_mode": "full_content"},
+            ],
+            "tool_results": [
+                {
+                    "success": True,
+                    "metadata": {
+                        "used_fallback": True,
+                        "fallback_provider": "mock_search",
+                    },
+                },
+                {
+                    "success": True,
+                    "metadata": {"used_browser_fallback": True},
+                },
+            ],
+            "events": [{"node": node} for node in score_run.__globals__["REQUIRED_TRACE_NODES"]],
+        }
+    )
+
+    assert result["raw_summary_count"] == 1
+    assert result["browser_fallback_count"] == 2
+    assert result["provider_fallback_count"] == 1
 
 
 def test_build_session_factory_binds_to_provided_engine() -> None:

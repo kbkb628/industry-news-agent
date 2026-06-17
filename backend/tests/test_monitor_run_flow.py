@@ -209,6 +209,9 @@ def test_monitor_graph_runs_to_completion() -> None:
                 "tool_success_rate": payload.tool_success_rate,
                 "fetch_success_rate": payload.fetch_success_rate,
                 "trace_completeness": payload.trace_completeness,
+                "raw_summary_count": payload.raw_summary_count,
+                "browser_fallback_count": payload.browser_fallback_count,
+                "provider_fallback_count": payload.provider_fallback_count,
                 "suggestions": list(payload.suggestions),
                 "created_at": datetime(2026, 6, 9, tzinfo=UTC),
             }
@@ -371,6 +374,9 @@ def test_monitor_graph_records_provider_and_browser_fallback_events() -> None:
                 "tool_success_rate": payload.tool_success_rate,
                 "fetch_success_rate": payload.fetch_success_rate,
                 "trace_completeness": payload.trace_completeness,
+                "raw_summary_count": payload.raw_summary_count,
+                "browser_fallback_count": payload.browser_fallback_count,
+                "provider_fallback_count": payload.provider_fallback_count,
                 "suggestions": list(payload.suggestions),
                 "created_at": datetime(2026, 6, 9, tzinfo=UTC),
             }
@@ -776,6 +782,9 @@ class InMemoryMonitorRunRepository:
             "tool_success_rate": payload.tool_success_rate,
             "fetch_success_rate": payload.fetch_success_rate,
             "trace_completeness": payload.trace_completeness,
+            "raw_summary_count": payload.raw_summary_count,
+            "browser_fallback_count": payload.browser_fallback_count,
+            "provider_fallback_count": payload.provider_fallback_count,
             "suggestions": list(payload.suggestions),
             "created_at": self._created_at,
         }

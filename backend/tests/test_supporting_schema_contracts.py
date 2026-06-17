@@ -144,9 +144,13 @@ def test_eval_result_response_keeps_minimum_metrics_contract() -> None:
         deduped_count=9,
         push_count=2,
         tool_success_rate=0.75,
+        raw_summary_count=4,
+        browser_fallback_count=1,
+        provider_fallback_count=2,
         created_at=timestamp,
     )
 
     assert result.retrieved_count == 12
     assert result.push_count == 2
+    assert result.raw_summary_count == 4
     assert result.created_at == timestamp

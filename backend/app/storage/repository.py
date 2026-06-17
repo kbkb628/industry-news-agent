@@ -177,6 +177,9 @@ class EvalResultCreateData:
     tool_success_rate: float
     fetch_success_rate: float
     trace_completeness: float
+    raw_summary_count: int
+    browser_fallback_count: int
+    provider_fallback_count: int
     suggestions: tuple[str, ...]
 
 
@@ -843,6 +846,9 @@ class SqlAlchemyMonitorRunRepository:
             tool_success_rate=payload.tool_success_rate,
             fetch_success_rate=payload.fetch_success_rate,
             trace_completeness=payload.trace_completeness,
+            raw_summary_count=payload.raw_summary_count,
+            browser_fallback_count=payload.browser_fallback_count,
+            provider_fallback_count=payload.provider_fallback_count,
             suggestions=list(payload.suggestions),
         )
         self.session.add(model)
@@ -863,6 +869,9 @@ class SqlAlchemyMonitorRunRepository:
             "tool_success_rate": model.tool_success_rate,
             "fetch_success_rate": model.fetch_success_rate,
             "trace_completeness": model.trace_completeness,
+            "raw_summary_count": model.raw_summary_count,
+            "browser_fallback_count": model.browser_fallback_count,
+            "provider_fallback_count": model.provider_fallback_count,
             "suggestions": list(model.suggestions),
             "created_at": model.created_at,
         }

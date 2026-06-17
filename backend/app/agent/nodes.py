@@ -626,6 +626,13 @@ def evaluate_run_node(
                 tool_success_rate=float(state["eval_result"]["tool_success_rate"]),
                 fetch_success_rate=float(state["eval_result"]["fetch_success_rate"]),
                 trace_completeness=float(state["eval_result"]["trace_completeness"]),
+                raw_summary_count=int(state["eval_result"]["raw_summary_count"]),
+                browser_fallback_count=int(
+                    state["eval_result"]["browser_fallback_count"]
+                ),
+                provider_fallback_count=int(
+                    state["eval_result"]["provider_fallback_count"]
+                ),
                 suggestions=tuple(state["eval_result"].get("suggestions", [])),
             )
         )

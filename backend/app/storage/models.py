@@ -226,6 +226,9 @@ class EvalResult(Base):
     tool_success_rate: Mapped[float] = mapped_column(Float, nullable=False, default=1.0)
     fetch_success_rate: Mapped[float] = mapped_column(Float, nullable=False, default=0.0)
     trace_completeness: Mapped[float] = mapped_column(Float, nullable=False, default=0.0)
+    raw_summary_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    browser_fallback_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    provider_fallback_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     suggestions: Mapped[list[str]] = mapped_column(JSON, nullable=False, default=list)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
