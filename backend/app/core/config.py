@@ -38,6 +38,9 @@ class Settings(BaseSettings):
     opensearch_timeout_seconds: float = Field(default=10.0)
     semantic_dedup_provider: str = Field(default="none")
     semantic_dedup_threshold: float = Field(default=0.88, gt=0.0, le=1.0)
+    notification_provider: str = Field(default="none")
+    notification_webhook_url: str | None = Field(default=None)
+    notification_timeout_seconds: float = Field(default=10.0, gt=0.0)
 
 def get_settings() -> Settings:
     return Settings()

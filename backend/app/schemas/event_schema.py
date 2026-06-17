@@ -12,6 +12,8 @@ class EventType(StrEnum):
     NODE_COMPLETED = "node_completed"
     NODE_FAILED = "node_failed"
     FALLBACK_USED = "fallback_used"
+    NOTIFICATION_SENT = "notification_sent"
+    NOTIFICATION_SKIPPED = "notification_skipped"
 
 
 class MonitorNodeName(StrEnum):
@@ -26,6 +28,7 @@ class MonitorNodeName(StrEnum):
     SCORE_ITEMS = "score_items"
     DECIDE_PUSH = "decide_push"
     PERSIST_PUSH_RECORDS = "persist_push_records"
+    NOTIFICATION_SEND = "notification_send"
     EVALUATE_RUN = "evaluate_run"
 
 

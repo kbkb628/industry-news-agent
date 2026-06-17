@@ -12,7 +12,7 @@ from fastapi.testclient import TestClient
 from app.api.monitor import get_monitor_graph, get_monitor_run_repository
 from app.api.topics import get_topic_repository
 from app.agent.graph import build_monitor_graph
-from app.agent.nodes import evaluate_run_node
+from app.agent.nodes import evaluate_run_node, persist_push_records_node
 from app.core.config import Settings
 from app.llm.mock_client import MockLLM
 from app.main import create_app
@@ -270,6 +270,11 @@ def test_monitor_graph_runs_to_completion() -> None:
     assert result["decision_reasons"]
     assert result["eval_result"]["push_count"] == 1
     assert any(event["node"] == "decide_push" for event in result["events"])
+    notification_event = next(
+        event for event in result["events"] if event["node"] == "notification_send"
+    )
+    assert notification_event["event_type"] == "notification_skipped"
+    assert notification_event["payload"]["provider"] == "none"
     assert result["business_context"]["retrieval_mode"] == (
         "hybrid_keyword_bm25_embedding_rerank"
     )
@@ -1589,6 +1594,135 @@ def test_eval_summary_returns_quality_trend_metrics() -> None:
     assert payload["avg_fetch_success_rate"] == 0.75
     assert payload["avg_trace_completeness"] == 0.95
     assert payload["latest_eval"]["eval_id"] == "eval_002"
+
+
+def test_persist_push_records_sends_webhook_notification_after_persisting() -> None:
+    run_repository = InMemoryMonitorRunRepository()
+    gateway = LocalToolGateway()
+    notification_calls: list[dict[str, object]] = []
+
+    def notification_tool(
+        run_id: str,
+        topic_id: str,
+        push_records: list[dict[str, object]],
+    ) -> ToolResponse:
+        notification_calls.append(
+            {
+                "run_id": run_id,
+                "topic_id": topic_id,
+                "push_records": push_records,
+            }
+        )
+        return ToolResponse.success(
+            tool_name="notification_send",
+            summary="Sent webhook notification.",
+            data={"status": "sent", "sent_count": len(push_records)},
+            metadata={"notification_provider": "webhook"},
+        )
+
+    gateway.register("notification_send", notification_tool)
+    state = {
+        "run_id": "run_notify_success",
+        "topic_id": "topic_ai_agent",
+        "final_decisions": [
+            {
+                "run_id": "run_notify_success",
+                "topic_id": "topic_ai_agent",
+                "candidate_id": "cand_001",
+                "extracted_id": "ext_001",
+                "title": "OpenAI ships enterprise agent workflow",
+                "url": "https://example.com/agent-workflow",
+                "summary": "Enterprise workflow.",
+                "should_push": True,
+                "score": 0.91,
+                "decision_reason": "score meets threshold",
+            }
+        ],
+        "push_history": [],
+        "events": [],
+        "errors": [],
+    }
+
+    result = persist_push_records_node(
+        state,
+        run_repository=run_repository,
+        gateway=gateway,
+    )
+
+    assert len(run_repository.push_records) == 1
+    assert len(notification_calls) == 1
+    assert notification_calls[0]["run_id"] == "run_notify_success"
+    assert len(notification_calls[0]["push_records"]) == 1
+    assert result["notification_result"]["status"] == "sent"
+    notification_event = next(
+        event for event in result["events"] if event["node"] == "notification_send"
+    )
+    assert notification_event["event_type"] == "notification_sent"
+    assert notification_event["payload"]["provider"] == "webhook"
+    assert result["errors"] == []
+
+
+def test_persist_push_records_records_notification_failure_without_rollback() -> None:
+    run_repository = InMemoryMonitorRunRepository()
+    gateway = LocalToolGateway()
+
+    def failing_notification_tool(
+        run_id: str,
+        topic_id: str,
+        push_records: list[dict[str, object]],
+    ) -> ToolResponse:
+        return ToolResponse.failure(
+            tool_name="notification_send",
+            code="webhook_failed",
+            message="webhook timeout",
+            summary="Notification delivery failed.",
+            metadata={"notification_provider": "webhook"},
+        )
+
+    gateway.register("notification_send", failing_notification_tool)
+    state = {
+        "run_id": "run_notify_failure",
+        "topic_id": "topic_ai_agent",
+        "final_decisions": [
+            {
+                "run_id": "run_notify_failure",
+                "topic_id": "topic_ai_agent",
+                "candidate_id": "cand_001",
+                "extracted_id": "ext_001",
+                "title": "OpenAI ships enterprise agent workflow",
+                "url": "https://example.com/agent-workflow",
+                "summary": "Enterprise workflow.",
+                "should_push": True,
+                "score": 0.91,
+                "decision_reason": "score meets threshold",
+            }
+        ],
+        "push_history": [],
+        "events": [],
+        "errors": [],
+    }
+
+    result = persist_push_records_node(
+        state,
+        run_repository=run_repository,
+        gateway=gateway,
+    )
+
+    assert len(run_repository.push_records) == 1
+    assert result["push_records"]
+    assert result["errors"] == [
+        {
+            "tool_name": "notification_send",
+            "code": "webhook_failed",
+            "message": "webhook timeout",
+            "details": {},
+        }
+    ]
+    failure_event = next(
+        event for event in result["events"] if event["node"] == "notification_send"
+    )
+    assert failure_event["event_type"] == "node_failed"
+    assert failure_event["payload"]["provider"] == "webhook"
 
 
 def test_worker_consumes_enqueued_topic_run_and_persists_monitor_run() -> None:

@@ -122,6 +122,23 @@ def test_event_list_response_uses_constrained_event_type() -> None:
     assert EventType.NODE_COMPLETED == "node_completed"
 
 
+def test_event_schema_accepts_notification_events() -> None:
+    event = EventRecord(
+        event_id="event_notification_001",
+        run_id="run_001",
+        topic_id="topic_001",
+        event_type="notification_sent",
+        node="notification_send",
+        message="Sent webhook notification.",
+        payload={"provider": "webhook", "sent_count": 1},
+    )
+
+    response = EventListResponse(run_id="run_001", events=[event])
+
+    assert response.events[0].event_type == "notification_sent"
+    assert response.events[0].node == "notification_send"
+
+
 def test_tool_execution_result_carries_error_contract() -> None:
     result = ToolExecutionResult(
         success=False,

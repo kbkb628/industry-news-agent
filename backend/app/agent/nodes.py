@@ -352,6 +352,7 @@ def decide_push_node(
 def persist_push_records_node(
     state: dict[str, Any],
     run_repository: MonitorRunRepositoryProtocol | None = None,
+    gateway: LocalToolGateway | None = None,
 ) -> dict[str, Any]:
     pushed_at = datetime.now(UTC)
     candidate_push_records = [
@@ -397,12 +398,58 @@ def persist_push_records_node(
         ]
     else:
         state["push_records"] = candidate_push_records
-    return append_event(
+    append_event(
         state,
         "persist_push_records",
         "Persisted push records and updated push history.",
         payload={"count": len(state["push_records"])},
     )
+    if gateway is not None and state["push_records"]:
+        response = gateway.call(
+            "notification_send",
+            run_id=str(state["run_id"]),
+            topic_id=str(state["topic_id"]),
+            push_records=list(state["push_records"]),
+        )
+        _record_tool_result(state, response)
+        state["notification_result"] = dict(response.data or {})
+        provider = response.metadata.get("notification_provider")
+        if response.success:
+            status = str((response.data or {}).get("status", "sent"))
+            event_type = (
+                "notification_skipped"
+                if status == "skipped"
+                else "notification_sent"
+            )
+            append_event(
+                state,
+                "notification_send",
+                response.summary,
+                event_type=event_type,
+                payload={
+                    "provider": provider,
+                    "status": status,
+                    "sent_count": (response.data or {}).get("sent_count", 0),
+                },
+            )
+        else:
+            _record_tool_error(state, response)
+            append_event(
+                state,
+                "notification_send",
+                response.summary,
+                event_type="node_failed",
+                payload={
+                    "provider": provider,
+                    "error_code": (
+                        None if response.error is None else response.error.code
+                    ),
+                    "error_message": (
+                        None if response.error is None else response.error.message
+                    ),
+                },
+            )
+    return state
 
 
 def _index_by_candidate_id(items: list[dict[str, Any]]) -> dict[str, dict[str, Any]]:

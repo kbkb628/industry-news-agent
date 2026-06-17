@@ -23,6 +23,7 @@ Included in the current codebase:
 - optional Playwright MCP-compatible browser fetch provider behind the HTTP fallback path
 - optional OpenSearch-compatible candidate history full-text index projection
 - optional deterministic local semantic-like dedup after exact dedup
+- optional generic webhook notification channel after persisted push records
 - deterministic MockEvalJudge adapter for the LLM-as-Judge evaluation contract
 - optional OpenAI-compatible LLM-as-Judge provider with mock fallback
 - local Docker Compose stack for backend, PostgreSQL, and Redis
@@ -35,6 +36,8 @@ Not claimed by the current implementation:
 - vector database retrieval
 - embedding indexing with external model embeddings
 - production semantic clustering service
+- Slack-specific, email, or enterprise WeChat notification delivery
+- production notification retry or delivery-queue hardening
 - production deployment hardening
 
 ## Environment
@@ -116,6 +119,20 @@ records later near-duplicates in `semantic_dropped_candidate_ids` and
 `semantic_drop_reasons`. This is not an external embedding service, vector
 database, or production semantic clustering implementation.
 
+Optional Phase 2 notification variables:
+
+- `NOTIFICATION_PROVIDER=none` keeps notification delivery disabled. Push records
+  are still persisted and the run records an explicit notification skipped event.
+- `NOTIFICATION_PROVIDER=webhook` enables a generic webhook `POST` after push
+  records are persisted, when `NOTIFICATION_WEBHOOK_URL` is configured.
+- `NOTIFICATION_WEBHOOK_URL` points at the generic webhook endpoint.
+- `NOTIFICATION_TIMEOUT_SECONDS` defaults to `10.0`.
+
+Webhook notification failures are recorded in run errors/events and do not roll
+back persisted push records. The current implementation does not provide
+Slack-specific formatting, email delivery, enterprise WeChat delivery, or a
+production notification retry queue.
+
 Example `.env`:
 
 ```env
@@ -139,6 +156,10 @@ HISTORY_INDEX_PROVIDER=none
 SEMANTIC_DEDUP_PROVIDER=none
 # SEMANTIC_DEDUP_PROVIDER=local
 # SEMANTIC_DEDUP_THRESHOLD=0.88
+NOTIFICATION_PROVIDER=none
+# NOTIFICATION_PROVIDER=webhook
+# NOTIFICATION_WEBHOOK_URL=https://hooks.example.com/news
+# NOTIFICATION_TIMEOUT_SECONDS=10.0
 ```
 
 ## Install

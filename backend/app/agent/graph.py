@@ -30,9 +30,14 @@ from app.tools.registry import build_default_tool_registry
 def _build_default_gateway(
     llm: BaseLLMClient,
     settings: Settings | None,
+    notification_http_client: Any | None = None,
 ) -> LocalToolGateway:
     gateway = LocalToolGateway()
-    build_default_tool_registry(llm=llm, settings=settings).register_into(gateway)
+    build_default_tool_registry(
+        llm=llm,
+        settings=settings,
+        notification_http_client=notification_http_client,
+    ).register_into(gateway)
     return gateway
 
 
@@ -43,9 +48,14 @@ def build_monitor_graph(
     run_repository: MonitorRunRepositoryProtocol | None = None,
     settings: Settings | None = None,
     history_index_http_client: Any | None = None,
+    notification_http_client: Any | None = None,
 ):
     resolved_llm = llm or MockLLM()
-    resolved_gateway = gateway or _build_default_gateway(resolved_llm, settings)
+    resolved_gateway = gateway or _build_default_gateway(
+        resolved_llm,
+        settings,
+        notification_http_client,
+    )
 
     graph = StateGraph(MonitorState)
     graph.add_node(
@@ -84,7 +94,11 @@ def build_monitor_graph(
     )
     graph.add_node(
         "persist_push_records_node",
-        lambda state: persist_push_records_node(state, run_repository),
+        lambda state: persist_push_records_node(
+            state,
+            run_repository,
+            resolved_gateway,
+        ),
     )
     graph.add_node(
         "evaluate_run_node",

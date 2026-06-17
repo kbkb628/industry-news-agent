@@ -10,6 +10,7 @@ from app.tools.base import ToolHandler
 from app.tools.browser_fetch_tool import BrowserFetchTool, PlaywrightMCPBrowserFetcher
 from app.tools.dedup_tool import DedupCandidatesTool
 from app.tools.extract_tool import ExtractCandidatesTool
+from app.tools.notification_tool import NotificationSendTool
 from app.tools.push_tool import DecidePushTool
 from app.tools.rss_tool import RSSCandidatesTool
 from app.tools.scoring_tool import ScoreCandidatesTool
@@ -115,6 +116,7 @@ def build_default_tool_registry(
     search_http_client: Any | None = None,
     fetch_http_client: Any | None = None,
     browser_http_client: Any | None = None,
+    notification_http_client: Any | None = None,
 ) -> ToolRegistry:
     resolved_llm = llm or MockLLM()
     registry = ToolRegistry()
@@ -139,4 +141,21 @@ def build_default_tool_registry(
     registry.register("deduplicate_items", _build_dedup_tool(settings=settings))
     registry.register("score_candidate", ScoreCandidatesTool(llm=resolved_llm))
     registry.register("decide_push", DecidePushTool())
+    registry.register(
+        "notification_send",
+        NotificationSendTool(
+            provider=(
+                "none" if settings is None else settings.notification_provider
+            ),
+            webhook_url=(
+                None if settings is None else settings.notification_webhook_url
+            ),
+            http_client=notification_http_client,
+            timeout_seconds=(
+                10.0
+                if settings is None
+                else settings.notification_timeout_seconds
+            ),
+        ),
+    )
     return registry

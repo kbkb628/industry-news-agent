@@ -138,6 +138,193 @@ def test_settings_accept_semantic_dedup_values() -> None:
     assert settings.semantic_dedup_threshold == 0.82
 
 
+def test_settings_accept_notification_webhook_values() -> None:
+    settings = Settings(
+        database_url="postgresql+psycopg://user:pass@localhost:5432/news_agent",
+        redis_url="redis://localhost:6379/0",
+        notification_provider="webhook",
+        notification_webhook_url="https://hooks.example.com/news",
+        notification_timeout_seconds=3.5,
+    )
+
+    assert settings.notification_provider == "webhook"
+    assert settings.notification_webhook_url == "https://hooks.example.com/news"
+    assert settings.notification_timeout_seconds == 3.5
+
+
+def test_notification_tool_skips_when_provider_disabled() -> None:
+    from app.tools.notification_tool import NotificationSendTool
+
+    response = NotificationSendTool(provider="none")(
+        run_id="run_001",
+        topic_id="topic_001",
+        push_records=[{"push_id": "push_001"}],
+    )
+
+    assert response.success is True
+    assert response.data is not None
+    assert response.data["status"] == "skipped"
+    assert response.metadata["notification_provider"] == "none"
+
+
+def test_notification_tool_posts_push_records_to_webhook() -> None:
+    from app.tools.notification_tool import NotificationSendTool
+
+    class FakeResponse:
+        def raise_for_status(self) -> None:
+            return None
+
+    class FakeHttpClient:
+        def __init__(self) -> None:
+            self.requests: list[dict[str, object]] = []
+
+        def post(
+            self,
+            url: str,
+            json: dict[str, object],
+            timeout: float,
+        ) -> FakeResponse:
+            self.requests.append({"url": url, "json": json, "timeout": timeout})
+            return FakeResponse()
+
+    http_client = FakeHttpClient()
+    response = NotificationSendTool(
+        provider="webhook",
+        webhook_url="https://hooks.example.com/news",
+        http_client=http_client,
+        timeout_seconds=4.0,
+    )(
+        run_id="run_001",
+        topic_id="topic_001",
+        push_records=[
+            {
+                "push_id": "push_001",
+                "title": "OpenAI ships agent workflow",
+                "url": "https://example.com/agent",
+                "summary": "Enterprise agent workflow.",
+                "score": 0.91,
+                "decision_reason": "score meets threshold",
+                "ignored_extra": "not sent",
+            }
+        ],
+    )
+
+    assert response.success is True
+    assert response.data is not None
+    assert response.data["status"] == "sent"
+    assert response.data["sent_count"] == 1
+    assert response.metadata["notification_provider"] == "webhook"
+    assert http_client.requests[0]["url"] == "https://hooks.example.com/news"
+    assert http_client.requests[0]["timeout"] == 4.0
+    payload = http_client.requests[0]["json"]
+    assert payload["run_id"] == "run_001"
+    assert payload["topic_id"] == "topic_001"
+    assert payload["push_count"] == 1
+    assert payload["push_records"] == [
+        {
+            "push_id": "push_001",
+            "title": "OpenAI ships agent workflow",
+            "url": "https://example.com/agent",
+            "summary": "Enterprise agent workflow.",
+            "score": 0.91,
+            "decision_reason": "score meets threshold",
+        }
+    ]
+
+
+def test_notification_tool_fails_when_webhook_url_missing() -> None:
+    from app.tools.notification_tool import NotificationSendTool
+
+    response = NotificationSendTool(provider="webhook")(
+        run_id="run_001",
+        topic_id="topic_001",
+        push_records=[{"push_id": "push_001"}],
+    )
+
+    assert response.success is False
+    assert response.error is not None
+    assert response.error.code == "notification_webhook_not_configured"
+    assert response.metadata["notification_provider"] == "webhook"
+
+
+def test_notification_tool_normalizes_webhook_http_failure() -> None:
+    from app.tools.notification_tool import NotificationSendTool
+
+    class FakeHttpClient:
+        def post(
+            self,
+            url: str,
+            json: dict[str, object],
+            timeout: float,
+        ) -> object:
+            raise RuntimeError("webhook unavailable")
+
+    response = NotificationSendTool(
+        provider="webhook",
+        webhook_url="https://hooks.example.com/news",
+        http_client=FakeHttpClient(),
+    )(
+        run_id="run_001",
+        topic_id="topic_001",
+        push_records=[{"push_id": "push_001"}],
+    )
+
+    assert response.success is False
+    assert response.error is not None
+    assert response.error.code == "notification_webhook_failed"
+    assert response.error.message == "webhook unavailable"
+    assert response.metadata["notification_provider"] == "webhook"
+
+
+def test_build_default_tool_registry_wires_webhook_notification() -> None:
+    from app.tools.registry import build_default_tool_registry
+
+    class FakeResponse:
+        def raise_for_status(self) -> None:
+            return None
+
+    class FakeHttpClient:
+        def __init__(self) -> None:
+            self.requests: list[dict[str, object]] = []
+
+        def post(
+            self,
+            url: str,
+            json: dict[str, object],
+            timeout: float,
+        ) -> FakeResponse:
+            self.requests.append({"url": url, "json": json, "timeout": timeout})
+            return FakeResponse()
+
+    settings = Settings(
+        database_url="postgresql+psycopg://user:pass@localhost:5432/news_agent",
+        redis_url="redis://localhost:6379/0",
+        notification_provider="webhook",
+        notification_webhook_url="https://hooks.example.com/news",
+        notification_timeout_seconds=2.5,
+    )
+    http_client = FakeHttpClient()
+    registry = build_default_tool_registry(
+        llm=MockLLM(),
+        settings=settings,
+        notification_http_client=http_client,
+    )
+    gateway = LocalToolGateway()
+    registry.register_into(gateway)
+
+    response = gateway.call(
+        "notification_send",
+        run_id="run_001",
+        topic_id="topic_001",
+        push_records=[{"push_id": "push_001"}],
+    )
+
+    assert response.success is True
+    assert response.data["status"] == "sent"
+    assert http_client.requests[0]["url"] == "https://hooks.example.com/news"
+    assert http_client.requests[0]["timeout"] == 2.5
+
+
 @pytest.mark.parametrize("threshold", [0.0, -0.1, 1.1])
 def test_settings_reject_invalid_semantic_dedup_threshold(
     threshold: float,
@@ -1320,6 +1507,7 @@ def test_task6_tool_registry_registers_minimal_candidate_pipeline() -> None:
         "deduplicate_items",
         "score_candidate",
         "decide_push",
+        "notification_send",
     ]
 
     response = gateway.call(
