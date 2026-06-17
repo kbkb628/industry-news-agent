@@ -3,7 +3,9 @@ from __future__ import annotations
 from datetime import UTC, datetime
 from typing import Any
 
+from app.agent.extraction_agent import ExtractionAgent
 from app.agent.planner_agent import PlannerAgent
+from app.agent.retrieval_agent import RetrievalAgent
 from app.core.config import Settings
 from app.eval.rule_scorer import score_run
 from app.eval.judge import build_eval_judge
@@ -188,34 +190,30 @@ def retrieve_candidates_node(
     state: dict[str, Any],
     gateway: LocalToolGateway,
 ) -> dict[str, Any]:
-    run_id = str(state["run_id"])
-    topic = dict(state["topic"])
-    candidates: list[dict[str, Any]] = []
+    if not state.get("run_context"):
+        state["run_context"] = {
+            "run_id": str(state.get("run_id", "")),
+            "topic_id": str(state.get("topic_id", "")),
+            "topic": dict(state.get("topic", {})),
+            "status": str(state.get("status", "created")),
+            "errors": list(state.get("errors", [])),
+            "events": list(state.get("events", [])),
+        }
+    if not state.get("planner_output"):
+        state["planner_output"] = {
+            "source_plan": [
+                {"tool_name": tool_name, "priority": index + 1}
+                for index, tool_name in enumerate(state.get("source_plan", []))
+            ],
+            "retrieval_strategy": {"mode": "rss_first"},
+        }
 
-    for tool_name in state.get("source_plan", []):
-        response = _call_tool(state, gateway, tool_name, run_id=run_id, topic=topic)
-        if response.metadata.get("used_fallback"):
-            append_event(
-                state,
-                "retrieve_candidates",
-                "Used fallback search provider for candidate retrieval.",
-                event_type="fallback_used",
-                payload={
-                    "tool_name": response.tool_name,
-                    "provider": response.metadata.get("provider"),
-                    "fallback_provider": response.metadata.get("fallback_provider"),
-                    "fallback_reason": response.metadata.get("fallback_reason"),
-                },
-            )
-        payload = response.data or {}
-        candidates.extend(payload.get("candidates", []))
-
-    state["candidate_items"] = candidates
+    RetrievalAgent(gateway=gateway).run(state)
     return append_event(
         state,
         "retrieve_candidates",
         "Retrieved candidate items from planned sources.",
-        payload={"count": len(candidates)},
+        payload={"count": len(state.get("candidate_items", []))},
     )
 
 
@@ -223,25 +221,20 @@ def fetch_contents_node(
     state: dict[str, Any],
     gateway: LocalToolGateway,
 ) -> dict[str, Any]:
-    response = _call_tool(
-        state,
-        gateway,
-        "fetch_article_content",
-        candidates=state.get("candidate_items", []),
-    )
-    payload = response.data or {}
-    state["fetched_contents"] = list(payload.get("candidates", []))
-    if response.metadata.get("used_browser_fallback"):
-        append_event(
-            state,
-            "fetch_contents",
-            "Used browser fallback for one or more candidate pages.",
-            event_type="fallback_used",
-            payload={
-                "tool_name": response.tool_name,
-                "fallback": "browser_fetch",
-            },
-        )
+    if not state.get("run_context"):
+        state["run_context"] = {
+            "run_id": str(state.get("run_id", "")),
+            "topic_id": str(state.get("topic_id", "")),
+            "topic": dict(state.get("topic", {})),
+            "status": str(state.get("status", "created")),
+            "errors": list(state.get("errors", [])),
+            "events": list(state.get("events", [])),
+        }
+    if not state.get("retrieval_output"):
+        state["retrieval_output"] = {"candidate_pool": list(state.get("candidate_items", []))}
+
+    agent = ExtractionAgent(gateway=gateway)
+    agent.fetch_contents(state)
     return append_event(
         state,
         "fetch_contents",
@@ -254,35 +247,22 @@ def extract_structured_items_node(
     state: dict[str, Any],
     gateway: LocalToolGateway,
 ) -> dict[str, Any]:
-    response = _call_tool(
-        state,
-        gateway,
-        "extract_article",
-        run_id=str(state["run_id"]),
-        topic=dict(state["topic"]),
-        candidates=state.get("fetched_contents", []),
-    )
-    payload = response.data or {}
-    articles = list(payload.get("articles", []))
-    state["extracted_items"] = articles
+    if not state.get("extraction_output"):
+        state["extraction_output"] = {
+            "fetched_contents": list(state.get("fetched_contents", [])),
+            "evidence_items": list(state.get("extracted_items", [])),
+            "extraction_failures": [],
+            "content_fallbacks": [],
+        }
 
-    fallback_count = sum(
-        1 for article in articles if article.get("extraction_mode") == "raw_summary"
-    )
-    if fallback_count:
-        append_event(
-            state,
-            "extract_structured_items",
-            "Used raw_summary fallback for one or more candidates.",
-            event_type="fallback_used",
-            payload={"fallback_count": fallback_count},
-        )
+    agent = ExtractionAgent(gateway=gateway)
+    agent.extract_evidence(state)
 
     return append_event(
         state,
         "extract_structured_items",
         "Extracted structured article summaries.",
-        payload={"count": len(articles)},
+        payload={"count": len(state.get("extracted_items", []))},
     )
 
 

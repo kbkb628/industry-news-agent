@@ -28,6 +28,219 @@ from app.storage.repository import (
 from app.tools.responses import ToolResponse
 
 
+def test_retrieval_agent_writes_candidate_pool_and_provider_fallbacks() -> None:
+    from app.agent.retrieval_agent import RetrievalAgent
+
+    gateway = LocalToolGateway()
+    gateway.register(
+        "mock_search",
+        lambda run_id, topic: ToolResponse.success(
+            tool_name="mock_search",
+            summary="Used fallback provider.",
+            data={
+                "candidates": [
+                    {
+                        "candidate_id": "cand_001",
+                        "run_id": run_id,
+                        "topic_id": topic["topic_id"],
+                        "source_type": "search",
+                        "source_name": "Mock Search",
+                        "title": "AI Agent funding update",
+                        "url": "https://example.com/funding",
+                        "fetch_status": "pending",
+                    }
+                ]
+            },
+            metadata={
+                "provider": "open_websearch",
+                "fallback_provider": "mock_search",
+                "fallback_reason": "provider unavailable",
+                "used_fallback": True,
+            },
+        ),
+    )
+    state = {
+        "run_context": {"run_id": "run_001"},
+        "topic": {"topic_id": "topic_001", "name": "AI Agent"},
+        "planner_output": {
+            "source_plan": [{"tool_name": "mock_search", "priority": 1}],
+            "retrieval_strategy": {"mode": "rss_first"},
+        },
+        "retrieval_output": {},
+        "tool_results": [],
+        "errors": [],
+        "events": [],
+    }
+
+    result = RetrievalAgent(gateway=gateway).run(state)
+
+    assert result["retrieval_output"]["candidate_pool"][0]["candidate_id"] == "cand_001"
+    assert result["retrieval_output"]["source_coverage"][0]["tool_name"] == "mock_search"
+    assert result["retrieval_output"]["provider_fallbacks"][0]["fallback_provider"] == "mock_search"
+
+
+def test_extraction_agent_writes_evidence_items_and_content_fallbacks() -> None:
+    from app.agent.extraction_agent import ExtractionAgent
+
+    gateway = LocalToolGateway()
+    gateway.register(
+        "fetch_article_content",
+        lambda candidates: ToolResponse.success(
+            tool_name="fetch_article_content",
+            summary="Fetched with browser fallback.",
+            data={
+                "candidates": [
+                    {
+                        "candidate_id": "cand_001",
+                        "run_id": "run_001",
+                        "topic_id": "topic_001",
+                        "title": "AI Agent funding update",
+                        "url": "https://example.com/funding",
+                        "fetch_status": "fetched",
+                        "content": "Funding details.",
+                        "raw_summary": "Funding summary.",
+                    }
+                ]
+            },
+            metadata={"used_browser_fallback": True},
+        ),
+    )
+    gateway.register(
+        "extract_article",
+        lambda run_id, topic, candidates: ToolResponse.success(
+            tool_name="extract_article",
+            summary="Extracted evidence items.",
+            data={
+                "articles": [
+                    {
+                        "extracted_id": "ext_001",
+                        "candidate_id": "cand_001",
+                        "run_id": run_id,
+                        "topic_id": topic["topic_id"],
+                        "source_type": "search",
+                        "source_name": "Mock Search",
+                        "title": "AI Agent funding update",
+                        "url": "https://example.com/funding",
+                        "summary": "Funding summary.",
+                        "content": "Funding details.",
+                        "fetch_status": "fetched",
+                        "extraction_mode": "structured",
+                    }
+                ]
+            },
+        ),
+    )
+    state = {
+        "run_context": {"run_id": "run_001"},
+        "topic": {"topic_id": "topic_001", "name": "AI Agent"},
+        "retrieval_output": {
+            "candidate_pool": [
+                {
+                    "candidate_id": "cand_001",
+                    "run_id": "run_001",
+                    "topic_id": "topic_001",
+                    "title": "AI Agent funding update",
+                    "url": "https://example.com/funding",
+                    "fetch_status": "pending",
+                    "raw_summary": "Funding summary.",
+                }
+            ]
+        },
+        "extraction_output": {},
+        "tool_results": [],
+        "errors": [],
+        "events": [],
+    }
+
+    result = ExtractionAgent(gateway=gateway).run(state)
+
+    assert result["extraction_output"]["fetched_contents"][0]["candidate_id"] == "cand_001"
+    assert result["extraction_output"]["evidence_items"][0]["extracted_id"] == "ext_001"
+    assert result["extraction_output"]["content_fallbacks"][0]["fallback"] == "browser_fetch"
+
+
+def test_fetch_and_extract_nodes_preserve_stage_split() -> None:
+    from app.agent.nodes import extract_structured_items_node, fetch_contents_node
+
+    gateway = LocalToolGateway()
+    gateway.register(
+        "fetch_article_content",
+        lambda candidates: ToolResponse.success(
+            tool_name="fetch_article_content",
+            summary="Fetched article content.",
+            data={
+                "candidates": [
+                    {
+                        "candidate_id": "cand_001",
+                        "run_id": "run_001",
+                        "topic_id": "topic_001",
+                        "title": "AI Agent funding update",
+                        "url": "https://example.com/funding",
+                        "fetch_status": "fetched",
+                        "content": "Funding details.",
+                        "raw_summary": "Funding summary.",
+                    }
+                ]
+            },
+        ),
+    )
+    gateway.register(
+        "extract_article",
+        lambda run_id, topic, candidates: ToolResponse.success(
+            tool_name="extract_article",
+            summary="Extracted evidence items.",
+            data={
+                "articles": [
+                    {
+                        "extracted_id": "ext_001",
+                        "candidate_id": "cand_001",
+                        "run_id": run_id,
+                        "topic_id": topic["topic_id"],
+                        "source_type": "search",
+                        "source_name": "Mock Search",
+                        "title": "AI Agent funding update",
+                        "url": "https://example.com/funding",
+                        "summary": "Funding summary.",
+                        "content": "Funding details.",
+                        "fetch_status": "fetched",
+                        "extraction_mode": "structured",
+                    }
+                ]
+            },
+        ),
+    )
+    state = {
+        "run_id": "run_001",
+        "topic_id": "topic_001",
+        "topic": {"topic_id": "topic_001", "name": "AI Agent"},
+        "candidate_items": [
+            {
+                "candidate_id": "cand_001",
+                "run_id": "run_001",
+                "topic_id": "topic_001",
+                "title": "AI Agent funding update",
+                "url": "https://example.com/funding",
+                "fetch_status": "pending",
+                "raw_summary": "Funding summary.",
+            }
+        ],
+        "fetched_contents": [],
+        "extracted_items": [],
+        "tool_results": [],
+        "errors": [],
+        "events": [],
+    }
+
+    fetched_state = fetch_contents_node(state, gateway)
+
+    assert fetched_state["fetched_contents"][0]["candidate_id"] == "cand_001"
+    assert fetched_state["extracted_items"] == []
+
+    extracted_state = extract_structured_items_node(fetched_state, gateway)
+
+    assert extracted_state["extracted_items"][0]["extracted_id"] == "ext_001"
+
+
 def test_monitor_graph_runs_to_completion() -> None:
     class RecordingMonitorRunRepository:
         def __init__(self) -> None:
