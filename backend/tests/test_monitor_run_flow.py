@@ -375,6 +375,116 @@ def test_build_monitor_graph_uses_stage_level_multi_agent_nodes() -> None:
     assert "supervisor_finalize" in node_names
 
 
+def test_stage_level_graph_preserves_legacy_trace_nodes() -> None:
+    class RecordingMonitorRunRepository:
+        def __init__(self) -> None:
+            self.monitor_runs: list[object] = []
+            self.candidate_records: list[dict[str, object]] = []
+            self.extracted_records: list[dict[str, object]] = []
+            self.decision_records: list[dict[str, object]] = []
+            self.push_records: list[dict[str, object]] = []
+            self.run_events: list[dict[str, object]] = []
+            self.eval_results: list[dict[str, object]] = []
+
+        def upsert_monitor_run(self, payload: object) -> object:
+            self.monitor_runs.append(payload)
+            return payload
+
+        def list_push_history(self, topic_id: str) -> list[dict[str, object]]:
+            return []
+
+        def create_push_records(self, payloads: tuple[object, ...]) -> list[dict[str, object]]:
+            persisted = [{"push_id": "push_001"} for _ in payloads]
+            self.push_records.extend(persisted)
+            return persisted
+
+        def upsert_candidate_records(self, payloads: tuple[object, ...]) -> list[dict[str, object]]:
+            return []
+
+        def list_candidate_records(self, run_id: str) -> list[dict[str, object]]:
+            return []
+
+        def upsert_extracted_item_records(self, payloads: tuple[object, ...]) -> list[dict[str, object]]:
+            return []
+
+        def list_extracted_item_records(self, run_id: str) -> list[dict[str, object]]:
+            return []
+
+        def upsert_decision_records(self, payloads: tuple[object, ...]) -> list[dict[str, object]]:
+            return []
+
+        def list_decision_records(self, run_id: str) -> list[dict[str, object]]:
+            return []
+
+        def create_run_events(self, payloads: tuple[object, ...]) -> list[dict[str, object]]:
+            persisted = [
+                {
+                    "run_id": payload.run_id,
+                    "topic_id": payload.topic_id,
+                    "event_type": payload.event_type,
+                    "node": payload.node,
+                    "message": payload.message,
+                    "payload": payload.payload,
+                    "elapsed_ms": payload.elapsed_ms,
+                    "created_at": datetime(2026, 6, 9, tzinfo=UTC),
+                }
+                for payload in payloads
+            ]
+            self.run_events.extend(persisted)
+            return persisted
+
+        def create_eval_result(self, payload: object) -> dict[str, object]:
+            persisted = {"eval_id": "eval_001", "run_id": payload.run_id, "topic_id": payload.topic_id, "push_count": payload.push_count, "created_at": datetime(2026, 6, 9, tzinfo=UTC)}
+            self.eval_results.append(persisted)
+            return persisted
+
+    repository = RecordingMonitorRunRepository()
+    graph = build_monitor_graph(llm=MockLLM(), run_repository=repository)
+
+    result = graph.invoke(
+        {
+            "run_id": "run_trace_nodes",
+            "topic_id": "topic_ai_agent",
+            "topic": {
+                "topic_id": "topic_ai_agent",
+                "name": "AI Agent",
+                "description": "Track enterprise AI agent launches.",
+                "seed_keywords": ["OpenAI", "enterprise"],
+                "trusted_sources": ["AI Daily RSS", "AI Search"],
+                "exclude_keywords": [],
+                "push_threshold": 0.72,
+                "cooldown_hours": 24,
+                "enabled": True,
+            },
+            "seed_keywords": ["OpenAI", "enterprise"],
+            "expanded_queries": [],
+            "business_context": {},
+            "source_plan": [],
+            "candidate_items": [],
+            "fetched_contents": [],
+            "extracted_items": [],
+            "deduped_items": [],
+            "scored_items": [],
+            "final_decisions": [],
+            "decision_reasons": [],
+            "push_records": [],
+            "push_history": [],
+            "tool_results": [],
+            "eval_result": {},
+            "events": [],
+            "errors": [],
+            "status": "created",
+        }
+    )
+
+    observed_nodes = {event["node"] for event in result["events"]}
+    assert "expand_queries" in observed_nodes
+    assert "plan_sources" in observed_nodes
+    assert "retrieve_candidates" in observed_nodes
+    assert "fetch_contents" in observed_nodes
+    assert "extract_structured_items" in observed_nodes
+
+
 def test_monitor_graph_runs_to_completion() -> None:
     class RecordingMonitorRunRepository:
         def __init__(self) -> None:

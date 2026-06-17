@@ -5,6 +5,7 @@ from typing import Any
 from langgraph.graph import END, StateGraph
 
 from app.agent.nodes import (
+    append_event,
     retrieve_business_context_node,
     supervisor_bootstrap_node,
     supervisor_finalize_node,
@@ -80,7 +81,7 @@ def build_monitor_graph(
     )
     graph.add_node(
         "retrieval_agent",
-        lambda state: RetrievalAgent(gateway=resolved_gateway).run(state),
+        lambda state: _run_retrieval_stage(state, gateway=resolved_gateway),
     )
     graph.add_node(
         "extraction_agent",
@@ -121,8 +122,25 @@ def _run_planner_stage(
     llm: BaseLLMClient,
 ) -> dict[str, Any]:
     retrieve_business_context_node(state)
+    state["expanded_queries"] = llm.expand_keywords(
+        topic_name=str(state["topic"]["name"]),
+        seed_keywords=state.get("seed_keywords", []),
+    )
+    append_event(
+        state,
+        "expand_queries",
+        "Expanded keyword queries for the monitor run.",
+        payload={"query_count": len(state["expanded_queries"])},
+    )
     state["planner_output"] = state.get("planner_output", {})
-    return PlannerAgent(llm=llm).run(state)
+    PlannerAgent(llm=llm).run(state)
+    append_event(
+        state,
+        "plan_sources",
+        "Planned candidate retrieval sources.",
+        payload={"sources": list(state.get("source_plan", []))},
+    )
+    return state
 
 
 def _run_extraction_stage(
@@ -132,7 +150,34 @@ def _run_extraction_stage(
 ) -> dict[str, Any]:
     agent = ExtractionAgent(gateway=gateway)
     agent.fetch_contents(state)
+    append_event(
+        state,
+        "fetch_contents",
+        "Fetched candidate content or preserved summary fallback inputs.",
+        payload={"count": len(state.get("fetched_contents", []))},
+    )
     agent.extract_evidence(state)
+    append_event(
+        state,
+        "extract_structured_items",
+        "Extracted structured article summaries.",
+        payload={"count": len(state.get("extracted_items", []))},
+    )
+    return state
+
+
+def _run_retrieval_stage(
+    state: dict[str, Any],
+    *,
+    gateway: ToolGateway,
+) -> dict[str, Any]:
+    RetrievalAgent(gateway=gateway).run(state)
+    append_event(
+        state,
+        "retrieve_candidates",
+        "Retrieved candidate items from planned sources.",
+        payload={"count": len(state.get("candidate_items", []))},
+    )
     return state
 
 
