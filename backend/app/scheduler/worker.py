@@ -3,9 +3,10 @@ from __future__ import annotations
 from collections import deque
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
+from concurrent.futures import ThreadPoolExecutor, TimeoutError as FuturesTimeoutError
+from copy import deepcopy
 import json
 from threading import Event
-import time
 import uuid
 from typing import Any, Protocol
 
@@ -107,11 +108,32 @@ class MonitorWorkerService:
         run_repository: MonitorRunRepositoryProtocol,
         llm: BaseLLMClient | None = None,
         queue: RunQueueProtocol,
+        max_retries: int = 1,
+        invocation_timeout_seconds: float = 30.0,
     ) -> None:
         self.topic_repository = topic_repository
         self.run_repository = run_repository
         self.llm = llm or MockLLM()
         self.queue = queue
+        self.max_retries = max_retries
+        self.invocation_timeout_seconds = invocation_timeout_seconds
+
+    def _invoke_graph_with_timeout(
+        self,
+        graph: Any,
+        initial_state: dict[str, Any],
+    ) -> dict[str, Any]:
+        executor = ThreadPoolExecutor(max_workers=1, thread_name_prefix="monitor-graph")
+        future = executor.submit(graph.invoke, deepcopy(initial_state))
+        try:
+            return future.result(timeout=self.invocation_timeout_seconds)
+        except FuturesTimeoutError as exc:
+            future.cancel()
+            raise TimeoutError(
+                f"graph invocation timed out after {self.invocation_timeout_seconds} seconds"
+            ) from exc
+        finally:
+            executor.shutdown(wait=False, cancel_futures=True)
 
     def process_next(self) -> dict[str, Any] | None:
         message = self.queue.dequeue()
@@ -135,28 +157,43 @@ class MonitorWorkerService:
             }
 
         run_id = f"run_{uuid.uuid4().hex[:12]}"
-        initial_state = _build_initial_state(topic, run_id)
-        initial_state["trigger"] = message.trigger
-        _persist_initial_run(self.run_repository, initial_state)
+        base_state = _build_initial_state(topic, run_id)
+        base_state["trigger"] = message.trigger
+        base_state["retry_count"] = 0
+        base_state["max_retries"] = self.max_retries
+        _persist_initial_run(self.run_repository, base_state)
 
-        graph = build_monitor_graph(llm=self.llm, run_repository=self.run_repository)
-        try:
-            result = graph.invoke(initial_state)
-        except Exception as exc:
-            _mark_run_failed(self.run_repository, initial_state, exc)
-            return {
-                "run_id": run_id,
-                "topic_id": topic.topic_id,
-                "trigger": message.trigger,
-                "status": "failed",
-            }
+        last_error: Exception | None = None
+        for attempt in range(self.max_retries + 1):
+            attempt_state = deepcopy(base_state)
+            attempt_state["retry_count"] = attempt
+            try:
+                graph = build_monitor_graph(llm=self.llm, run_repository=self.run_repository)
+                result = self._invoke_graph_with_timeout(graph, attempt_state)
+                return {
+                    "run_id": run_id,
+                    "topic_id": topic.topic_id,
+                    "trigger": message.trigger,
+                    "status": result["status"],
+                    "retry_count": attempt,
+                }
+            except Exception as exc:
+                last_error = exc
+                if attempt >= self.max_retries:
+                    attempt_state["retry_count"] = attempt + 1
+                    _mark_run_failed(self.run_repository, attempt_state, exc)
+                    return {
+                        "run_id": run_id,
+                        "topic_id": topic.topic_id,
+                        "trigger": message.trigger,
+                        "status": "failed",
+                        "retry_count": attempt,
+                    }
+                _persist_initial_run(self.run_repository, attempt_state)
 
-        return {
-            "run_id": run_id,
-            "topic_id": topic.topic_id,
-            "trigger": message.trigger,
-            "status": result["status"],
-        }
+        if last_error is not None:
+            raise last_error
+        return None
 
 
 class MonitorWorkerLoop:

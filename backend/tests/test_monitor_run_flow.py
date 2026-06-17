@@ -815,3 +815,113 @@ def test_worker_persists_failed_run_when_graph_raises(
     assert run_record.status == "failed"
     assert run_record.state_snapshot["trigger"] == "scheduler"
     assert run_record.error_summary == "graph failed"
+
+
+def test_worker_retries_once_before_marking_run_failed(monkeypatch) -> None:
+    topic_repository = InMemoryTopicRepository()
+    run_repository = InMemoryMonitorRunRepository()
+    topic = topic_repository.create_topic(
+        TopicCreateData(
+            name="AI Agent",
+            description="Track enterprise AI agent launches and deployment updates.",
+            seed_keywords=("OpenAI", "enterprise", "automation"),
+            trusted_sources=("AI Daily RSS", "AI Search"),
+            exclude_keywords=("rumor",),
+            push_threshold=0.72,
+            cooldown_hours=24,
+            enabled=True,
+            schedule_cron="0 */6 * * *",
+        )
+    )
+    queue = InMemoryRunQueue()
+    queue.enqueue(
+        RunQueueMessage(
+            topic_id=topic.topic_id,
+            trigger="scheduler",
+        )
+    )
+
+    attempts = {"count": 0}
+
+    class RetryGraph:
+        def invoke(self, state: dict[str, object]) -> dict[str, object]:
+            attempts["count"] += 1
+            if attempts["count"] == 1:
+                raise RuntimeError("transient failure")
+            return {**state, "status": "completed"}
+
+    monkeypatch.setattr(
+        "app.scheduler.worker.build_monitor_graph",
+        lambda llm, run_repository: RetryGraph(),
+    )
+
+    worker = MonitorWorkerService(
+        topic_repository=topic_repository,
+        run_repository=run_repository,
+        llm=MockLLM(),
+        queue=queue,
+        max_retries=1,
+    )
+
+    result = worker.process_next()
+
+    assert result is not None
+    assert result["status"] == "completed"
+    assert result["retry_count"] == 1
+    assert attempts["count"] == 2
+    run_record = run_repository.get_monitor_run(result["run_id"])
+    assert run_record is not None
+    assert run_record.status == "running" or run_record.status == "completed"
+
+
+def test_worker_times_out_and_marks_failed_run(monkeypatch) -> None:
+    topic_repository = InMemoryTopicRepository()
+    run_repository = InMemoryMonitorRunRepository()
+    topic = topic_repository.create_topic(
+        TopicCreateData(
+            name="AI Agent",
+            description="Track enterprise AI agent launches and deployment updates.",
+            seed_keywords=("OpenAI", "enterprise", "automation"),
+            trusted_sources=("AI Daily RSS", "AI Search"),
+            exclude_keywords=("rumor",),
+            push_threshold=0.72,
+            cooldown_hours=24,
+            enabled=True,
+            schedule_cron="0 */6 * * *",
+        )
+    )
+    queue = InMemoryRunQueue()
+    queue.enqueue(
+        RunQueueMessage(
+            topic_id=topic.topic_id,
+            trigger="scheduler",
+        )
+    )
+
+    class SlowGraph:
+        def invoke(self, state: dict[str, object]) -> dict[str, object]:
+            time.sleep(0.05)
+            return {**state, "status": "completed"}
+
+    monkeypatch.setattr(
+        "app.scheduler.worker.build_monitor_graph",
+        lambda llm, run_repository: SlowGraph(),
+    )
+
+    worker = MonitorWorkerService(
+        topic_repository=topic_repository,
+        run_repository=run_repository,
+        llm=MockLLM(),
+        queue=queue,
+        max_retries=0,
+        invocation_timeout_seconds=0.01,
+    )
+
+    result = worker.process_next()
+
+    assert result is not None
+    assert result["status"] == "failed"
+    run_record = run_repository.get_monitor_run(result["run_id"])
+    assert run_record is not None
+    assert run_record.status == "failed"
+    assert "timed out" in (run_record.error_summary or "")
