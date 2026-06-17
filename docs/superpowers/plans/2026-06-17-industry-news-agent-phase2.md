@@ -204,23 +204,47 @@ Implemented scope:
 - Compose is documented as a local demonstration profile, not production
   deployment hardening.
 
-## Remaining Phase 2 Work
-
 ### React + Vite Management Dashboard
 
-Status: not implemented.
+Status: implemented as a local read-only dashboard over existing backend APIs.
 
-Target:
+Evidence:
 
-- React admin dashboard showing topics, candidate/push data, run detail, trace
-  timeline, and quality scores.
-- Consume existing backend APIs instead of changing backend contracts first.
-- Keep existing minimal HTML pages until the React dashboard is verified.
-- Add frontend service to Docker Compose only as a local demo path.
+- `9caa444 feat: add react dashboard`
+- `docs/superpowers/specs/2026-06-17-react-dashboard-design.md`
+- `docs/superpowers/plans/2026-06-17-react-dashboard.md`
+- `frontend/src/App.tsx`
+- `frontend/src/api/client.ts`
+- `frontend/src/App.test.tsx`
+- `frontend/src/api/client.test.ts`
+- `frontend/Dockerfile`
+- `docker-compose.yml`
+- `backend/README.md`
 
-Next required step:
+Implemented scope:
 
-- Freeze frontend page scope and API contract in a design spec before coding.
+- Standalone `frontend/` React + TypeScript + Vite app.
+- Typed client consumption of existing backend APIs only:
+  - `GET /api/topics`
+  - `GET /api/pushes`
+  - `GET /api/monitor/runs/{run_id}`
+  - `GET /api/monitor/runs/{run_id}/events`
+  - `GET /api/eval/summary`
+- Read-only views for dashboard summary, topics, pushes, run detail, and trace
+  timeline.
+- Local demo Compose frontend service on port `5173`.
+- README documentation for frontend commands and local-demo capability bounds.
+- Existing FastAPI HTML pages remain available.
+
+Still not claimed:
+
+- production frontend deployment
+- authentication or authorization
+- write operations from the React dashboard
+- realtime streaming via WebSocket or SSE
+- replacement of existing FastAPI HTML pages
+
+## Remaining Phase 2 Work
 
 ### Real OneSearch MCP Gateway Boundary
 
@@ -266,23 +290,26 @@ Not claimed:
 
 The next high-value implementation slice is:
 
-`React + Vite dashboard -> consume existing APIs -> local Compose frontend -> README route documentation`
+`Real OneSearch MCP gateway boundary -> explicit configuration -> fallback visibility -> README truthfulness`
 
 Reason:
 
-- It directly addresses `DEVELOPMENT_GUIDE.md` Phase 2's React management
-  dashboard requirement.
-- It improves project demonstration value without changing backend data
-  contracts.
-- Existing APIs already expose the required data for a first dashboard.
+- It directly addresses `DEVELOPMENT_GUIDE.md` Phase 2's requirement to retain
+  a real MCP integration boundary beyond `LocalToolGateway`.
+- The current code already centralizes tool dispatch behind `ToolGateway`, so
+  the next gain is to add a truthful non-default MCP-backed path instead of
+  widening dashboard scope.
+- It improves architectural credibility without forcing Agent nodes to depend
+  on a concrete third-party service.
 
 Required constraints:
 
-- Do not remove existing FastAPI HTML pages until the React app is verified.
-- Do not claim production frontend deployment.
-- Do not add new backend APIs unless an existing endpoint is insufficient and
-  the contract is documented first.
-- Verify frontend build and backend tests before committing.
+- Keep `LocalToolGateway` as deterministic default behavior.
+- Surface MCP unavailability through tool responses, run errors, and events.
+- Do not claim verified live OneSearch MCP service availability.
+- Do not let Agent nodes or planner logic depend directly on a concrete MCP
+  server implementation.
+- Verify backend tests before committing.
 
 ## Verification Baseline
 
