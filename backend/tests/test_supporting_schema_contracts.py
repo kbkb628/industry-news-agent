@@ -156,6 +156,36 @@ def test_event_schema_accepts_history_index_node() -> None:
     assert response.events[0].node == "index_history"
 
 
+@pytest.mark.parametrize(
+    ("event_type", "node"),
+    [
+        ("queue_dequeued", "worker_dequeue"),
+        ("governance_retry", "worker_retry"),
+        ("governance_timeout", "worker_timeout"),
+        ("governance_skipped", "worker_active_run_guard"),
+        ("governance_failed", "worker_failed"),
+    ],
+)
+def test_event_schema_accepts_worker_governance_events(
+    event_type: str,
+    node: str,
+) -> None:
+    event = EventRecord(
+        event_id=f"event_{node}",
+        run_id="run_001",
+        topic_id="topic_001",
+        event_type=event_type,
+        node=node,
+        message="Worker governance event.",
+        payload={"queue_wait_ms": 12},
+    )
+
+    response = EventListResponse(run_id="run_001", events=[event])
+
+    assert response.events[0].event_type == event_type
+    assert response.events[0].node == node
+
+
 def test_tool_execution_result_carries_error_contract() -> None:
     result = ToolExecutionResult(
         success=False,

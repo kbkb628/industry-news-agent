@@ -14,6 +14,11 @@ class EventType(StrEnum):
     FALLBACK_USED = "fallback_used"
     NOTIFICATION_SENT = "notification_sent"
     NOTIFICATION_SKIPPED = "notification_skipped"
+    QUEUE_DEQUEUED = "queue_dequeued"
+    GOVERNANCE_RETRY = "governance_retry"
+    GOVERNANCE_TIMEOUT = "governance_timeout"
+    GOVERNANCE_SKIPPED = "governance_skipped"
+    GOVERNANCE_FAILED = "governance_failed"
 
 
 class MonitorNodeName(StrEnum):
@@ -30,6 +35,11 @@ class MonitorNodeName(StrEnum):
     PERSIST_PUSH_RECORDS = "persist_push_records"
     NOTIFICATION_SEND = "notification_send"
     INDEX_HISTORY = "index_history"
+    WORKER_DEQUEUE = "worker_dequeue"
+    WORKER_RETRY = "worker_retry"
+    WORKER_TIMEOUT = "worker_timeout"
+    WORKER_ACTIVE_RUN_GUARD = "worker_active_run_guard"
+    WORKER_FAILED = "worker_failed"
     EVALUATE_RUN = "evaluate_run"
 
 
