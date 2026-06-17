@@ -31,6 +31,7 @@ def test_monitor_graph_runs_to_completion() -> None:
         def __init__(self) -> None:
             self.monitor_runs: list[object] = []
             self.candidate_records: list[dict[str, object]] = []
+            self.extracted_records: list[dict[str, object]] = []
             self.push_records: list[dict[str, object]] = []
             self.run_events: list[dict[str, object]] = []
             self.eval_results: list[dict[str, object]] = []
@@ -99,6 +100,43 @@ def test_monitor_graph_runs_to_completion() -> None:
             return [
                 record
                 for record in self.candidate_records
+                if record["run_id"] == run_id
+            ]
+
+        def upsert_extracted_item_records(
+            self,
+            payloads: tuple[object, ...],
+        ) -> list[dict[str, object]]:
+            persisted = [
+                {
+                    "extracted_id": payload.extracted_id,
+                    "run_id": payload.run_id,
+                    "topic_id": payload.topic_id,
+                    "candidate_id": payload.candidate_id,
+                    "source_type": payload.source_type,
+                    "source_name": payload.source_name,
+                    "title": payload.title,
+                    "url": payload.url,
+                    "published_at": payload.published_at,
+                    "summary": payload.summary,
+                    "keywords": list(payload.keywords),
+                    "content": payload.content,
+                    "content_fingerprint": payload.content_fingerprint,
+                    "fetch_status": payload.fetch_status,
+                    "fetch_error": payload.fetch_error,
+                    "extraction_mode": payload.extraction_mode,
+                    "structured_payload": payload.structured_payload,
+                    "created_at": datetime(2026, 6, 9, tzinfo=UTC),
+                }
+                for payload in payloads
+            ]
+            self.extracted_records.extend(persisted)
+            return persisted
+
+        def list_extracted_item_records(self, run_id: str) -> list[dict[str, object]]:
+            return [
+                record
+                for record in self.extracted_records
                 if record["run_id"] == run_id
             ]
 
@@ -183,6 +221,7 @@ def test_monitor_graph_runs_to_completion() -> None:
     assert result["status"] == "completed"
     assert result["expanded_queries"]
     assert len(result["candidate_items"]) == 3
+    assert len(result["extracted_items"]) == 3
     assert len(result["deduped_items"]) == 2
     assert len(result["scored_items"]) == 2
     assert len(result["final_decisions"]) == 2
@@ -202,6 +241,7 @@ def test_monitor_graph_runs_to_completion() -> None:
     )
     assert len(repository.monitor_runs) == 2
     assert len(repository.push_records) == 1
+    assert len(repository.extracted_records) == 3
     assert repository.push_records[0]["title"]
     assert repository.push_records[0]["url"]
     assert repository.push_records[0]["pushed_at"] is not None
@@ -215,6 +255,7 @@ def test_monitor_graph_records_provider_and_browser_fallback_events() -> None:
         def __init__(self) -> None:
             self.monitor_runs: list[object] = []
             self.candidate_records: list[dict[str, object]] = []
+            self.extracted_records: list[dict[str, object]] = []
             self.push_records: list[dict[str, object]] = []
             self.run_events: list[dict[str, object]] = []
             self.eval_results: list[dict[str, object]] = []
@@ -239,6 +280,15 @@ def test_monitor_graph_records_provider_and_browser_fallback_events() -> None:
             return []
 
         def list_candidate_records(self, run_id: str) -> list[dict[str, object]]:
+            return []
+
+        def upsert_extracted_item_records(
+            self,
+            payloads: tuple[object, ...],
+        ) -> list[dict[str, object]]:
+            return []
+
+        def list_extracted_item_records(self, run_id: str) -> list[dict[str, object]]:
             return []
 
         def create_run_events(
@@ -431,6 +481,7 @@ class InMemoryMonitorRunRepository:
         self._created_at = datetime(2026, 6, 9, 12, 0, tzinfo=UTC)
         self.monitor_runs: dict[str, MonitorRunRecord] = {}
         self.candidate_records: list[dict[str, object]] = []
+        self.extracted_records: list[dict[str, object]] = []
         self.push_records: list[dict[str, object]] = []
         self.run_events: list[dict[str, object]] = []
         self.eval_results: dict[str, dict[str, object]] = {}
@@ -548,6 +599,49 @@ class InMemoryMonitorRunRepository:
         return [
             record
             for record in self.candidate_records
+            if record["run_id"] == run_id
+        ]
+
+    def upsert_extracted_item_records(self, payloads: tuple[object, ...]) -> list[dict[str, object]]:
+        persisted = [
+            {
+                "extracted_id": payload.extracted_id,
+                "run_id": payload.run_id,
+                "topic_id": payload.topic_id,
+                "candidate_id": payload.candidate_id,
+                "source_type": payload.source_type,
+                "source_name": payload.source_name,
+                "title": payload.title,
+                "url": payload.url,
+                "published_at": payload.published_at,
+                "summary": payload.summary,
+                "keywords": list(payload.keywords),
+                "content": payload.content,
+                "content_fingerprint": payload.content_fingerprint,
+                "fetch_status": payload.fetch_status,
+                "fetch_error": payload.fetch_error,
+                "extraction_mode": payload.extraction_mode,
+                "structured_payload": payload.structured_payload,
+                "created_at": self._created_at,
+            }
+            for payload in payloads
+        ]
+        existing_keys = {
+            (record["run_id"], record["extracted_id"])
+            for record in persisted
+        }
+        self.extracted_records = [
+            record
+            for record in self.extracted_records
+            if (record["run_id"], record["extracted_id"]) not in existing_keys
+        ]
+        self.extracted_records.extend(persisted)
+        return persisted
+
+    def list_extracted_item_records(self, run_id: str) -> list[dict[str, object]]:
+        return [
+            record
+            for record in self.extracted_records
             if record["run_id"] == run_id
         ]
 
@@ -792,6 +886,7 @@ def test_reporting_endpoints_return_persisted_monitor_artifacts() -> None:
     assert candidates_response.status_code == 200
     assert len(candidates_response.json()["candidates"]) == 3
     assert len(run_repository.candidate_records) == 3
+    assert len(run_repository.extracted_records) == 3
     assert pushes_response.status_code == 200
     assert len(pushes_response.json()["pushes"]) == 1
     assert topic_pushes_response.status_code == 200

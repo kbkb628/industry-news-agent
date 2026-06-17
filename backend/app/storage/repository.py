@@ -8,7 +8,15 @@ from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from app.storage.models import CandidateRecord, EvalResult, MonitorRun, PushRecord, RunEvent, Topic
+from app.storage.models import (
+    CandidateRecord,
+    EvalResult,
+    ExtractedItemRecord,
+    MonitorRun,
+    PushRecord,
+    RunEvent,
+    Topic,
+)
 
 
 @dataclass(frozen=True, slots=True)
@@ -106,6 +114,27 @@ class CandidateRecordUpsertData:
 
 
 @dataclass(frozen=True, slots=True)
+class ExtractedItemRecordUpsertData:
+    extracted_id: str
+    run_id: str
+    topic_id: str
+    candidate_id: str
+    source_type: str
+    source_name: str
+    title: str
+    url: str
+    published_at: datetime | None
+    summary: str | None
+    keywords: tuple[str, ...]
+    content: str | None
+    content_fingerprint: str | None
+    fetch_status: str
+    fetch_error: str | None
+    extraction_mode: str
+    structured_payload: dict[str, Any]
+
+
+@dataclass(frozen=True, slots=True)
 class RunEventCreateData:
     run_id: str
     topic_id: str
@@ -158,6 +187,13 @@ class MonitorRunRepositoryProtocol(Protocol):
     ) -> list[dict[str, Any]]: ...
 
     def list_candidate_records(self, run_id: str) -> list[dict[str, Any]]: ...
+
+    def upsert_extracted_item_records(
+        self,
+        payloads: tuple[ExtractedItemRecordUpsertData, ...],
+    ) -> list[dict[str, Any]]: ...
+
+    def list_extracted_item_records(self, run_id: str) -> list[dict[str, Any]]: ...
 
     def list_run_events(self, run_id: str) -> list[dict[str, Any]]: ...
 
@@ -318,6 +354,19 @@ class UnimplementedMonitorRunRepository:
     def list_candidate_records(self, run_id: str) -> list[dict[str, Any]]:
         raise NotImplementedError(
             "Candidate queries are deferred until a database session is provided."
+        )
+
+    def upsert_extracted_item_records(
+        self,
+        payloads: tuple[ExtractedItemRecordUpsertData, ...],
+    ) -> list[dict[str, Any]]:
+        raise NotImplementedError(
+            "Extracted item persistence is deferred until a database session is provided."
+        )
+
+    def list_extracted_item_records(self, run_id: str) -> list[dict[str, Any]]:
+        raise NotImplementedError(
+            "Extracted item queries are deferred until a database session is provided."
         )
 
     def list_run_events(self, run_id: str) -> list[dict[str, Any]]:
@@ -519,6 +568,84 @@ class SqlAlchemyMonitorRunRepository:
             "score": record.score,
             "decision": record.decision,
             "decision_reason": record.decision_reason,
+            "created_at": record.created_at,
+        }
+
+    def upsert_extracted_item_records(
+        self,
+        payloads: tuple[ExtractedItemRecordUpsertData, ...],
+    ) -> list[dict[str, Any]]:
+        models: list[ExtractedItemRecord] = []
+        for payload in payloads:
+            model = self.session.get(
+                ExtractedItemRecord,
+                {
+                    "extracted_id": payload.extracted_id,
+                    "run_id": payload.run_id,
+                },
+            )
+            if model is None:
+                model = ExtractedItemRecord(
+                    extracted_id=payload.extracted_id,
+                    run_id=payload.run_id,
+                )
+                self.session.add(model)
+
+            model.topic_id = payload.topic_id
+            model.candidate_id = payload.candidate_id
+            model.source_type = payload.source_type
+            model.source_name = payload.source_name
+            model.title = payload.title
+            model.url = payload.url
+            model.published_at = payload.published_at
+            model.summary = payload.summary
+            model.keywords = list(payload.keywords)
+            model.content = payload.content
+            model.content_fingerprint = payload.content_fingerprint
+            model.fetch_status = payload.fetch_status
+            model.fetch_error = payload.fetch_error
+            model.extraction_mode = payload.extraction_mode
+            model.structured_payload = dict(payload.structured_payload)
+            models.append(model)
+
+        self._commit()
+        for model in models:
+            self.session.refresh(model)
+        return [self._serialize_extracted_item_record(model) for model in models]
+
+    def list_extracted_item_records(self, run_id: str) -> list[dict[str, Any]]:
+        records = self.session.scalars(
+            select(ExtractedItemRecord)
+            .where(ExtractedItemRecord.run_id == run_id)
+            .order_by(
+                ExtractedItemRecord.created_at.asc(),
+                ExtractedItemRecord.extracted_id.asc(),
+            )
+        ).all()
+        return [self._serialize_extracted_item_record(record) for record in records]
+
+    def _serialize_extracted_item_record(
+        self,
+        record: ExtractedItemRecord,
+    ) -> dict[str, Any]:
+        return {
+            "extracted_id": record.extracted_id,
+            "run_id": record.run_id,
+            "topic_id": record.topic_id,
+            "candidate_id": record.candidate_id,
+            "source_type": record.source_type,
+            "source_name": record.source_name,
+            "title": record.title,
+            "url": record.url,
+            "published_at": record.published_at,
+            "summary": record.summary,
+            "keywords": list(record.keywords),
+            "content": record.content,
+            "content_fingerprint": record.content_fingerprint,
+            "fetch_status": record.fetch_status,
+            "fetch_error": record.fetch_error,
+            "extraction_mode": record.extraction_mode,
+            "structured_payload": dict(record.structured_payload),
             "created_at": record.created_at,
         }
 

@@ -87,6 +87,33 @@ class CandidateRecord(Base):
     )
 
 
+class ExtractedItemRecord(Base):
+    __tablename__ = "extracted_items"
+
+    extracted_id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    run_id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    topic_id: Mapped[str] = mapped_column(String(64), nullable=False, index=True)
+    candidate_id: Mapped[str] = mapped_column(String(64), nullable=False, index=True)
+    source_type: Mapped[str] = mapped_column(String(32), nullable=False)
+    source_name: Mapped[str] = mapped_column(String(255), nullable=False)
+    title: Mapped[str] = mapped_column(String(255), nullable=False)
+    url: Mapped[str] = mapped_column(Text, nullable=False)
+    published_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    summary: Mapped[str | None] = mapped_column(Text, nullable=True)
+    keywords: Mapped[list[str]] = mapped_column(JSON, nullable=False, default=list)
+    content: Mapped[str | None] = mapped_column(Text, nullable=True)
+    content_fingerprint: Mapped[str | None] = mapped_column(String(128), nullable=True)
+    fetch_status: Mapped[str] = mapped_column(String(32), nullable=False, default="pending")
+    fetch_error: Mapped[str | None] = mapped_column(Text, nullable=True)
+    extraction_mode: Mapped[str] = mapped_column(String(32), nullable=False)
+    structured_payload: Mapped[dict] = mapped_column(JSON, nullable=False, default=dict)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        nullable=False,
+        server_default=func.now(),
+    )
+
+
 class MonitorRun(Base):
     __tablename__ = "monitor_runs"
 

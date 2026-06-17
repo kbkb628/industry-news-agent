@@ -35,8 +35,12 @@ from app.storage.database import (
     get_session_factory,
     reset_engine_registry,
 )
-from app.storage.models import CandidateRecord, Topic
-from app.storage.repository import CandidateRecordUpsertData, SqlAlchemyMonitorRunRepository
+from app.storage.models import CandidateRecord, ExtractedItemRecord, Topic
+from app.storage.repository import (
+    CandidateRecordUpsertData,
+    ExtractedItemRecordUpsertData,
+    SqlAlchemyMonitorRunRepository,
+)
 from app.storage.redis_store import build_redis_client
 
 
@@ -142,6 +146,32 @@ def test_candidate_model_declares_phase2_memory_columns() -> None:
     assert required_columns.issubset(CandidateRecord.__table__.columns.keys())
 
 
+def test_extracted_item_model_declares_phase2_memory_columns() -> None:
+    assert ExtractedItemRecord.__tablename__ == "extracted_items"
+    required_columns = {
+        "extracted_id",
+        "run_id",
+        "topic_id",
+        "candidate_id",
+        "source_type",
+        "source_name",
+        "title",
+        "url",
+        "published_at",
+        "summary",
+        "keywords",
+        "content",
+        "content_fingerprint",
+        "fetch_status",
+        "fetch_error",
+        "extraction_mode",
+        "structured_payload",
+        "created_at",
+    }
+
+    assert required_columns.issubset(ExtractedItemRecord.__table__.columns.keys())
+
+
 def test_sqlalchemy_repository_upserts_and_lists_candidate_records() -> None:
     settings = Settings(
         database_url="sqlite+pysqlite:///:memory:",
@@ -204,6 +234,74 @@ def test_sqlalchemy_repository_upserts_and_lists_candidate_records() -> None:
     assert listed[0]["fetch_status"] == "success"
     assert listed[0]["score"] == 0.91
     assert listed[0]["structured_payload"]["decision"]["should_push"] is True
+
+
+def test_sqlalchemy_repository_upserts_and_lists_extracted_item_records() -> None:
+    settings = Settings(
+        database_url="sqlite+pysqlite:///:memory:",
+        redis_url="redis://localhost:6379/0",
+    )
+    engine = build_engine(settings)
+    Base.metadata.create_all(engine)
+    session_factory = build_session_factory(engine)
+
+    with session_factory() as session:
+        repository = SqlAlchemyMonitorRunRepository(session=session)
+
+        created = repository.upsert_extracted_item_records(
+            (
+                ExtractedItemRecordUpsertData(
+                    extracted_id="ext_cand_001",
+                    run_id="run_001",
+                    topic_id="topic_ai_agent",
+                    candidate_id="cand_001",
+                    source_type="search",
+                    source_name="Mock Search",
+                    title="Initial extracted title",
+                    url="https://example.com/initial",
+                    published_at=datetime(2026, 6, 9, 12, 0, tzinfo=UTC),
+                    summary="Initial summary",
+                    keywords=("agent", "automation"),
+                    content="Fetched body",
+                    content_fingerprint="fp_initial",
+                    fetch_status="fetched",
+                    fetch_error=None,
+                    extraction_mode="full_content",
+                    structured_payload={"quality": {"source": "mock"}},
+                ),
+            )
+        )
+        updated = repository.upsert_extracted_item_records(
+            (
+                ExtractedItemRecordUpsertData(
+                    extracted_id="ext_cand_001",
+                    run_id="run_001",
+                    topic_id="topic_ai_agent",
+                    candidate_id="cand_001",
+                    source_type="search",
+                    source_name="Mock Search",
+                    title="Updated extracted title",
+                    url="https://example.com/updated",
+                    published_at=None,
+                    summary="Updated summary",
+                    keywords=("agent", "launch"),
+                    content="Updated body",
+                    content_fingerprint="fp_updated",
+                    fetch_status="fetched",
+                    fetch_error=None,
+                    extraction_mode="full_content",
+                    structured_payload={"quality": {"source": "updated"}},
+                ),
+            )
+        )
+        listed = repository.list_extracted_item_records("run_001")
+
+    assert created[0]["title"] == "Initial extracted title"
+    assert updated[0]["title"] == "Updated extracted title"
+    assert [item["extracted_id"] for item in listed] == ["ext_cand_001"]
+    assert listed[0]["keywords"] == ["agent", "launch"]
+    assert listed[0]["content_fingerprint"] == "fp_updated"
+    assert listed[0]["structured_payload"]["quality"]["source"] == "updated"
 
 
 def test_build_session_factory_binds_to_provided_engine() -> None:

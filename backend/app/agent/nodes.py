@@ -13,6 +13,7 @@ from app.rag.knowledge_loader import load_knowledge_base
 from app.storage.repository import (
     CandidateRecordUpsertData,
     EvalResultCreateData,
+    ExtractedItemRecordUpsertData,
     MonitorRunRepositoryProtocol,
     MonitorRunUpsertData,
     PushRecordCreateData,
@@ -476,6 +477,69 @@ def _build_candidate_payloads(state: dict[str, Any]) -> tuple[CandidateRecordUps
     return tuple(payloads)
 
 
+def _build_extracted_item_payloads(
+    state: dict[str, Any],
+) -> tuple[ExtractedItemRecordUpsertData, ...]:
+    payloads: list[ExtractedItemRecordUpsertData] = []
+
+    for item in state.get("extracted_items", []):
+        payloads.append(
+            ExtractedItemRecordUpsertData(
+                extracted_id=str(item["extracted_id"]),
+                run_id=str(item["run_id"]),
+                topic_id=str(item["topic_id"]),
+                candidate_id=str(item["candidate_id"]),
+                source_type=str(item["source_type"]),
+                source_name=str(item["source_name"]),
+                title=str(item["title"]),
+                url=str(item["url"]),
+                published_at=_parse_optional_datetime(item.get("published_at")),
+                summary=(
+                    None if item.get("summary") is None else str(item.get("summary"))
+                ),
+                keywords=tuple(str(keyword) for keyword in item.get("keywords", [])),
+                content=None if item.get("content") is None else str(item.get("content")),
+                content_fingerprint=(
+                    None
+                    if item.get("content_fingerprint") is None
+                    else str(item.get("content_fingerprint"))
+                ),
+                fetch_status=str(item.get("fetch_status", "pending")),
+                fetch_error=(
+                    None
+                    if item.get("fetch_error") is None
+                    else str(item.get("fetch_error"))
+                ),
+                extraction_mode=str(item.get("extraction_mode", "unknown")),
+                structured_payload={
+                    key: value
+                    for key, value in dict(item).items()
+                    if key
+                    not in {
+                        "extracted_id",
+                        "run_id",
+                        "topic_id",
+                        "candidate_id",
+                        "source_type",
+                        "source_name",
+                        "title",
+                        "url",
+                        "published_at",
+                        "summary",
+                        "keywords",
+                        "content",
+                        "content_fingerprint",
+                        "fetch_status",
+                        "fetch_error",
+                        "extraction_mode",
+                    }
+                },
+            )
+        )
+
+    return tuple(payloads)
+
+
 def evaluate_run_node(
     state: dict[str, Any],
     run_repository: MonitorRunRepositoryProtocol | None = None,
@@ -484,6 +548,9 @@ def evaluate_run_node(
     state["eval_result"] = score_run(state)
     state["status"] = "completed"
     if run_repository is not None:
+        state["extracted_records"] = run_repository.upsert_extracted_item_records(
+            _build_extracted_item_payloads(state)
+        )
         state["candidate_records"] = run_repository.upsert_candidate_records(
             _build_candidate_payloads(state)
         )
