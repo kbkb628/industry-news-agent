@@ -22,6 +22,7 @@ from app.rag.local_vector_retriever import LocalVectorRetriever
 from app.tools.responses import ToolResponse
 
 from app.core.config import Settings, get_settings
+from app.eval.judge import MockEvalJudge
 from app.eval.rule_scorer import score_run
 from app.scheduler.worker import (
     InMemoryRunQueue,
@@ -223,11 +224,34 @@ def test_eval_result_model_declares_phase2_memory_columns() -> None:
         "raw_summary_count",
         "browser_fallback_count",
         "provider_fallback_count",
+        "judge_mode",
+        "judge_score",
+        "judge_reason",
+        "judge_issues",
         "suggestions",
         "created_at",
     }
 
     assert required_columns.issubset(EvalResult.__table__.columns.keys())
+
+
+def test_mock_eval_judge_scores_quality_metrics() -> None:
+    result = MockEvalJudge().judge(
+        {
+            "duplicate_push_count": 1,
+            "fetch_success_rate": 0.5,
+            "trace_completeness": 0.75,
+        }
+    )
+
+    assert result["judge_mode"] == "mock_rule_judge"
+    assert result["judge_score"] == 0.6
+    assert "duplicate push" in result["judge_reason"]
+    assert result["judge_issues"] == [
+        "duplicate_push_detected",
+        "fetch_degraded",
+        "trace_incomplete",
+    ]
 
 
 def test_sqlalchemy_repository_upserts_and_lists_candidate_records() -> None:
@@ -451,6 +475,10 @@ def test_sqlalchemy_repository_persists_richer_eval_metrics() -> None:
                 raw_summary_count=4,
                 browser_fallback_count=2,
                 provider_fallback_count=1,
+                judge_mode="mock_rule_judge",
+                judge_score=0.85,
+                judge_reason="Quality is acceptable.",
+                judge_issues=("fetch_degraded",),
                 suggestions=("one", "two"),
             )
         )
@@ -463,6 +491,53 @@ def test_sqlalchemy_repository_persists_richer_eval_metrics() -> None:
     assert loaded["raw_summary_count"] == 4
     assert loaded["browser_fallback_count"] == 2
     assert loaded["provider_fallback_count"] == 1
+    assert loaded["judge_mode"] == "mock_rule_judge"
+    assert loaded["judge_score"] == 0.85
+    assert loaded["judge_reason"] == "Quality is acceptable."
+    assert loaded["judge_issues"] == ["fetch_degraded"]
+
+
+def test_sqlalchemy_repository_persists_eval_judge_fields() -> None:
+    settings = Settings(
+        database_url="sqlite+pysqlite:///:memory:",
+        redis_url="redis://localhost:6379/0",
+    )
+    engine = build_engine(settings)
+    Base.metadata.create_all(engine)
+    session_factory = build_session_factory(engine)
+
+    with session_factory() as session:
+        repository = SqlAlchemyMonitorRunRepository(session=session)
+        persisted = repository.create_eval_result(
+            EvalResultCreateData(
+                run_id="run_judged",
+                topic_id="topic_ai_agent",
+                retrieved_count=3,
+                deduped_count=2,
+                dedup_rate=0.33,
+                push_count=1,
+                duplicate_push_count=1,
+                tool_success_rate=1.0,
+                fetch_success_rate=0.5,
+                trace_completeness=0.75,
+                raw_summary_count=1,
+                browser_fallback_count=0,
+                provider_fallback_count=0,
+                judge_mode="mock_rule_judge",
+                judge_score=0.6,
+                judge_reason="Mock judge detected degraded quality.",
+                judge_issues=("duplicate_push_detected", "fetch_degraded"),
+                suggestions=(),
+            )
+        )
+        loaded = repository.get_eval_result("run_judged")
+
+    assert persisted["judge_mode"] == "mock_rule_judge"
+    assert persisted["judge_score"] == 0.6
+    assert persisted["judge_reason"] == "Mock judge detected degraded quality."
+    assert persisted["judge_issues"] == ["duplicate_push_detected", "fetch_degraded"]
+    assert loaded is not None
+    assert loaded["judge_issues"] == ["duplicate_push_detected", "fetch_degraded"]
 
 
 def test_sqlalchemy_repository_summarizes_eval_quality_metrics() -> None:

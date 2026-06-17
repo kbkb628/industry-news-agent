@@ -22,6 +22,10 @@ class EvalResultResponse(BaseModel):
     raw_summary_count: int = Field(default=0, ge=0)
     browser_fallback_count: int = Field(default=0, ge=0)
     provider_fallback_count: int = Field(default=0, ge=0)
+    judge_mode: str = "mock_rule_judge"
+    judge_score: float = Field(default=1.0, ge=0.0, le=1.0)
+    judge_reason: str = "Mock judge found no rule-based quality issues."
+    judge_issues: list[str] = Field(default_factory=list)
     suggestions: list[str] = Field(default_factory=list)
     created_at: datetime | None = None
 

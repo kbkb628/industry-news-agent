@@ -180,7 +180,11 @@ class EvalResultCreateData:
     raw_summary_count: int
     browser_fallback_count: int
     provider_fallback_count: int
-    suggestions: tuple[str, ...]
+    judge_mode: str = "mock_rule_judge"
+    judge_score: float = 1.0
+    judge_reason: str = "Mock judge found no rule-based quality issues."
+    judge_issues: tuple[str, ...] = ()
+    suggestions: tuple[str, ...] = ()
 
 
 class MonitorRunRepositoryProtocol(Protocol):
@@ -893,6 +897,10 @@ class SqlAlchemyMonitorRunRepository:
             raw_summary_count=payload.raw_summary_count,
             browser_fallback_count=payload.browser_fallback_count,
             provider_fallback_count=payload.provider_fallback_count,
+            judge_mode=payload.judge_mode,
+            judge_score=payload.judge_score,
+            judge_reason=payload.judge_reason,
+            judge_issues=list(payload.judge_issues),
             suggestions=list(payload.suggestions),
             created_at=datetime.now(UTC),
         )
@@ -917,6 +925,10 @@ class SqlAlchemyMonitorRunRepository:
             "raw_summary_count": model.raw_summary_count,
             "browser_fallback_count": model.browser_fallback_count,
             "provider_fallback_count": model.provider_fallback_count,
+            "judge_mode": model.judge_mode,
+            "judge_score": model.judge_score,
+            "judge_reason": model.judge_reason,
+            "judge_issues": list(model.judge_issues),
             "suggestions": list(model.suggestions),
             "created_at": model.created_at,
         }

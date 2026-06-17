@@ -20,13 +20,14 @@ Included in the current codebase:
 - worker retry, timeout, active-run guard, and governance events
 - optional OpenWebSearch provider path with mock search fallback
 - explicit browser fetch fallback metadata and events
+- deterministic MockEvalJudge adapter for the LLM-as-Judge evaluation contract
 
 Not claimed by the current implementation:
 
 - Playwright MCP execution as a live external browser service
 - Elasticsearch or vector retrieval
 - embedding indexing
-- LLM-as-Judge evaluation
+- live external LLM-as-Judge model calls
 - production deployment hardening
 
 ## Environment

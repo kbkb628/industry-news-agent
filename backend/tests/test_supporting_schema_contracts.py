@@ -154,3 +154,23 @@ def test_eval_result_response_keeps_minimum_metrics_contract() -> None:
     assert result.push_count == 2
     assert result.raw_summary_count == 4
     assert result.created_at == timestamp
+
+
+def test_eval_schema_accepts_judge_fields() -> None:
+    result = EvalResultResponse(
+        eval_id="eval_judge_001",
+        run_id="run_judge_001",
+        topic_id="topic_001",
+        retrieved_count=5,
+        deduped_count=4,
+        push_count=1,
+        tool_success_rate=1.0,
+        judge_mode="mock_rule_judge",
+        judge_score=0.85,
+        judge_reason="Mock judge found acceptable quality.",
+        judge_issues=["fetch_degraded"],
+    )
+
+    assert result.judge_mode == "mock_rule_judge"
+    assert result.judge_score == 0.85
+    assert result.judge_issues == ["fetch_degraded"]

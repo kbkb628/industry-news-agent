@@ -229,6 +229,10 @@ class EvalResult(Base):
     raw_summary_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     browser_fallback_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     provider_fallback_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    judge_mode: Mapped[str] = mapped_column(String(64), nullable=False, default="mock_rule_judge")
+    judge_score: Mapped[float] = mapped_column(Float, nullable=False, default=1.0)
+    judge_reason: Mapped[str] = mapped_column(Text, nullable=False, default="")
+    judge_issues: Mapped[list[str]] = mapped_column(JSON, nullable=False, default=list)
     suggestions: Mapped[list[str]] = mapped_column(JSON, nullable=False, default=list)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),

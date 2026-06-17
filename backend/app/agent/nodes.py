@@ -5,6 +5,7 @@ from typing import Any
 
 from app.agent.planner import build_source_plan
 from app.eval.rule_scorer import score_run
+from app.eval.judge import MockEvalJudge
 from app.llm.base import BaseLLMClient
 from app.mcp.local_gateway import LocalToolGateway
 from app.observability.event_logger import append_event
@@ -585,6 +586,7 @@ def evaluate_run_node(
 ) -> dict[str, Any]:
     append_event(state, "evaluate_run", "Evaluated run metrics and trace completeness.")
     state["eval_result"] = score_run(state)
+    state["eval_result"].update(MockEvalJudge().judge(state["eval_result"]))
     state["status"] = "completed"
     if run_repository is not None:
         state["extracted_records"] = run_repository.upsert_extracted_item_records(
@@ -633,6 +635,10 @@ def evaluate_run_node(
                 provider_fallback_count=int(
                     state["eval_result"]["provider_fallback_count"]
                 ),
+                judge_mode=str(state["eval_result"]["judge_mode"]),
+                judge_score=float(state["eval_result"]["judge_score"]),
+                judge_reason=str(state["eval_result"]["judge_reason"]),
+                judge_issues=tuple(state["eval_result"].get("judge_issues", [])),
                 suggestions=tuple(state["eval_result"].get("suggestions", [])),
             )
         )
