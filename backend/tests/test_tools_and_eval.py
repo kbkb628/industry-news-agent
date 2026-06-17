@@ -28,13 +28,15 @@ from app.scheduler.worker import (
     build_run_queue,
 )
 from app.storage.database import (
+    Base,
     build_engine,
     build_session_factory,
     get_engine,
     get_session_factory,
     reset_engine_registry,
 )
-from app.storage.models import Topic
+from app.storage.models import CandidateRecord, Topic
+from app.storage.repository import CandidateRecordUpsertData, SqlAlchemyMonitorRunRepository
 from app.storage.redis_store import build_redis_client
 
 
@@ -114,6 +116,94 @@ def test_topic_model_declares_mvp_table_and_required_columns() -> None:
     }
 
     assert required_columns.issubset(Topic.__table__.columns.keys())
+
+
+def test_candidate_model_declares_phase2_memory_columns() -> None:
+    assert CandidateRecord.__tablename__ == "candidates"
+    required_columns = {
+        "candidate_id",
+        "run_id",
+        "topic_id",
+        "source_type",
+        "source_name",
+        "title",
+        "url",
+        "published_at",
+        "raw_summary",
+        "fetch_status",
+        "content",
+        "structured_payload",
+        "score",
+        "decision",
+        "decision_reason",
+        "created_at",
+    }
+
+    assert required_columns.issubset(CandidateRecord.__table__.columns.keys())
+
+
+def test_sqlalchemy_repository_upserts_and_lists_candidate_records() -> None:
+    settings = Settings(
+        database_url="sqlite+pysqlite:///:memory:",
+        redis_url="redis://localhost:6379/0",
+    )
+    engine = build_engine(settings)
+    Base.metadata.create_all(engine)
+    session_factory = build_session_factory(engine)
+
+    with session_factory() as session:
+        repository = SqlAlchemyMonitorRunRepository(session=session)
+
+        created = repository.upsert_candidate_records(
+            (
+                CandidateRecordUpsertData(
+                    candidate_id="cand_001",
+                    run_id="run_001",
+                    topic_id="topic_ai_agent",
+                    source_type="search",
+                    source_name="Mock Search",
+                    title="Initial candidate",
+                    url="https://example.com/initial",
+                    published_at=datetime(2026, 6, 9, 12, 0, tzinfo=UTC),
+                    raw_summary="Initial summary",
+                    fetch_status="pending",
+                    content=None,
+                    structured_payload={"decision": {}},
+                    score=None,
+                    decision=None,
+                    decision_reason=None,
+                ),
+            )
+        )
+        updated = repository.upsert_candidate_records(
+            (
+                CandidateRecordUpsertData(
+                    candidate_id="cand_001",
+                    run_id="run_001",
+                    topic_id="topic_ai_agent",
+                    source_type="search",
+                    source_name="Mock Search",
+                    title="Updated candidate",
+                    url="https://example.com/updated",
+                    published_at=None,
+                    raw_summary="Updated summary",
+                    fetch_status="success",
+                    content="Fetched article body",
+                    structured_payload={"decision": {"should_push": True}},
+                    score=0.91,
+                    decision="push",
+                    decision_reason="Above threshold",
+                ),
+            )
+        )
+        listed = repository.list_candidate_records("run_001")
+
+    assert created[0]["title"] == "Initial candidate"
+    assert updated[0]["title"] == "Updated candidate"
+    assert [candidate["candidate_id"] for candidate in listed] == ["cand_001"]
+    assert listed[0]["fetch_status"] == "success"
+    assert listed[0]["score"] == 0.91
+    assert listed[0]["structured_payload"]["decision"]["should_push"] is True
 
 
 def test_build_session_factory_binds_to_provided_engine() -> None:

@@ -8,7 +8,7 @@ from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from app.storage.models import EvalResult, MonitorRun, PushRecord, RunEvent, Topic
+from app.storage.models import CandidateRecord, EvalResult, MonitorRun, PushRecord, RunEvent, Topic
 
 
 @dataclass(frozen=True, slots=True)
@@ -87,6 +87,25 @@ class PushRecordCreateData:
 
 
 @dataclass(frozen=True, slots=True)
+class CandidateRecordUpsertData:
+    candidate_id: str
+    run_id: str
+    topic_id: str
+    source_type: str
+    source_name: str
+    title: str
+    url: str
+    published_at: datetime | None
+    raw_summary: str | None
+    fetch_status: str
+    content: str | None
+    structured_payload: dict[str, Any]
+    score: float | None
+    decision: str | None
+    decision_reason: str | None
+
+
+@dataclass(frozen=True, slots=True)
 class RunEventCreateData:
     run_id: str
     topic_id: str
@@ -132,6 +151,13 @@ class MonitorRunRepositoryProtocol(Protocol):
         self,
         payloads: tuple[PushRecordCreateData, ...],
     ) -> list[dict[str, Any]]: ...
+
+    def upsert_candidate_records(
+        self,
+        payloads: tuple[CandidateRecordUpsertData, ...],
+    ) -> list[dict[str, Any]]: ...
+
+    def list_candidate_records(self, run_id: str) -> list[dict[str, Any]]: ...
 
     def list_run_events(self, run_id: str) -> list[dict[str, Any]]: ...
 
@@ -281,6 +307,19 @@ class UnimplementedMonitorRunRepository:
             "Push record persistence is deferred until a database session is provided."
         )
 
+    def upsert_candidate_records(
+        self,
+        payloads: tuple[CandidateRecordUpsertData, ...],
+    ) -> list[dict[str, Any]]:
+        raise NotImplementedError(
+            "Candidate persistence is deferred until a database session is provided."
+        )
+
+    def list_candidate_records(self, run_id: str) -> list[dict[str, Any]]:
+        raise NotImplementedError(
+            "Candidate queries are deferred until a database session is provided."
+        )
+
     def list_run_events(self, run_id: str) -> list[dict[str, Any]]:
         raise NotImplementedError(
             "Event queries are deferred until a database session is provided."
@@ -414,6 +453,74 @@ class SqlAlchemyMonitorRunRepository:
         for model in models:
             self.session.refresh(model)
         return [self._serialize_push_record(model) for model in models]
+
+    def upsert_candidate_records(
+        self,
+        payloads: tuple[CandidateRecordUpsertData, ...],
+    ) -> list[dict[str, Any]]:
+        models: list[CandidateRecord] = []
+        for payload in payloads:
+            model = self.session.get(
+                CandidateRecord,
+                {
+                    "candidate_id": payload.candidate_id,
+                    "run_id": payload.run_id,
+                },
+            )
+            if model is None:
+                model = CandidateRecord(
+                    candidate_id=payload.candidate_id,
+                    run_id=payload.run_id,
+                )
+                self.session.add(model)
+
+            model.topic_id = payload.topic_id
+            model.source_type = payload.source_type
+            model.source_name = payload.source_name
+            model.title = payload.title
+            model.url = payload.url
+            model.published_at = payload.published_at
+            model.raw_summary = payload.raw_summary
+            model.fetch_status = payload.fetch_status
+            model.content = payload.content
+            model.structured_payload = dict(payload.structured_payload)
+            model.score = payload.score
+            model.decision = payload.decision
+            model.decision_reason = payload.decision_reason
+            models.append(model)
+
+        self._commit()
+        for model in models:
+            self.session.refresh(model)
+        return [self._serialize_candidate_record(model) for model in models]
+
+    def list_candidate_records(self, run_id: str) -> list[dict[str, Any]]:
+        records = self.session.scalars(
+            select(CandidateRecord)
+            .where(CandidateRecord.run_id == run_id)
+            .order_by(CandidateRecord.created_at.asc(), CandidateRecord.candidate_id.asc())
+        ).all()
+        return [self._serialize_candidate_record(record) for record in records]
+
+    def _serialize_candidate_record(self, record: CandidateRecord) -> dict[str, Any]:
+        return {
+            "candidate_id": record.candidate_id,
+            "run_id": record.run_id,
+            "topic_id": record.topic_id,
+            "source_type": record.source_type,
+            "source_name": record.source_name,
+            "title": record.title,
+            "url": record.url,
+            "published_at": record.published_at,
+            "raw_summary": record.raw_summary,
+            "fetch_status": record.fetch_status,
+            "content": record.content,
+            "structured_payload": dict(record.structured_payload),
+            "score": record.score,
+            "decision": record.decision,
+            "decision_reason": record.decision_reason,
+            "created_at": record.created_at,
+        }
 
     def _serialize_push_record(self, record: PushRecord) -> dict[str, Any]:
         return {

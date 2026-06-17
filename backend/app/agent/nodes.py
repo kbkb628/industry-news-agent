@@ -11,6 +11,7 @@ from app.observability.event_logger import append_event
 from app.rag.hybrid_retriever import retrieve_hybrid_context
 from app.rag.knowledge_loader import load_knowledge_base
 from app.storage.repository import (
+    CandidateRecordUpsertData,
     EvalResultCreateData,
     MonitorRunRepositoryProtocol,
     MonitorRunUpsertData,
@@ -399,6 +400,82 @@ def persist_push_records_node(
     )
 
 
+def _index_by_candidate_id(items: list[dict[str, Any]]) -> dict[str, dict[str, Any]]:
+    return {
+        str(item["candidate_id"]): dict(item)
+        for item in items
+        if item.get("candidate_id") is not None
+    }
+
+
+def _parse_optional_datetime(value: Any) -> datetime | None:
+    if value is None:
+        return None
+    if isinstance(value, datetime):
+        return value
+    return datetime.fromisoformat(str(value).replace("Z", "+00:00"))
+
+
+def _build_candidate_payloads(state: dict[str, Any]) -> tuple[CandidateRecordUpsertData, ...]:
+    fetched_by_id = _index_by_candidate_id(list(state.get("fetched_contents", [])))
+    extracted_by_id = _index_by_candidate_id(list(state.get("extracted_items", [])))
+    scored_by_id = _index_by_candidate_id(list(state.get("scored_items", [])))
+    decisions_by_id = _index_by_candidate_id(list(state.get("final_decisions", [])))
+    payloads: list[CandidateRecordUpsertData] = []
+
+    for candidate in state.get("candidate_items", []):
+        candidate_id = str(candidate["candidate_id"])
+        fetched = fetched_by_id.get(candidate_id, {})
+        extracted = extracted_by_id.get(candidate_id, {})
+        scored = scored_by_id.get(candidate_id, {})
+        decision = decisions_by_id.get(candidate_id, {})
+        structured_payload = {
+            "extracted": extracted,
+            "score_breakdown": scored.get("score_breakdown"),
+            "decision": decision,
+        }
+
+        payloads.append(
+            CandidateRecordUpsertData(
+                candidate_id=candidate_id,
+                run_id=str(candidate["run_id"]),
+                topic_id=str(candidate["topic_id"]),
+                source_type=str(candidate["source_type"]),
+                source_name=str(candidate["source_name"]),
+                title=str(candidate["title"]),
+                url=str(candidate["url"]),
+                published_at=_parse_optional_datetime(candidate.get("published_at")),
+                raw_summary=(
+                    None
+                    if candidate.get("raw_summary") is None
+                    else str(candidate.get("raw_summary"))
+                ),
+                fetch_status=str(
+                    fetched.get("fetch_status", candidate.get("fetch_status", "pending"))
+                ),
+                content=(
+                    None
+                    if fetched.get("content") is None
+                    else str(fetched.get("content"))
+                ),
+                structured_payload=structured_payload,
+                score=None if scored.get("score") is None else float(scored.get("score")),
+                decision=(
+                    None
+                    if decision.get("should_push") is None
+                    else ("push" if decision.get("should_push") else "skip")
+                ),
+                decision_reason=(
+                    None
+                    if decision.get("decision_reason") is None
+                    else str(decision.get("decision_reason"))
+                ),
+            )
+        )
+
+    return tuple(payloads)
+
+
 def evaluate_run_node(
     state: dict[str, Any],
     run_repository: MonitorRunRepositoryProtocol | None = None,
@@ -407,6 +484,9 @@ def evaluate_run_node(
     state["eval_result"] = score_run(state)
     state["status"] = "completed"
     if run_repository is not None:
+        state["candidate_records"] = run_repository.upsert_candidate_records(
+            _build_candidate_payloads(state)
+        )
         run_repository.create_run_events(
             tuple(
                 RunEventCreateData(

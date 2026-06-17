@@ -30,6 +30,7 @@ def test_monitor_graph_runs_to_completion() -> None:
     class RecordingMonitorRunRepository:
         def __init__(self) -> None:
             self.monitor_runs: list[object] = []
+            self.candidate_records: list[dict[str, object]] = []
             self.push_records: list[dict[str, object]] = []
             self.run_events: list[dict[str, object]] = []
             self.eval_results: list[dict[str, object]] = []
@@ -65,6 +66,41 @@ def test_monitor_graph_runs_to_completion() -> None:
             ]
             self.push_records.extend(persisted)
             return persisted
+
+        def upsert_candidate_records(
+            self,
+            payloads: tuple[object, ...],
+        ) -> list[dict[str, object]]:
+            persisted = [
+                {
+                    "candidate_id": payload.candidate_id,
+                    "run_id": payload.run_id,
+                    "topic_id": payload.topic_id,
+                    "source_type": payload.source_type,
+                    "source_name": payload.source_name,
+                    "title": payload.title,
+                    "url": payload.url,
+                    "published_at": payload.published_at,
+                    "raw_summary": payload.raw_summary,
+                    "fetch_status": payload.fetch_status,
+                    "content": payload.content,
+                    "structured_payload": payload.structured_payload,
+                    "score": payload.score,
+                    "decision": payload.decision,
+                    "decision_reason": payload.decision_reason,
+                    "created_at": datetime(2026, 6, 9, tzinfo=UTC),
+                }
+                for payload in payloads
+            ]
+            self.candidate_records.extend(persisted)
+            return persisted
+
+        def list_candidate_records(self, run_id: str) -> list[dict[str, object]]:
+            return [
+                record
+                for record in self.candidate_records
+                if record["run_id"] == run_id
+            ]
 
         def create_run_events(
             self,
@@ -169,6 +205,7 @@ def test_monitor_graph_runs_to_completion() -> None:
     assert repository.push_records[0]["title"]
     assert repository.push_records[0]["url"]
     assert repository.push_records[0]["pushed_at"] is not None
+    assert len(repository.candidate_records) == 3
     assert len(repository.run_events) == len(result["events"])
     assert len(repository.eval_results) == 1
 
@@ -177,6 +214,7 @@ def test_monitor_graph_records_provider_and_browser_fallback_events() -> None:
     class RecordingMonitorRunRepository:
         def __init__(self) -> None:
             self.monitor_runs: list[object] = []
+            self.candidate_records: list[dict[str, object]] = []
             self.push_records: list[dict[str, object]] = []
             self.run_events: list[dict[str, object]] = []
             self.eval_results: list[dict[str, object]] = []
@@ -192,6 +230,15 @@ def test_monitor_graph_records_provider_and_browser_fallback_events() -> None:
             self,
             payloads: tuple[object, ...],
         ) -> list[dict[str, object]]:
+            return []
+
+        def upsert_candidate_records(
+            self,
+            payloads: tuple[object, ...],
+        ) -> list[dict[str, object]]:
+            return []
+
+        def list_candidate_records(self, run_id: str) -> list[dict[str, object]]:
             return []
 
         def create_run_events(
@@ -383,6 +430,7 @@ class InMemoryMonitorRunRepository:
     def __init__(self) -> None:
         self._created_at = datetime(2026, 6, 9, 12, 0, tzinfo=UTC)
         self.monitor_runs: dict[str, MonitorRunRecord] = {}
+        self.candidate_records: list[dict[str, object]] = []
         self.push_records: list[dict[str, object]] = []
         self.run_events: list[dict[str, object]] = []
         self.eval_results: dict[str, dict[str, object]] = {}
@@ -461,6 +509,47 @@ class InMemoryMonitorRunRepository:
         ]
         self.push_records.extend(persisted)
         return persisted
+
+    def upsert_candidate_records(self, payloads: tuple[object, ...]) -> list[dict[str, object]]:
+        persisted = [
+            {
+                "candidate_id": payload.candidate_id,
+                "run_id": payload.run_id,
+                "topic_id": payload.topic_id,
+                "source_type": payload.source_type,
+                "source_name": payload.source_name,
+                "title": payload.title,
+                "url": payload.url,
+                "published_at": payload.published_at,
+                "raw_summary": payload.raw_summary,
+                "fetch_status": payload.fetch_status,
+                "content": payload.content,
+                "structured_payload": payload.structured_payload,
+                "score": payload.score,
+                "decision": payload.decision,
+                "decision_reason": payload.decision_reason,
+                "created_at": self._created_at,
+            }
+            for payload in payloads
+        ]
+        existing_keys = {
+            (record["run_id"], record["candidate_id"])
+            for record in persisted
+        }
+        self.candidate_records = [
+            record
+            for record in self.candidate_records
+            if (record["run_id"], record["candidate_id"]) not in existing_keys
+        ]
+        self.candidate_records.extend(persisted)
+        return persisted
+
+    def list_candidate_records(self, run_id: str) -> list[dict[str, object]]:
+        return [
+            record
+            for record in self.candidate_records
+            if record["run_id"] == run_id
+        ]
 
     def list_run_events(self, run_id: str) -> list[dict[str, object]]:
         return [event for event in self.run_events if event["run_id"] == run_id]
@@ -702,6 +791,7 @@ def test_reporting_endpoints_return_persisted_monitor_artifacts() -> None:
 
     assert candidates_response.status_code == 200
     assert len(candidates_response.json()["candidates"]) == 3
+    assert len(run_repository.candidate_records) == 3
     assert pushes_response.status_code == 200
     assert len(pushes_response.json()["pushes"]) == 1
     assert topic_pushes_response.status_code == 200
@@ -712,6 +802,54 @@ def test_reporting_endpoints_return_persisted_monitor_artifacts() -> None:
     assert eval_response.status_code == 200
     assert eval_response.json()["run_id"] == run_id
     assert eval_response.json()["push_count"] == 1
+
+
+def test_candidates_endpoint_prefers_persisted_candidate_records() -> None:
+    topic_repository = InMemoryTopicRepository()
+    run_repository = InMemoryMonitorRunRepository()
+    run_repository.monitor_runs["run_persisted_candidates"] = MonitorRunRecord(
+        run_id="run_persisted_candidates",
+        topic_id="topic_ai_agent",
+        status="completed",
+        state_snapshot={
+            "run_id": "run_persisted_candidates",
+            "topic_id": "topic_ai_agent",
+            "candidate_items": [],
+        },
+        error_summary=None,
+        started_at=datetime(2026, 6, 9, 12, 0, tzinfo=UTC),
+        finished_at=datetime(2026, 6, 9, 12, 5, tzinfo=UTC),
+        created_at=datetime(2026, 6, 9, 12, 0, tzinfo=UTC),
+    )
+    run_repository.candidate_records.append(
+        {
+            "candidate_id": "cand_persisted_001",
+            "run_id": "run_persisted_candidates",
+            "topic_id": "topic_ai_agent",
+            "source_type": "search",
+            "source_name": "Persisted Search",
+            "title": "Persisted candidate",
+            "url": "https://example.com/persisted-candidate",
+            "published_at": None,
+            "raw_summary": "Persisted summary",
+            "fetch_status": "pending",
+            "content": "",
+            "structured_payload": {},
+            "score": None,
+            "decision": None,
+            "decision_reason": None,
+            "created_at": datetime(2026, 6, 9, 12, 0, tzinfo=UTC),
+        }
+    )
+
+    with _build_monitor_client(topic_repository, run_repository) as client:
+        response = client.get("/api/monitor/runs/run_persisted_candidates/candidates")
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert [candidate["candidate_id"] for candidate in payload["candidates"]] == [
+        "cand_persisted_001"
+    ]
 
 
 def test_mvp_closed_loop_end_to_end() -> None:

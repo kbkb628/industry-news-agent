@@ -11,6 +11,7 @@ Included in the current codebase:
 - topic creation, listing, and detail APIs
 - MockLLM-backed monitor workflow through LangGraph
 - persisted monitor runs, push records, run events, and eval results
+- persisted candidate records for monitor runs with snapshot fallback
 - minimal HTML admin pages for topics, pushes, run detail, and events
 - APScheduler topic jobs that enqueue worker runs
 - Redis-backed run queue with in-memory fallback

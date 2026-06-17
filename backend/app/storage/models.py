@@ -62,6 +62,31 @@ def _generate_eval_id() -> str:
     return f"eval_{uuid.uuid4().hex[:12]}"
 
 
+class CandidateRecord(Base):
+    __tablename__ = "candidates"
+
+    candidate_id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    run_id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    topic_id: Mapped[str] = mapped_column(String(64), nullable=False, index=True)
+    source_type: Mapped[str] = mapped_column(String(32), nullable=False)
+    source_name: Mapped[str] = mapped_column(String(255), nullable=False)
+    title: Mapped[str] = mapped_column(String(255), nullable=False)
+    url: Mapped[str] = mapped_column(Text, nullable=False)
+    published_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    raw_summary: Mapped[str | None] = mapped_column(Text, nullable=True)
+    fetch_status: Mapped[str] = mapped_column(String(32), nullable=False, default="pending")
+    content: Mapped[str | None] = mapped_column(Text, nullable=True)
+    structured_payload: Mapped[dict] = mapped_column(JSON, nullable=False, default=dict)
+    score: Mapped[float | None] = mapped_column(Float, nullable=True)
+    decision: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    decision_reason: Mapped[str | None] = mapped_column(Text, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        nullable=False,
+        server_default=func.now(),
+    )
+
+
 class MonitorRun(Base):
     __tablename__ = "monitor_runs"
 

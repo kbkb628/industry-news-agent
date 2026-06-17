@@ -43,6 +43,16 @@ def list_candidates(
             detail="Monitor run not found",
         )
 
+    persisted_candidates = repository.list_candidate_records(run_id)
+    if persisted_candidates:
+        return CandidateListResponse(
+            run_id=run_id,
+            candidates=[
+                _to_candidate_payload(candidate)
+                for candidate in persisted_candidates
+            ],
+        )
+
     snapshot = dict(run_record.state_snapshot)
     return CandidateListResponse(
         run_id=run_id,
