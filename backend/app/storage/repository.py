@@ -234,6 +234,8 @@ class MonitorRunRepositoryProtocol(Protocol):
 
     def get_eval_result(self, run_id: str | None = None) -> dict[str, Any] | None: ...
 
+    def get_eval_summary(self) -> dict[str, Any] | None: ...
+
     def create_eval_result(self, payload: EvalResultCreateData) -> dict[str, Any]: ...
 
 
@@ -428,6 +430,11 @@ class UnimplementedMonitorRunRepository:
     def get_eval_result(self, run_id: str | None = None) -> dict[str, Any] | None:
         raise NotImplementedError(
             "Eval queries are deferred until a database session is provided."
+        )
+
+    def get_eval_summary(self) -> dict[str, Any] | None:
+        raise NotImplementedError(
+            "Eval summary queries are deferred until a database session is provided."
         )
 
     def create_eval_result(self, payload: EvalResultCreateData) -> dict[str, Any]:
@@ -834,6 +841,43 @@ class SqlAlchemyMonitorRunRepository:
             return None
         return self._serialize_eval_result(model)
 
+    def get_eval_summary(self) -> dict[str, Any] | None:
+        results = self.session.scalars(
+            select(EvalResult).order_by(EvalResult.created_at.desc(), EvalResult.eval_id.desc())
+        ).all()
+        if not results:
+            return None
+
+        run_count = len(results)
+        latest = results[0]
+        return {
+            "run_count": run_count,
+            "total_push_count": sum(result.push_count for result in results),
+            "total_duplicate_push_count": sum(
+                result.duplicate_push_count for result in results
+            ),
+            "total_raw_summary_count": sum(result.raw_summary_count for result in results),
+            "total_browser_fallback_count": sum(
+                result.browser_fallback_count for result in results
+            ),
+            "total_provider_fallback_count": sum(
+                result.provider_fallback_count for result in results
+            ),
+            "avg_tool_success_rate": round(
+                sum(result.tool_success_rate for result in results) / run_count,
+                2,
+            ),
+            "avg_fetch_success_rate": round(
+                sum(result.fetch_success_rate for result in results) / run_count,
+                2,
+            ),
+            "avg_trace_completeness": round(
+                sum(result.trace_completeness for result in results) / run_count,
+                2,
+            ),
+            "latest_eval": self._serialize_eval_result(latest),
+        }
+
     def create_eval_result(self, payload: EvalResultCreateData) -> dict[str, Any]:
         model = EvalResult(
             run_id=payload.run_id,
@@ -850,6 +894,7 @@ class SqlAlchemyMonitorRunRepository:
             browser_fallback_count=payload.browser_fallback_count,
             provider_fallback_count=payload.provider_fallback_count,
             suggestions=list(payload.suggestions),
+            created_at=datetime.now(UTC),
         )
         self.session.add(model)
         self._commit()

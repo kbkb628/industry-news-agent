@@ -464,6 +464,68 @@ def test_sqlalchemy_repository_persists_richer_eval_metrics() -> None:
     assert loaded["provider_fallback_count"] == 1
 
 
+def test_sqlalchemy_repository_summarizes_eval_quality_metrics() -> None:
+    settings = Settings(
+        database_url="sqlite+pysqlite:///:memory:",
+        redis_url="redis://localhost:6379/0",
+    )
+    engine = build_engine(settings)
+    Base.metadata.create_all(engine)
+    session_factory = build_session_factory(engine)
+
+    with session_factory() as session:
+        repository = SqlAlchemyMonitorRunRepository(session=session)
+        repository.create_eval_result(
+            EvalResultCreateData(
+                run_id="run_001",
+                topic_id="topic_ai_agent",
+                retrieved_count=6,
+                deduped_count=4,
+                dedup_rate=0.33,
+                push_count=1,
+                duplicate_push_count=0,
+                tool_success_rate=1.0,
+                fetch_success_rate=0.5,
+                trace_completeness=0.9,
+                raw_summary_count=2,
+                browser_fallback_count=1,
+                provider_fallback_count=1,
+                suggestions=(),
+            )
+        )
+        repository.create_eval_result(
+            EvalResultCreateData(
+                run_id="run_002",
+                topic_id="topic_ai_agent",
+                retrieved_count=8,
+                deduped_count=7,
+                dedup_rate=0.12,
+                push_count=3,
+                duplicate_push_count=1,
+                tool_success_rate=0.5,
+                fetch_success_rate=1.0,
+                trace_completeness=1.0,
+                raw_summary_count=0,
+                browser_fallback_count=2,
+                provider_fallback_count=0,
+                suggestions=("review provider fallback",),
+            )
+        )
+        summary = repository.get_eval_summary()
+
+    assert summary is not None
+    assert summary["run_count"] == 2
+    assert summary["total_push_count"] == 4
+    assert summary["total_duplicate_push_count"] == 1
+    assert summary["total_raw_summary_count"] == 2
+    assert summary["total_browser_fallback_count"] == 3
+    assert summary["total_provider_fallback_count"] == 1
+    assert summary["avg_tool_success_rate"] == 0.75
+    assert summary["avg_fetch_success_rate"] == 0.75
+    assert summary["avg_trace_completeness"] == 0.95
+    assert summary["latest_eval"]["run_id"] == "run_002"
+
+
 def test_score_run_reports_phase2_quality_fallback_metrics() -> None:
     result = score_run(
         {

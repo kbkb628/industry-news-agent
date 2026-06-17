@@ -97,6 +97,10 @@ def create_app() -> FastAPI:
     def pushes_page(request: Request):
         return templates.TemplateResponse(request, "pushes.html")
 
+    @app.get("/quality", response_class=HTMLResponse)
+    def quality_page(request: Request):
+        return templates.TemplateResponse(request, "quality.html")
+
     @app.get("/runs/{run_id}", response_class=HTMLResponse)
     def run_detail_page(run_id: str, request: Request):
         return templates.TemplateResponse(

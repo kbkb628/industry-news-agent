@@ -1,0 +1,41 @@
+{% extends "base.html" %}
+{% block content %}
+<section>
+  <h2>质量汇总</h2>
+  <p>汇总已持久化评估结果中的推送数量、降级路径和追踪完整度。</p>
+  <dl id="quality-summary">
+    <dt>运行次数</dt>
+    <dd id="run-count">加载中</dd>
+    <dt>平均工具成功率</dt>
+    <dd id="tool-success-rate">加载中</dd>
+    <dt>平均抓取成功率</dt>
+    <dd id="fetch-success-rate">加载中</dd>
+    <dt>Fallback 总数</dt>
+    <dd id="fallback-total">加载中</dd>
+  </dl>
+</section>
+<script>
+  fetch("/api/eval/summary")
+    .then((response) => {
+      if (!response.ok) {
+        throw new Error("summary unavailable");
+      }
+      return response.json();
+    })
+    .then((summary) => {
+      document.getElementById("run-count").textContent = summary.run_count;
+      document.getElementById("tool-success-rate").textContent = summary.avg_tool_success_rate;
+      document.getElementById("fetch-success-rate").textContent = summary.avg_fetch_success_rate;
+      document.getElementById("fallback-total").textContent =
+        summary.total_raw_summary_count +
+        summary.total_browser_fallback_count +
+        summary.total_provider_fallback_count;
+    })
+    .catch(() => {
+      document.getElementById("run-count").textContent = "暂无评估数据";
+      document.getElementById("tool-success-rate").textContent = "-";
+      document.getElementById("fetch-success-rate").textContent = "-";
+      document.getElementById("fallback-total").textContent = "-";
+    });
+</script>
+{% endblock %}

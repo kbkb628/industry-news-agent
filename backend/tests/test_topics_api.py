@@ -185,6 +185,7 @@ def test_admin_html_pages_render() -> None:
         pushes_response = client.get("/pushes")
         run_detail_response = client.get("/runs/run_demo_001")
         events_response = client.get("/runs/run_demo_001/events")
+        quality_response = client.get("/quality")
 
     assert pushes_response.status_code == 200
     assert "推送记录" in pushes_response.text
@@ -194,6 +195,8 @@ def test_admin_html_pages_render() -> None:
     assert events_response.status_code == 200
     assert "事件时间线" in events_response.text
     assert "run_demo_001" in events_response.text
+    assert quality_response.status_code == 200
+    assert "质量汇总" in quality_response.text
 
 
 @pytest.mark.parametrize("failing_method", ["commit", "refresh"])

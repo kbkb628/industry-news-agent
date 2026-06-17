@@ -769,6 +769,44 @@ class InMemoryMonitorRunRepository:
         latest_run_id = sorted(self.eval_results.keys())[-1]
         return self.eval_results[latest_run_id]
 
+    def get_eval_summary(self) -> dict[str, object] | None:
+        if not self.eval_results:
+            return None
+        results = list(self.eval_results.values())
+        run_count = len(results)
+
+        def _avg(key: str) -> float:
+            return round(
+                sum(float(result[key]) for result in results) / run_count,
+                2,
+            )
+
+        latest = sorted(
+            results,
+            key=lambda result: (result["created_at"], result["eval_id"]),
+            reverse=True,
+        )[0]
+        return {
+            "run_count": run_count,
+            "total_push_count": sum(int(result["push_count"]) for result in results),
+            "total_duplicate_push_count": sum(
+                int(result["duplicate_push_count"]) for result in results
+            ),
+            "total_raw_summary_count": sum(
+                int(result["raw_summary_count"]) for result in results
+            ),
+            "total_browser_fallback_count": sum(
+                int(result["browser_fallback_count"]) for result in results
+            ),
+            "total_provider_fallback_count": sum(
+                int(result["provider_fallback_count"]) for result in results
+            ),
+            "avg_tool_success_rate": _avg("tool_success_rate"),
+            "avg_fetch_success_rate": _avg("fetch_success_rate"),
+            "avg_trace_completeness": _avg("trace_completeness"),
+            "latest_eval": latest,
+        }
+
     def create_eval_result(self, payload: object) -> dict[str, object]:
         persisted = {
             "eval_id": f"eval_{len(self.eval_results) + 1:03d}",
@@ -1091,6 +1129,63 @@ def test_eval_run_route_does_not_expose_request_body_contract() -> None:
 
     eval_operation = schema["paths"]["/api/eval/run"]["post"]
     assert "requestBody" not in eval_operation
+
+
+def test_eval_summary_returns_quality_trend_metrics() -> None:
+    topic_repository = InMemoryTopicRepository()
+    run_repository = InMemoryMonitorRunRepository()
+    run_repository.eval_results["run_001"] = {
+        "eval_id": "eval_001",
+        "run_id": "run_001",
+        "topic_id": "topic_ai_agent",
+        "retrieved_count": 6,
+        "deduped_count": 4,
+        "dedup_rate": 0.33,
+        "push_count": 1,
+        "duplicate_push_count": 0,
+        "tool_success_rate": 1.0,
+        "fetch_success_rate": 0.5,
+        "trace_completeness": 0.9,
+        "raw_summary_count": 2,
+        "browser_fallback_count": 1,
+        "provider_fallback_count": 1,
+        "suggestions": [],
+        "created_at": datetime(2026, 6, 9, 12, 0, tzinfo=UTC),
+    }
+    run_repository.eval_results["run_002"] = {
+        "eval_id": "eval_002",
+        "run_id": "run_002",
+        "topic_id": "topic_ai_agent",
+        "retrieved_count": 8,
+        "deduped_count": 7,
+        "dedup_rate": 0.12,
+        "push_count": 3,
+        "duplicate_push_count": 1,
+        "tool_success_rate": 0.5,
+        "fetch_success_rate": 1.0,
+        "trace_completeness": 1.0,
+        "raw_summary_count": 0,
+        "browser_fallback_count": 2,
+        "provider_fallback_count": 0,
+        "suggestions": ["review provider fallback"],
+        "created_at": datetime(2026, 6, 9, 13, 0, tzinfo=UTC),
+    }
+
+    with _build_monitor_client(topic_repository, run_repository) as client:
+        response = client.get("/api/eval/summary")
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["run_count"] == 2
+    assert payload["total_push_count"] == 4
+    assert payload["total_duplicate_push_count"] == 1
+    assert payload["total_raw_summary_count"] == 2
+    assert payload["total_browser_fallback_count"] == 3
+    assert payload["total_provider_fallback_count"] == 1
+    assert payload["avg_tool_success_rate"] == 0.75
+    assert payload["avg_fetch_success_rate"] == 0.75
+    assert payload["avg_trace_completeness"] == 0.95
+    assert payload["latest_eval"]["eval_id"] == "eval_002"
 
 
 def test_worker_consumes_enqueued_topic_run_and_persists_monitor_run() -> None:
