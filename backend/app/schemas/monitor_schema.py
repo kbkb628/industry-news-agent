@@ -19,6 +19,7 @@ class MonitorRunSummary(BaseModel):
 
     run_id: str
     topic_id: str
+    trigger: str
     status: MonitorRunStatus
     started_at: datetime | None = None
     finished_at: datetime | None = None
@@ -29,6 +30,7 @@ class MonitorRunStateResponse(BaseModel):
 
     run_id: str
     topic_id: str
+    trigger: str
     status: MonitorRunStatus
     expanded_queries: list[str] = Field(default_factory=list)
     candidate_items: list[dict[str, Any]] = Field(default_factory=list)

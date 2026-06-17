@@ -6,6 +6,7 @@ from typing import Any, TypedDict
 class MonitorState(TypedDict, total=False):
     run_id: str
     topic_id: str
+    trigger: str
     topic: dict[str, Any]
     seed_keywords: list[str]
     expanded_queries: list[str]

@@ -5,7 +5,7 @@ from typing import Annotated, Literal
 
 from pydantic import BaseModel, ConfigDict
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Request, status
 from sqlalchemy.orm import Session
 
 from app.schemas.topic_schema import TopicCreateRequest, TopicResponse
@@ -54,9 +54,15 @@ def _to_create_data(payload: TopicCreateRequest) -> TopicCreateData:
 )
 def create_topic(
     payload: TopicCreateRequest,
+    request: Request,
     repository: Annotated[TopicRepositoryProtocol, Depends(get_topic_repository)],
 ) -> TopicCreatedResponse:
     topic = repository.create_topic(_to_create_data(payload))
+    request.app.state.topic_scheduler.register_topic(
+        topic_id=topic.topic_id,
+        schedule_cron=topic.schedule_cron,
+        enabled=topic.enabled,
+    )
     return TopicCreatedResponse(
         topic_id=topic.topic_id,
         status="created",

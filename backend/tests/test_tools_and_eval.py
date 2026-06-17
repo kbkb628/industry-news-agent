@@ -1,8 +1,10 @@
 import json
 from datetime import UTC, datetime
 from pathlib import Path
+import time
 
 import pytest
+from redis import RedisError
 
 import app.rag.keyword_retriever as keyword_retriever_module
 from app.llm.base import ArticleExtractionResult, CandidateScoreResult
@@ -17,6 +19,11 @@ from app.rag.knowledge_loader import (
 from app.tools.responses import ToolResponse
 
 from app.core.config import Settings, get_settings
+from app.scheduler.worker import (
+    InMemoryRunQueue,
+    RunQueueMessage,
+    build_run_queue,
+)
 from app.storage.database import (
     build_engine,
     build_session_factory,
@@ -158,6 +165,31 @@ def test_build_redis_client_uses_configured_url_without_connecting() -> None:
 
     assert client.connection_pool.connection_kwargs["decode_responses"] is True
     assert client.connection_pool.connection_kwargs["db"] == 2
+
+
+def test_build_run_queue_falls_back_to_in_memory_when_redis_ping_fails(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    class FailingRedis:
+        def ping(self) -> bool:
+            raise RedisError("redis unavailable")
+
+    monkeypatch.setattr(
+        "app.scheduler.worker.build_redis_client",
+        lambda settings=None: FailingRedis(),
+    )
+
+    queue = build_run_queue()
+
+    assert isinstance(queue, InMemoryRunQueue)
+
+
+def test_run_queue_message_default_timestamp_is_per_instance() -> None:
+    first = RunQueueMessage(topic_id="topic_001", trigger="scheduler")
+    time.sleep(0.01)
+    second = RunQueueMessage(topic_id="topic_001", trigger="scheduler")
+
+    assert second.enqueued_at > first.enqueued_at
 
 
 def test_tool_response_uses_uniform_success_and_failure_contract() -> None:

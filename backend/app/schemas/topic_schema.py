@@ -2,7 +2,8 @@ from __future__ import annotations
 
 from datetime import datetime
 
-from pydantic import BaseModel, ConfigDict, Field
+from apscheduler.triggers.cron import CronTrigger
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 from app.core.config import DEFAULT_PUSH_THRESHOLD
 
@@ -19,6 +20,14 @@ class TopicCreateRequest(BaseModel):
     cooldown_hours: int = Field(default=24, ge=0)
     enabled: bool = True
     schedule_cron: str | None = None
+
+    @field_validator("schedule_cron")
+    @classmethod
+    def validate_schedule_cron(cls, value: str | None) -> str | None:
+        if value is None:
+            return value
+        CronTrigger.from_crontab(value)
+        return value
 
 
 class TopicResponse(BaseModel):

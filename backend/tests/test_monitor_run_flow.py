@@ -6,6 +6,7 @@ from threading import Event
 import time
 from typing import Callable, Iterator
 
+from apscheduler.schedulers.background import BackgroundScheduler
 from fastapi.testclient import TestClient
 
 from app.api.monitor import get_monitor_graph, get_monitor_run_repository
@@ -13,6 +14,8 @@ from app.api.topics import get_topic_repository
 from app.agent.graph import build_monitor_graph
 from app.llm.mock_client import MockLLM
 from app.main import create_app
+from app.scheduler.jobs import TopicSchedulerService
+from app.scheduler.worker import InMemoryRunQueue, MonitorWorkerLoop, MonitorWorkerService, RunQueueMessage
 from app.storage.repository import (
     MonitorRunRecord,
     MonitorRunUpsertData,
@@ -374,9 +377,13 @@ def test_run_monitor_endpoint_executes_full_flow() -> None:
     assert payload["run_id"].startswith("run_")
     assert payload["topic_id"] == topic["topic_id"]
     assert payload["status"] == "running"
+    assert payload["trigger"] == "manual"
     assert payload["started_at"] is not None
     assert payload["finished_at"] is None
     assert len(run_repository.push_records) == 1
+    persisted_run = run_repository.get_monitor_run(payload["run_id"])
+    assert persisted_run is not None
+    assert persisted_run.state_snapshot["trigger"] == "manual"
 
 
 def test_run_monitor_endpoint_returns_before_background_flow_finishes() -> None:
@@ -416,6 +423,7 @@ def test_run_monitor_endpoint_returns_before_background_flow_finishes() -> None:
         assert response.status_code == 200
         assert elapsed < 0.5
         assert payload["status"] == "running"
+        assert payload["trigger"] == "manual"
         assert started.wait(0.5)
         assert run_repository.get_monitor_run(payload["run_id"]).status == "running"
 
@@ -443,6 +451,7 @@ def test_run_detail_returns_completed_state() -> None:
     assert response.status_code == 200
     payload = response.json()
     assert payload["status"] == "completed"
+    assert payload["trigger"] == "manual"
     assert payload["expanded_queries"]
     assert len(payload["candidate_items"]) == 3
     assert len(payload["final_decisions"]) == 2
@@ -527,3 +536,185 @@ def test_eval_run_route_does_not_expose_request_body_contract() -> None:
 
     eval_operation = schema["paths"]["/api/eval/run"]["post"]
     assert "requestBody" not in eval_operation
+
+
+def test_worker_consumes_enqueued_topic_run_and_persists_monitor_run() -> None:
+    topic_repository = InMemoryTopicRepository()
+    run_repository = InMemoryMonitorRunRepository()
+    topic = topic_repository.create_topic(
+        TopicCreateData(
+            name="AI Agent",
+            description="Track enterprise AI agent launches and deployment updates.",
+            seed_keywords=("OpenAI", "enterprise", "automation"),
+            trusted_sources=("AI Daily RSS", "AI Search"),
+            exclude_keywords=("rumor",),
+            push_threshold=0.72,
+            cooldown_hours=24,
+            enabled=True,
+            schedule_cron="0 */6 * * *",
+        )
+    )
+    queue = InMemoryRunQueue()
+    worker = MonitorWorkerService(
+        topic_repository=topic_repository,
+        run_repository=run_repository,
+        llm=MockLLM(),
+        queue=queue,
+    )
+
+    queue.enqueue(
+        RunQueueMessage(
+            topic_id=topic.topic_id,
+            trigger="scheduler",
+        )
+    )
+
+    result = worker.process_next()
+
+    assert result is not None
+    assert result["topic_id"] == topic.topic_id
+    assert result["trigger"] == "scheduler"
+    assert result["status"] == "completed"
+    run_record = run_repository.get_monitor_run(result["run_id"])
+    assert run_record is not None
+    assert run_record.status == "completed"
+    assert run_record.state_snapshot["trigger"] == "scheduler"
+
+
+def test_scheduler_job_enqueues_and_worker_processes_topic_run() -> None:
+    topic_repository = InMemoryTopicRepository()
+    run_repository = InMemoryMonitorRunRepository()
+    queue = InMemoryRunQueue()
+    worker = MonitorWorkerService(
+        topic_repository=topic_repository,
+        run_repository=run_repository,
+        llm=MockLLM(),
+        queue=queue,
+    )
+    scheduler = BackgroundScheduler()
+    scheduler.start(paused=True)
+
+    try:
+        topic = topic_repository.create_topic(
+            TopicCreateData(
+                name="AI Agent",
+                description="Track enterprise AI agent launches and deployment updates.",
+                seed_keywords=("OpenAI", "enterprise", "automation"),
+                trusted_sources=("AI Daily RSS", "AI Search"),
+                exclude_keywords=("rumor",),
+                push_threshold=0.72,
+                cooldown_hours=24,
+                enabled=True,
+                schedule_cron="0 */6 * * *",
+            )
+        )
+        topic_scheduler = TopicSchedulerService(
+            scheduler=scheduler,
+            queue=queue,
+        )
+
+        topic_scheduler.register_topic(
+            topic_id=topic.topic_id,
+            schedule_cron=topic.schedule_cron,
+            enabled=topic.enabled,
+        )
+
+        job = scheduler.get_job(f"topic:{topic.topic_id}")
+        assert job is not None
+
+        enqueue_result = job.func(**job.kwargs)
+        worker_result = worker.process_next()
+    finally:
+        scheduler.shutdown(wait=False)
+
+    assert enqueue_result["status"] == "queued"
+    assert worker_result is not None
+    assert worker_result["topic_id"] == topic.topic_id
+    assert worker_result["trigger"] == "scheduler"
+    run_record = run_repository.get_monitor_run(worker_result["run_id"])
+    assert run_record is not None
+    assert run_record.status == "completed"
+    assert run_record.state_snapshot["trigger"] == "scheduler"
+
+
+def test_worker_loop_survives_processing_error_and_continues() -> None:
+    queue = InMemoryRunQueue()
+    stop_event = Event()
+
+    class FailingWorkerLoop:
+        def __init__(self) -> None:
+            self.calls = 0
+            self.completed = Event()
+
+        def process_next(self) -> dict[str, object] | None:
+            self.calls += 1
+            if self.calls == 1:
+                raise RuntimeError("boom")
+            self.completed.set()
+            stop_event.set()
+            return {"status": "completed"}
+
+    loop = FailingWorkerLoop()
+
+    worker_loop = MonitorWorkerLoop(
+        queue=queue,
+        session_factory=lambda: None,  # type: ignore[arg-type]
+    )
+    worker_loop.process_next = loop.process_next  # type: ignore[method-assign]
+
+    worker_loop.run_forever(stop_event)
+
+    assert loop.calls >= 2
+    assert loop.completed.is_set()
+
+
+def test_worker_persists_failed_run_when_graph_raises(
+    monkeypatch,
+) -> None:
+    topic_repository = InMemoryTopicRepository()
+    run_repository = InMemoryMonitorRunRepository()
+    topic = topic_repository.create_topic(
+        TopicCreateData(
+            name="AI Agent",
+            description="Track enterprise AI agent launches and deployment updates.",
+            seed_keywords=("OpenAI", "enterprise", "automation"),
+            trusted_sources=("AI Daily RSS", "AI Search"),
+            exclude_keywords=("rumor",),
+            push_threshold=0.72,
+            cooldown_hours=24,
+            enabled=True,
+            schedule_cron="0 */6 * * *",
+        )
+    )
+    queue = InMemoryRunQueue()
+    queue.enqueue(
+        RunQueueMessage(
+            topic_id=topic.topic_id,
+            trigger="scheduler",
+        )
+    )
+
+    worker = MonitorWorkerService(
+        topic_repository=topic_repository,
+        run_repository=run_repository,
+        llm=MockLLM(),
+        queue=queue,
+    )
+    class FailingGraph:
+        def invoke(self, state: dict[str, object]) -> dict[str, object]:
+            raise RuntimeError("graph failed")
+
+    monkeypatch.setattr(
+        "app.scheduler.worker.build_monitor_graph",
+        lambda llm, run_repository: FailingGraph(),
+    )
+
+    result = worker.process_next()
+
+    assert result is not None
+    assert result["status"] == "failed"
+    run_record = run_repository.get_monitor_run(result["run_id"])
+    assert run_record is not None
+    assert run_record.status == "failed"
+    assert run_record.state_snapshot["trigger"] == "scheduler"
+    assert run_record.error_summary == "graph failed"

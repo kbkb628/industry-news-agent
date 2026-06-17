@@ -10,6 +10,7 @@ from sqlalchemy.exc import SQLAlchemyError
 
 from app.core.config import DEFAULT_PUSH_THRESHOLD
 from app.main import create_app
+from app.scheduler.jobs import TopicSchedulerService
 from app.storage.repository import SqlAlchemyTopicRepository, TopicCreateData, TopicRecord
 
 
@@ -60,6 +61,19 @@ def _build_client(repository: FakeTopicRepository) -> Iterator[TestClient]:
     app.dependency_overrides.clear()
 
 
+@contextmanager
+def _build_app_and_client(
+    repository: FakeTopicRepository,
+) -> Iterator[tuple[object, TestClient]]:
+    from app.api.topics import get_topic_repository
+
+    app = create_app()
+    app.dependency_overrides[get_topic_repository] = lambda: repository
+    with TestClient(app) as test_client:
+        yield app, test_client
+    app.dependency_overrides.clear()
+
+
 def test_create_topic_returns_creation_receipt() -> None:
     repository = FakeTopicRepository()
 
@@ -85,6 +99,72 @@ def test_create_topic_returns_creation_receipt() -> None:
         "status": "created",
         "created_at": "2026-06-09T00:00:00Z",
     }
+
+
+def test_create_topic_registers_scheduler_job_when_cron_is_present() -> None:
+    repository = FakeTopicRepository()
+
+    with _build_app_and_client(repository) as (app, client):
+        response = client.post(
+            "/api/topics",
+            json={
+                "name": "Scheduled AI Agent",
+                "description": "Track launches and financings.",
+                "seed_keywords": ["AI Agent"],
+                "trusted_sources": ["github.com"],
+                "exclude_keywords": [],
+                "enabled": True,
+                "schedule_cron": "0 */6 * * *",
+            },
+        )
+
+        scheduler_service = app.state.topic_scheduler
+        assert response.status_code == 201
+        assert isinstance(scheduler_service, TopicSchedulerService)
+        assert scheduler_service.scheduler.get_job("topic:topic_001") is not None
+
+
+def test_create_topic_rejects_invalid_schedule_cron_before_persistence() -> None:
+    repository = FakeTopicRepository()
+
+    with _build_client(repository) as client:
+        response = client.post(
+            "/api/topics",
+            json={
+                "name": "Broken Schedule",
+                "description": "Track launches and financings.",
+                "seed_keywords": ["AI Agent"],
+                "trusted_sources": ["github.com"],
+                "exclude_keywords": [],
+                "enabled": True,
+                "schedule_cron": "not-a-cron",
+            },
+        )
+
+    assert response.status_code == 422
+    assert repository.list_topics() == []
+
+
+def test_app_startup_rehydrates_scheduler_jobs_from_existing_topics() -> None:
+    repository = FakeTopicRepository()
+    repository.create_topic(
+        TopicCreateData(
+            name="Scheduled AI Agent",
+            description="Track launches and financings.",
+            seed_keywords=("AI Agent",),
+            trusted_sources=("github.com",),
+            exclude_keywords=(),
+            push_threshold=DEFAULT_PUSH_THRESHOLD,
+            cooldown_hours=24,
+            enabled=True,
+            schedule_cron="0 */6 * * *",
+        )
+    )
+
+    with _build_app_and_client(repository) as (app, _client):
+        scheduler_service = app.state.topic_scheduler
+        assert isinstance(scheduler_service, TopicSchedulerService)
+        assert scheduler_service.scheduler.get_job("topic:topic_001") is not None
 
 
 def test_topics_html_page_renders() -> None:

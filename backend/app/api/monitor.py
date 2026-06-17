@@ -61,6 +61,7 @@ def _build_initial_state(topic: TopicRecord, run_id: str) -> dict[str, Any]:
     return {
         "run_id": run_id,
         "topic_id": topic.topic_id,
+        "trigger": "manual",
         "topic": _topic_to_graph_payload(topic),
         "seed_keywords": list(topic.seed_keywords),
         "expanded_queries": [],
@@ -195,6 +196,7 @@ def run_monitor(
     return MonitorRunSummary(
         run_id=run_id,
         topic_id=topic.topic_id,
+        trigger=str(initial_state["trigger"]),
         status="running",
         started_at=run_record.started_at,
         finished_at=None,
@@ -220,6 +222,7 @@ def get_run_state(
     return MonitorRunStateResponse(
         run_id=run_record.run_id,
         topic_id=run_record.topic_id,
+        trigger=str(snapshot.get("trigger", "manual")),
         status=run_record.status,
         expanded_queries=list(snapshot.get("expanded_queries", [])),
         candidate_items=list(snapshot.get("candidate_items", [])),

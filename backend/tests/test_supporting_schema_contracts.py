@@ -18,6 +18,7 @@ def test_monitor_run_status_rejects_unknown_value() -> None:
         MonitorRunStateResponse(
             run_id="run_001",
             topic_id="topic_001",
+            trigger="manual",
             status="unknown",
         )
 
@@ -26,15 +27,18 @@ def test_monitor_schema_defaults_and_summary_status() -> None:
     monitor = MonitorRunStateResponse(
         run_id="run_001",
         topic_id="topic_001",
+        trigger="manual",
         status="completed",
     )
     summary = MonitorRunSummary(
         run_id=monitor.run_id,
         topic_id=monitor.topic_id,
+        trigger=monitor.trigger,
         status="completed",
     )
 
     assert summary.status == "completed"
+    assert summary.trigger == "manual"
     assert monitor.expanded_queries == []
     assert monitor.candidate_items == []
     assert monitor.final_decisions == []
