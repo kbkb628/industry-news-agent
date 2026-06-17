@@ -32,6 +32,7 @@ def test_monitor_graph_runs_to_completion() -> None:
             self.monitor_runs: list[object] = []
             self.candidate_records: list[dict[str, object]] = []
             self.extracted_records: list[dict[str, object]] = []
+            self.decision_records: list[dict[str, object]] = []
             self.push_records: list[dict[str, object]] = []
             self.run_events: list[dict[str, object]] = []
             self.eval_results: list[dict[str, object]] = []
@@ -140,6 +141,41 @@ def test_monitor_graph_runs_to_completion() -> None:
                 if record["run_id"] == run_id
             ]
 
+        def upsert_decision_records(
+            self,
+            payloads: tuple[object, ...],
+        ) -> list[dict[str, object]]:
+            persisted = [
+                {
+                    "decision_id": payload.decision_id,
+                    "run_id": payload.run_id,
+                    "topic_id": payload.topic_id,
+                    "candidate_id": payload.candidate_id,
+                    "extracted_id": payload.extracted_id,
+                    "source_type": payload.source_type,
+                    "source_name": payload.source_name,
+                    "title": payload.title,
+                    "url": payload.url,
+                    "published_at": payload.published_at,
+                    "summary": payload.summary,
+                    "score": payload.score,
+                    "should_push": payload.should_push,
+                    "decision_reason": payload.decision_reason,
+                    "decision_payload": payload.decision_payload,
+                    "created_at": datetime(2026, 6, 9, tzinfo=UTC),
+                }
+                for payload in payloads
+            ]
+            self.decision_records.extend(persisted)
+            return persisted
+
+        def list_decision_records(self, run_id: str) -> list[dict[str, object]]:
+            return [
+                record
+                for record in self.decision_records
+                if record["run_id"] == run_id
+            ]
+
         def create_run_events(
             self,
             payloads: tuple[object, ...],
@@ -242,6 +278,7 @@ def test_monitor_graph_runs_to_completion() -> None:
     assert len(repository.monitor_runs) == 2
     assert len(repository.push_records) == 1
     assert len(repository.extracted_records) == 3
+    assert len(repository.decision_records) == 2
     assert repository.push_records[0]["title"]
     assert repository.push_records[0]["url"]
     assert repository.push_records[0]["pushed_at"] is not None
@@ -256,6 +293,7 @@ def test_monitor_graph_records_provider_and_browser_fallback_events() -> None:
             self.monitor_runs: list[object] = []
             self.candidate_records: list[dict[str, object]] = []
             self.extracted_records: list[dict[str, object]] = []
+            self.decision_records: list[dict[str, object]] = []
             self.push_records: list[dict[str, object]] = []
             self.run_events: list[dict[str, object]] = []
             self.eval_results: list[dict[str, object]] = []
@@ -289,6 +327,15 @@ def test_monitor_graph_records_provider_and_browser_fallback_events() -> None:
             return []
 
         def list_extracted_item_records(self, run_id: str) -> list[dict[str, object]]:
+            return []
+
+        def upsert_decision_records(
+            self,
+            payloads: tuple[object, ...],
+        ) -> list[dict[str, object]]:
+            return []
+
+        def list_decision_records(self, run_id: str) -> list[dict[str, object]]:
             return []
 
         def create_run_events(
@@ -482,6 +529,7 @@ class InMemoryMonitorRunRepository:
         self.monitor_runs: dict[str, MonitorRunRecord] = {}
         self.candidate_records: list[dict[str, object]] = []
         self.extracted_records: list[dict[str, object]] = []
+        self.decision_records: list[dict[str, object]] = []
         self.push_records: list[dict[str, object]] = []
         self.run_events: list[dict[str, object]] = []
         self.eval_results: dict[str, dict[str, object]] = {}
@@ -642,6 +690,47 @@ class InMemoryMonitorRunRepository:
         return [
             record
             for record in self.extracted_records
+            if record["run_id"] == run_id
+        ]
+
+    def upsert_decision_records(self, payloads: tuple[object, ...]) -> list[dict[str, object]]:
+        persisted = [
+            {
+                "decision_id": payload.decision_id,
+                "run_id": payload.run_id,
+                "topic_id": payload.topic_id,
+                "candidate_id": payload.candidate_id,
+                "extracted_id": payload.extracted_id,
+                "source_type": payload.source_type,
+                "source_name": payload.source_name,
+                "title": payload.title,
+                "url": payload.url,
+                "published_at": payload.published_at,
+                "summary": payload.summary,
+                "score": payload.score,
+                "should_push": payload.should_push,
+                "decision_reason": payload.decision_reason,
+                "decision_payload": payload.decision_payload,
+                "created_at": self._created_at,
+            }
+            for payload in payloads
+        ]
+        existing_keys = {
+            (record["run_id"], record["decision_id"])
+            for record in persisted
+        }
+        self.decision_records = [
+            record
+            for record in self.decision_records
+            if (record["run_id"], record["decision_id"]) not in existing_keys
+        ]
+        self.decision_records.extend(persisted)
+        return persisted
+
+    def list_decision_records(self, run_id: str) -> list[dict[str, object]]:
+        return [
+            record
+            for record in self.decision_records
             if record["run_id"] == run_id
         ]
 
@@ -887,6 +976,7 @@ def test_reporting_endpoints_return_persisted_monitor_artifacts() -> None:
     assert len(candidates_response.json()["candidates"]) == 3
     assert len(run_repository.candidate_records) == 3
     assert len(run_repository.extracted_records) == 3
+    assert len(run_repository.decision_records) == 2
     assert pushes_response.status_code == 200
     assert len(pushes_response.json()["pushes"]) == 1
     assert topic_pushes_response.status_code == 200

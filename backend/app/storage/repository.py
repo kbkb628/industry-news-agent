@@ -10,6 +10,7 @@ from sqlalchemy.orm import Session
 
 from app.storage.models import (
     CandidateRecord,
+    DecisionRecord,
     EvalResult,
     ExtractedItemRecord,
     MonitorRun,
@@ -135,6 +136,25 @@ class ExtractedItemRecordUpsertData:
 
 
 @dataclass(frozen=True, slots=True)
+class DecisionRecordUpsertData:
+    decision_id: str
+    run_id: str
+    topic_id: str
+    candidate_id: str
+    extracted_id: str | None
+    source_type: str
+    source_name: str
+    title: str
+    url: str
+    published_at: datetime | None
+    summary: str | None
+    score: float
+    should_push: bool
+    decision_reason: str | None
+    decision_payload: dict[str, Any]
+
+
+@dataclass(frozen=True, slots=True)
 class RunEventCreateData:
     run_id: str
     topic_id: str
@@ -194,6 +214,13 @@ class MonitorRunRepositoryProtocol(Protocol):
     ) -> list[dict[str, Any]]: ...
 
     def list_extracted_item_records(self, run_id: str) -> list[dict[str, Any]]: ...
+
+    def upsert_decision_records(
+        self,
+        payloads: tuple[DecisionRecordUpsertData, ...],
+    ) -> list[dict[str, Any]]: ...
+
+    def list_decision_records(self, run_id: str) -> list[dict[str, Any]]: ...
 
     def list_run_events(self, run_id: str) -> list[dict[str, Any]]: ...
 
@@ -367,6 +394,19 @@ class UnimplementedMonitorRunRepository:
     def list_extracted_item_records(self, run_id: str) -> list[dict[str, Any]]:
         raise NotImplementedError(
             "Extracted item queries are deferred until a database session is provided."
+        )
+
+    def upsert_decision_records(
+        self,
+        payloads: tuple[DecisionRecordUpsertData, ...],
+    ) -> list[dict[str, Any]]:
+        raise NotImplementedError(
+            "Decision persistence is deferred until a database session is provided."
+        )
+
+    def list_decision_records(self, run_id: str) -> list[dict[str, Any]]:
+        raise NotImplementedError(
+            "Decision queries are deferred until a database session is provided."
         )
 
     def list_run_events(self, run_id: str) -> list[dict[str, Any]]:
@@ -646,6 +686,77 @@ class SqlAlchemyMonitorRunRepository:
             "fetch_error": record.fetch_error,
             "extraction_mode": record.extraction_mode,
             "structured_payload": dict(record.structured_payload),
+            "created_at": record.created_at,
+        }
+
+    def upsert_decision_records(
+        self,
+        payloads: tuple[DecisionRecordUpsertData, ...],
+    ) -> list[dict[str, Any]]:
+        models: list[DecisionRecord] = []
+        for payload in payloads:
+            model = self.session.get(
+                DecisionRecord,
+                {
+                    "decision_id": payload.decision_id,
+                    "run_id": payload.run_id,
+                },
+            )
+            if model is None:
+                model = DecisionRecord(
+                    decision_id=payload.decision_id,
+                    run_id=payload.run_id,
+                )
+                self.session.add(model)
+
+            model.topic_id = payload.topic_id
+            model.candidate_id = payload.candidate_id
+            model.extracted_id = payload.extracted_id
+            model.source_type = payload.source_type
+            model.source_name = payload.source_name
+            model.title = payload.title
+            model.url = payload.url
+            model.published_at = payload.published_at
+            model.summary = payload.summary
+            model.score = payload.score
+            model.should_push = payload.should_push
+            model.decision_reason = payload.decision_reason
+            model.decision_payload = dict(payload.decision_payload)
+            models.append(model)
+
+        self._commit()
+        for model in models:
+            self.session.refresh(model)
+        return [self._serialize_decision_record(model) for model in models]
+
+    def list_decision_records(self, run_id: str) -> list[dict[str, Any]]:
+        records = self.session.scalars(
+            select(DecisionRecord)
+            .where(DecisionRecord.run_id == run_id)
+            .order_by(
+                DecisionRecord.created_at.asc(),
+                DecisionRecord.decision_id.asc(),
+            )
+        ).all()
+        return [self._serialize_decision_record(record) for record in records]
+
+    def _serialize_decision_record(self, record: DecisionRecord) -> dict[str, Any]:
+        return {
+            "decision_id": record.decision_id,
+            "run_id": record.run_id,
+            "topic_id": record.topic_id,
+            "candidate_id": record.candidate_id,
+            "extracted_id": record.extracted_id,
+            "source_type": record.source_type,
+            "source_name": record.source_name,
+            "title": record.title,
+            "url": record.url,
+            "published_at": record.published_at,
+            "summary": record.summary,
+            "score": record.score,
+            "should_push": record.should_push,
+            "decision_reason": record.decision_reason,
+            "decision_payload": dict(record.decision_payload),
             "created_at": record.created_at,
         }
 

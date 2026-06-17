@@ -12,6 +12,7 @@ from app.rag.hybrid_retriever import retrieve_hybrid_context
 from app.rag.knowledge_loader import load_knowledge_base
 from app.storage.repository import (
     CandidateRecordUpsertData,
+    DecisionRecordUpsertData,
     EvalResultCreateData,
     ExtractedItemRecordUpsertData,
     MonitorRunRepositoryProtocol,
@@ -540,6 +541,44 @@ def _build_extracted_item_payloads(
     return tuple(payloads)
 
 
+def _build_decision_payloads(
+    state: dict[str, Any],
+) -> tuple[DecisionRecordUpsertData, ...]:
+    payloads: list[DecisionRecordUpsertData] = []
+
+    for item in state.get("final_decisions", []):
+        candidate_id = str(item["candidate_id"])
+        payloads.append(
+            DecisionRecordUpsertData(
+                decision_id=str(item.get("push_id", f"decision_{candidate_id}")),
+                run_id=str(item["run_id"]),
+                topic_id=str(item["topic_id"]),
+                candidate_id=candidate_id,
+                extracted_id=(
+                    None
+                    if item.get("extracted_id") is None
+                    else str(item.get("extracted_id"))
+                ),
+                source_type=str(item.get("source_type", "unknown")),
+                source_name=str(item.get("source_name", "unknown")),
+                title=str(item.get("title", "")),
+                url=str(item.get("url", "")),
+                published_at=_parse_optional_datetime(item.get("published_at")),
+                summary=None if item.get("summary") is None else str(item.get("summary")),
+                score=float(item.get("score", 0.0)),
+                should_push=bool(item.get("should_push", False)),
+                decision_reason=(
+                    None
+                    if item.get("decision_reason") is None
+                    else str(item.get("decision_reason"))
+                ),
+                decision_payload=dict(item),
+            )
+        )
+
+    return tuple(payloads)
+
+
 def evaluate_run_node(
     state: dict[str, Any],
     run_repository: MonitorRunRepositoryProtocol | None = None,
@@ -550,6 +589,9 @@ def evaluate_run_node(
     if run_repository is not None:
         state["extracted_records"] = run_repository.upsert_extracted_item_records(
             _build_extracted_item_payloads(state)
+        )
+        state["decision_records"] = run_repository.upsert_decision_records(
+            _build_decision_payloads(state)
         )
         state["candidate_records"] = run_repository.upsert_candidate_records(
             _build_candidate_payloads(state)

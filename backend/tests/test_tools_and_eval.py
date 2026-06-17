@@ -35,9 +35,10 @@ from app.storage.database import (
     get_session_factory,
     reset_engine_registry,
 )
-from app.storage.models import CandidateRecord, ExtractedItemRecord, Topic
+from app.storage.models import CandidateRecord, DecisionRecord, ExtractedItemRecord, Topic
 from app.storage.repository import (
     CandidateRecordUpsertData,
+    DecisionRecordUpsertData,
     ExtractedItemRecordUpsertData,
     SqlAlchemyMonitorRunRepository,
 )
@@ -172,6 +173,30 @@ def test_extracted_item_model_declares_phase2_memory_columns() -> None:
     assert required_columns.issubset(ExtractedItemRecord.__table__.columns.keys())
 
 
+def test_decision_record_model_declares_phase2_memory_columns() -> None:
+    assert DecisionRecord.__tablename__ == "decision_records"
+    required_columns = {
+        "decision_id",
+        "run_id",
+        "topic_id",
+        "candidate_id",
+        "extracted_id",
+        "source_type",
+        "source_name",
+        "title",
+        "url",
+        "published_at",
+        "summary",
+        "score",
+        "should_push",
+        "decision_reason",
+        "decision_payload",
+        "created_at",
+    }
+
+    assert required_columns.issubset(DecisionRecord.__table__.columns.keys())
+
+
 def test_sqlalchemy_repository_upserts_and_lists_candidate_records() -> None:
     settings = Settings(
         database_url="sqlite+pysqlite:///:memory:",
@@ -302,6 +327,69 @@ def test_sqlalchemy_repository_upserts_and_lists_extracted_item_records() -> Non
     assert listed[0]["keywords"] == ["agent", "launch"]
     assert listed[0]["content_fingerprint"] == "fp_updated"
     assert listed[0]["structured_payload"]["quality"]["source"] == "updated"
+
+
+def test_sqlalchemy_repository_upserts_and_lists_decision_records() -> None:
+    settings = Settings(
+        database_url="sqlite+pysqlite:///:memory:",
+        redis_url="redis://localhost:6379/0",
+    )
+    engine = build_engine(settings)
+    Base.metadata.create_all(engine)
+    session_factory = build_session_factory(engine)
+
+    with session_factory() as session:
+        repository = SqlAlchemyMonitorRunRepository(session=session)
+
+        created = repository.upsert_decision_records(
+            (
+                DecisionRecordUpsertData(
+                    decision_id="dec_001",
+                    run_id="run_001",
+                    topic_id="topic_ai_agent",
+                    candidate_id="cand_001",
+                    extracted_id="ext_001",
+                    source_type="search",
+                    source_name="Mock Search",
+                    title="Initial decision",
+                    url="https://example.com/initial",
+                    published_at=datetime(2026, 6, 9, 12, 0, tzinfo=UTC),
+                    summary="Initial summary",
+                    score=0.61,
+                    should_push=False,
+                    decision_reason="Below threshold",
+                    decision_payload={"should_push": False},
+                ),
+            )
+        )
+        updated = repository.upsert_decision_records(
+            (
+                DecisionRecordUpsertData(
+                    decision_id="dec_001",
+                    run_id="run_001",
+                    topic_id="topic_ai_agent",
+                    candidate_id="cand_001",
+                    extracted_id="ext_001",
+                    source_type="search",
+                    source_name="Mock Search",
+                    title="Updated decision",
+                    url="https://example.com/updated",
+                    published_at=None,
+                    summary="Updated summary",
+                    score=0.93,
+                    should_push=True,
+                    decision_reason="Above threshold",
+                    decision_payload={"should_push": True},
+                ),
+            )
+        )
+        listed = repository.list_decision_records("run_001")
+
+    assert created[0]["title"] == "Initial decision"
+    assert updated[0]["title"] == "Updated decision"
+    assert [decision["decision_id"] for decision in listed] == ["dec_001"]
+    assert listed[0]["should_push"] is True
+    assert listed[0]["decision_payload"]["should_push"] is True
 
 
 def test_build_session_factory_binds_to_provided_engine() -> None:

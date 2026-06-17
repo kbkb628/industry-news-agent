@@ -114,6 +114,31 @@ class ExtractedItemRecord(Base):
     )
 
 
+class DecisionRecord(Base):
+    __tablename__ = "decision_records"
+
+    decision_id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    run_id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    topic_id: Mapped[str] = mapped_column(String(64), nullable=False, index=True)
+    candidate_id: Mapped[str] = mapped_column(String(64), nullable=False, index=True)
+    extracted_id: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    source_type: Mapped[str] = mapped_column(String(32), nullable=False)
+    source_name: Mapped[str] = mapped_column(String(255), nullable=False)
+    title: Mapped[str] = mapped_column(String(255), nullable=False)
+    url: Mapped[str] = mapped_column(Text, nullable=False)
+    published_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    summary: Mapped[str | None] = mapped_column(Text, nullable=True)
+    score: Mapped[float] = mapped_column(Float, nullable=False, default=0.0)
+    should_push: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    decision_reason: Mapped[str | None] = mapped_column(Text, nullable=True)
+    decision_payload: Mapped[dict] = mapped_column(JSON, nullable=False, default=dict)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        nullable=False,
+        server_default=func.now(),
+    )
+
+
 class MonitorRun(Base):
     __tablename__ = "monitor_runs"
 
