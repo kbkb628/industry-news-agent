@@ -14,6 +14,7 @@ Included in the current codebase:
 - persisted candidate, extracted item, and structured decision records for monitor runs with snapshot fallback
 - richer eval metrics for raw-summary, browser fallback, and provider fallback trends
 - minimal HTML admin pages for topics, pushes, run detail, and events
+- local React + Vite dashboard over existing backend APIs
 - APScheduler topic jobs that enqueue worker runs
 - Redis-backed run queue with in-memory fallback
 - Redis Stream consumer-group flow for queued monitor runs
@@ -39,6 +40,7 @@ Not claimed by the current implementation:
 - Slack-specific, email, or enterprise WeChat notification delivery
 - production notification retry or delivery-queue hardening
 - production deployment hardening
+- production frontend deployment, authentication, or authorization
 
 ## Environment
 
@@ -179,8 +181,8 @@ py -3.12 -m uvicorn app.main:app --reload
 ## Run With Docker Compose
 
 The root `docker-compose.yml` is a local demonstration stack, not a production
-deployment profile. It starts the backend, PostgreSQL, and Redis with mock
-search enabled:
+deployment profile. It starts the backend, local React dashboard, PostgreSQL,
+and Redis with mock search enabled:
 
 ```bash
 docker compose up --build
@@ -191,12 +193,40 @@ Then open:
 - `http://localhost:8000/health`
 - `http://localhost:8000/`
 - `http://localhost:8000/docs`
+- `http://localhost:5173`
+
+## React Dashboard
+
+The `frontend/` app is a local React + Vite management dashboard over existing
+backend APIs. It shows topics, push records, run details, trace events, and eval
+quality summary data. It does not add authentication, write operations, or
+production deployment hardening.
+
+```bash
+cd frontend
+npm install
+npm run dev
+```
+
+Then open `http://localhost:5173`.
+
+When using Docker Compose, the local dashboard is available at
+`http://localhost:5173` and proxies API calls to the backend service through
+`VITE_API_PROXY_TARGET=http://backend:8000`.
 
 ## Test
 
 ```bash
 cd backend
 py -3.12 -m pytest -v
+```
+
+Frontend verification:
+
+```bash
+cd frontend
+npm test -- --run
+npm run build
 ```
 
 The automated test suite uses in-memory repository overrides for the monitor

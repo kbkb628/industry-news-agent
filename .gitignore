@@ -4,3 +4,12 @@ __pycache__/
 .pytest_cache/
 .venv/
 .env
+backend/*.db
+backend/*.egg-info/
+frontend/node_modules/
+frontend/dist/
+frontend/.npm-cache/
+frontend/coverage/
+frontend/*.tsbuildinfo
+frontend/vite.config.js
+frontend/vite.config.d.ts
