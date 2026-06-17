@@ -4,8 +4,9 @@ from datetime import UTC, datetime
 from typing import Any
 
 from app.agent.planner import build_source_plan
+from app.core.config import Settings
 from app.eval.rule_scorer import score_run
-from app.eval.judge import MockEvalJudge
+from app.eval.judge import build_eval_judge
 from app.llm.base import BaseLLMClient
 from app.mcp.local_gateway import LocalToolGateway
 from app.observability.event_logger import append_event
@@ -583,10 +584,13 @@ def _build_decision_payloads(
 def evaluate_run_node(
     state: dict[str, Any],
     run_repository: MonitorRunRepositoryProtocol | None = None,
+    settings: Settings | None = None,
 ) -> dict[str, Any]:
     append_event(state, "evaluate_run", "Evaluated run metrics and trace completeness.")
     state["eval_result"] = score_run(state)
-    state["eval_result"].update(MockEvalJudge().judge(state["eval_result"]))
+    state["eval_result"].update(
+        build_eval_judge(settings=settings).judge(state["eval_result"])
+    )
     state["status"] = "completed"
     if run_repository is not None:
         state["extracted_records"] = run_repository.upsert_extracted_item_records(

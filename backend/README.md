@@ -21,6 +21,7 @@ Included in the current codebase:
 - optional OpenWebSearch provider path with mock search fallback
 - explicit browser fetch fallback metadata and events
 - deterministic MockEvalJudge adapter for the LLM-as-Judge evaluation contract
+- optional OpenAI-compatible LLM-as-Judge provider with mock fallback
 - local Docker Compose stack for backend, PostgreSQL, and Redis
 
 Not claimed by the current implementation:
@@ -28,7 +29,6 @@ Not claimed by the current implementation:
 - Playwright MCP execution as a live external browser service
 - Elasticsearch or vector retrieval
 - embedding indexing
-- live external LLM-as-Judge model calls
 - production deployment hardening
 
 ## Environment
@@ -52,6 +52,16 @@ Optional Phase 2 search-provider variables:
 - `OPEN_WEBSEARCH_BASE_URL` points at an OpenWebSearch-compatible HTTP service.
 - `OPEN_WEBSEARCH_TIMEOUT_SECONDS` defaults to `10.0`.
 
+Optional Phase 2 eval judge variables:
+
+- `JUDGE_PROVIDER=mock` keeps the deterministic local `MockEvalJudge` path.
+- `JUDGE_PROVIDER=openai_compatible` enables live judge calls when
+  `JUDGE_BASE_URL` and `JUDGE_API_KEY` are also configured.
+- `JUDGE_BASE_URL` points at an OpenAI-compatible `/chat/completions` service root.
+- `JUDGE_API_KEY` is sent as the bearer token for the judge provider.
+- `JUDGE_MODEL` defaults to `gpt-4o-mini`.
+- `JUDGE_TIMEOUT_SECONDS` defaults to `10.0`.
+
 Example `.env`:
 
 ```env
@@ -60,6 +70,10 @@ REDIS_URL=redis://localhost:6379/0
 SEARCH_PROVIDER=mock
 # SEARCH_PROVIDER=open_websearch
 # OPEN_WEBSEARCH_BASE_URL=http://localhost:8080
+JUDGE_PROVIDER=mock
+# JUDGE_PROVIDER=openai_compatible
+# JUDGE_BASE_URL=https://api.openai.com/v1
+# JUDGE_API_KEY=replace-me
 ```
 
 ## Install

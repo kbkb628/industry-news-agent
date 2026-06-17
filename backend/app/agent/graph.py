@@ -85,7 +85,7 @@ def build_monitor_graph(
     )
     graph.add_node(
         "evaluate_run_node",
-        lambda state: evaluate_run_node(state, run_repository),
+        lambda state: evaluate_run_node(state, run_repository, settings),
     )
 
     graph.set_entry_point("load_topic_node")

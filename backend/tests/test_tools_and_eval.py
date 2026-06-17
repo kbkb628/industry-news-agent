@@ -22,7 +22,11 @@ from app.rag.local_vector_retriever import LocalVectorRetriever
 from app.tools.responses import ToolResponse
 
 from app.core.config import Settings, get_settings
-from app.eval.judge import MockEvalJudge
+from app.eval.judge import (
+    OpenAICompatibleEvalJudge,
+    build_eval_judge,
+    MockEvalJudge,
+)
 from app.eval.rule_scorer import score_run
 from app.scheduler.worker import (
     InMemoryRunQueue,
@@ -64,6 +68,24 @@ def test_settings_accept_explicit_connection_values() -> None:
     assert settings.database_url.startswith("postgresql+psycopg://")
     assert settings.redis_url.startswith("redis://")
     assert settings.default_push_threshold == 0.72
+
+
+def test_settings_accept_eval_judge_provider_values() -> None:
+    settings = Settings(
+        database_url="postgresql+psycopg://user:pass@localhost:5432/news_agent",
+        redis_url="redis://localhost:6379/0",
+        judge_provider="openai_compatible",
+        judge_base_url="https://judge.example.com/v1",
+        judge_api_key="test-key",
+        judge_model="judge-model",
+        judge_timeout_seconds=3.5,
+    )
+
+    assert settings.judge_provider == "openai_compatible"
+    assert settings.judge_base_url == "https://judge.example.com/v1"
+    assert settings.judge_api_key == "test-key"
+    assert settings.judge_model == "judge-model"
+    assert settings.judge_timeout_seconds == 3.5
 
 
 def test_settings_read_connection_values_from_environment(monkeypatch) -> None:
@@ -252,6 +274,84 @@ def test_mock_eval_judge_scores_quality_metrics() -> None:
         "fetch_degraded",
         "trace_incomplete",
     ]
+
+
+def test_openai_compatible_eval_judge_parses_json_response() -> None:
+    class FakeJudgeResponse:
+        def raise_for_status(self) -> None:
+            return None
+
+        def json(self) -> dict[str, object]:
+            return {
+                "choices": [
+                    {
+                        "message": {
+                            "content": (
+                                '{"judge_score": 0.82, "judge_reason": "Useful.", '
+                                '"judge_issues": ["trace_incomplete"]}'
+                            )
+                        }
+                    }
+                ]
+            }
+
+    class FakeJudgeClient:
+        def __init__(self) -> None:
+            self.requests: list[dict[str, object]] = []
+
+        def post(self, url: str, **kwargs: object) -> FakeJudgeResponse:
+            self.requests.append({"url": url, **kwargs})
+            return FakeJudgeResponse()
+
+    client = FakeJudgeClient()
+    judge = OpenAICompatibleEvalJudge(
+        base_url="https://judge.example.com/v1",
+        api_key="test-key",
+        model="judge-model",
+        http_client=client,
+    )
+
+    result = judge.judge({"push_count": 1, "trace_completeness": 0.75})
+
+    assert result == {
+        "judge_mode": "openai_compatible_judge",
+        "judge_score": 0.82,
+        "judge_reason": "Useful.",
+        "judge_issues": ["trace_incomplete"],
+    }
+    assert client.requests[0]["url"] == "https://judge.example.com/v1/chat/completions"
+    assert client.requests[0]["headers"] == {
+        "Authorization": "Bearer test-key",
+        "Content-Type": "application/json",
+    }
+
+
+def test_eval_judge_builder_falls_back_to_mock_when_provider_fails() -> None:
+    class FailingJudgeClient:
+        def post(self, url: str, **kwargs: object) -> object:
+            raise RuntimeError("judge unavailable")
+
+    settings = Settings(
+        database_url="postgresql+psycopg://user:pass@localhost:5432/news_agent",
+        redis_url="redis://localhost:6379/0",
+        judge_provider="openai_compatible",
+        judge_base_url="https://judge.example.com/v1",
+        judge_api_key="test-key",
+    )
+    judge = build_eval_judge(settings=settings, http_client=FailingJudgeClient())
+
+    result = judge.judge(
+        {
+            "duplicate_push_count": 0,
+            "fetch_success_rate": 1.0,
+            "trace_completeness": 1.0,
+        }
+    )
+
+    assert result["judge_mode"] == "mock_rule_judge"
+    assert result["judge_score"] == 1.0
+    assert "judge_provider_fallback" in result["judge_issues"]
+    assert "judge unavailable" in result["judge_reason"]
 
 
 def test_sqlalchemy_repository_upserts_and_lists_candidate_records() -> None:

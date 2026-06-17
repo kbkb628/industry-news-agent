@@ -21,6 +21,11 @@ class Settings(BaseSettings):
     search_provider: str = Field(default="mock")
     open_websearch_base_url: str | None = Field(default=None)
     open_websearch_timeout_seconds: float = Field(default=10.0)
+    judge_provider: str = Field(default="mock")
+    judge_base_url: str | None = Field(default=None)
+    judge_api_key: str | None = Field(default=None)
+    judge_model: str = Field(default="gpt-4o-mini")
+    judge_timeout_seconds: float = Field(default=10.0)
 
 def get_settings() -> Settings:
     return Settings()
