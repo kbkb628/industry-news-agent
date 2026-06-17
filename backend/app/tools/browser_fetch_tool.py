@@ -16,10 +16,12 @@ class BrowserFetchTool(FixtureTool):
         self,
         *,
         fetcher: Callable[[str], str] | None = None,
+        browser_fetcher: Callable[[str], str] | None = None,
         timeout_seconds: float = 10.0,
     ) -> None:
         super().__init__("fetch_article_content")
         self.fetcher = fetcher
+        self.browser_fetcher = browser_fetcher
         self.timeout_seconds = timeout_seconds
 
     def __call__(self, *, candidates: list[dict[str, Any]]) -> object:
@@ -30,6 +32,7 @@ class BrowserFetchTool(FixtureTool):
             canonicalize_url(article["url"]): article for article in self.load_articles()
         }
         fetched_candidates: list[dict[str, Any]] = []
+        used_browser_fallback = False
 
         for candidate in candidates:
             resolved = dict(candidate)
@@ -40,8 +43,10 @@ class BrowserFetchTool(FixtureTool):
             try:
                 if article is not None:
                     content = str(article.get("content", ""))
+                    resolved["fetch_method"] = "fixture"
                 elif self.fetcher is not None:
                     content = self.fetcher(str(candidate["url"]))
+                    resolved["fetch_method"] = "http"
                 elif httpx is not None:
                     response = httpx.get(
                         str(candidate["url"]),
@@ -50,19 +55,34 @@ class BrowserFetchTool(FixtureTool):
                     )
                     response.raise_for_status()
                     content = response.text
+                    resolved["fetch_method"] = "http"
                 else:
                     raise RuntimeError("httpx is unavailable for remote fetches.")
 
                 resolved["fetch_status"] = "fetched"
                 resolved["content"] = content
             except Exception as exc:
-                resolved["fetch_status"] = "failed"
-                resolved["content"] = ""
-                resolved["fetch_error"] = str(exc)
+                if self.browser_fetcher is not None:
+                    try:
+                        resolved["content"] = self.browser_fetcher(str(candidate["url"]))
+                        resolved["fetch_status"] = "fetched"
+                        resolved["fetch_method"] = "browser_fallback"
+                        resolved["fetch_fallback_reason"] = str(exc)
+                        used_browser_fallback = True
+                    except Exception as fallback_exc:
+                        resolved["fetch_status"] = "failed"
+                        resolved["content"] = ""
+                        resolved["fetch_error"] = str(fallback_exc)
+                        resolved["fetch_fallback_reason"] = str(exc)
+                else:
+                    resolved["fetch_status"] = "failed"
+                    resolved["content"] = ""
+                    resolved["fetch_error"] = str(exc)
 
             fetched_candidates.append(resolved)
 
         return self.success(
             summary=f"Fetched {len(fetched_candidates)} candidate page(s).",
             data={"candidates": fetched_candidates},
+            metadata={"used_browser_fallback": used_browser_fallback},
         )

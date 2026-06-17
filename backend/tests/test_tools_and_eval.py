@@ -620,6 +620,141 @@ def test_task6_extract_degrades_to_raw_summary_mode_when_fetch_fails() -> None:
     assert extracted_article["fetch_error"] == "timeout"
 
 
+def test_build_default_tool_registry_uses_open_websearch_provider_when_enabled() -> None:
+    from app.core.config import Settings
+    from app.tools.registry import build_default_tool_registry
+
+    class FakeOpenWebSearchResponse:
+        def raise_for_status(self) -> None:
+            return None
+
+        def json(self) -> dict[str, object]:
+            return {
+                "results": [
+                    {
+                        "title": "OpenAI ships enterprise agent workflow",
+                        "url": "https://example.com/openai-agent-workflow",
+                        "content": "Enterprise agent automation update.",
+                        "publishedDate": "2026-06-08T10:00:00Z",
+                    }
+                ]
+            }
+
+    class FakeOpenWebSearchClient:
+        def __init__(self) -> None:
+            self.requests: list[dict[str, object]] = []
+
+        def get(self, url: str, **kwargs: object) -> FakeOpenWebSearchResponse:
+            self.requests.append({"url": url, **kwargs})
+            return FakeOpenWebSearchResponse()
+
+    http_client = FakeOpenWebSearchClient()
+    settings = Settings(
+        database_url="postgresql+psycopg://user:pass@localhost:5432/news_agent",
+        redis_url="redis://localhost:6379/0",
+        search_provider="open_websearch",
+        open_websearch_base_url="http://localhost:8080",
+    )
+
+    registry = build_default_tool_registry(
+        llm=MockLLM(),
+        settings=settings,
+        search_http_client=http_client,
+    )
+
+    assert "search_news" in registry.list_tool_names()
+    assert "mock_search" in registry.list_tool_names()
+
+    gateway = LocalToolGateway()
+    registry.register_into(gateway)
+
+    response = gateway.call(
+        "search_news",
+        run_id="run_task6_real_search",
+        topic=_build_task6_topic(),
+    )
+
+    assert response.success is True
+    assert response.data is not None
+    assert response.data["candidates"][0]["source_name"] == "OpenWebSearch"
+    assert response.metadata["provider"] == "open_websearch"
+    assert response.metadata["used_fallback"] is False
+    assert http_client.requests[0]["url"] == "http://localhost:8080/search"
+
+
+def test_task6_search_provider_falls_back_to_mock_when_real_provider_fails() -> None:
+    from app.core.config import Settings
+    from app.tools.registry import build_default_tool_registry
+
+    class FailingOpenWebSearchClient:
+        def get(self, url: str, **kwargs: object) -> object:
+            raise RuntimeError("open-websearch unavailable")
+
+    settings = Settings(
+        database_url="postgresql+psycopg://user:pass@localhost:5432/news_agent",
+        redis_url="redis://localhost:6379/0",
+        search_provider="open_websearch",
+        open_websearch_base_url="http://localhost:8080",
+    )
+
+    registry = build_default_tool_registry(
+        llm=MockLLM(),
+        settings=settings,
+        search_http_client=FailingOpenWebSearchClient(),
+    )
+    gateway = LocalToolGateway()
+    registry.register_into(gateway)
+
+    response = gateway.call(
+        "search_news",
+        run_id="run_task6_real_search_fallback",
+        topic=_build_task6_topic(),
+    )
+
+    assert response.metadata["provider"] == "open_websearch"
+    assert response.metadata["fallback_provider"] == "mock_search"
+    assert response.metadata["used_fallback"] is True
+    assert response.success is True
+    assert response.data is not None
+    assert len(response.data["candidates"]) == 2
+
+
+def test_browser_fetch_tool_marks_browser_fallback_when_http_fetch_fails() -> None:
+    from app.tools.browser_fetch_tool import BrowserFetchTool
+
+    def failing_fetcher(url: str) -> str:
+        raise RuntimeError(f"http failed for {url}")
+
+    def browser_fetcher(url: str) -> str:
+        return f"browser content for {url}"
+
+    tool = BrowserFetchTool(
+        fetcher=failing_fetcher,
+        browser_fetcher=browser_fetcher,
+    )
+
+    response = tool(
+        candidates=[
+            {
+                "candidate_id": "cand_browser_fallback",
+                "url": "https://example.com/articles/browser-fallback",
+                "raw_summary": "Fallback summary",
+            }
+        ]
+    )
+
+    assert response.success is True
+    assert response.data is not None
+    candidate = response.data["candidates"][0]
+    assert candidate["fetch_status"] == "fetched"
+    assert candidate["content"] == "browser content for https://example.com/articles/browser-fallback"
+    assert candidate["fetch_method"] == "browser_fallback"
+    assert candidate["fetch_fallback_reason"] == (
+        "http failed for https://example.com/articles/browser-fallback"
+    )
+    assert response.metadata["used_browser_fallback"] is True
+
+
 def test_task6_fetch_preserves_candidate_identity_when_urls_canonicalize_equal(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:

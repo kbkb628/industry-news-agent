@@ -18,6 +18,9 @@ class Settings(BaseSettings):
     database_url: str = Field(...)
     redis_url: str = Field(...)
     default_push_threshold: float = Field(default=DEFAULT_PUSH_THRESHOLD)
+    search_provider: str = Field(default="mock")
+    open_websearch_base_url: str | None = Field(default=None)
+    open_websearch_timeout_seconds: float = Field(default=10.0)
 
 def get_settings() -> Settings:
     return Settings()

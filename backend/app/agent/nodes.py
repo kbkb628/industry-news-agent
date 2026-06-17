@@ -182,6 +182,19 @@ def retrieve_candidates_node(
 
     for tool_name in state.get("source_plan", []):
         response = _call_tool(state, gateway, tool_name, run_id=run_id, topic=topic)
+        if response.metadata.get("used_fallback"):
+            append_event(
+                state,
+                "retrieve_candidates",
+                "Used fallback search provider for candidate retrieval.",
+                event_type="fallback_used",
+                payload={
+                    "tool_name": response.tool_name,
+                    "provider": response.metadata.get("provider"),
+                    "fallback_provider": response.metadata.get("fallback_provider"),
+                    "fallback_reason": response.metadata.get("fallback_reason"),
+                },
+            )
         payload = response.data or {}
         candidates.extend(payload.get("candidates", []))
 
@@ -206,6 +219,17 @@ def fetch_contents_node(
     )
     payload = response.data or {}
     state["fetched_contents"] = list(payload.get("candidates", []))
+    if response.metadata.get("used_browser_fallback"):
+        append_event(
+            state,
+            "fetch_contents",
+            "Used browser fallback for one or more candidate pages.",
+            event_type="fallback_used",
+            payload={
+                "tool_name": response.tool_name,
+                "fallback": "browser_fetch",
+            },
+        )
     return append_event(
         state,
         "fetch_contents",

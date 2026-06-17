@@ -8,9 +8,12 @@ from typing import Annotated, Any
 
 from fastapi import APIRouter, Depends, HTTPException, status
 from langgraph.graph.state import CompiledStateGraph
+from pydantic import ValidationError
 from sqlalchemy.orm import Session
 
 from app.agent.graph import build_monitor_graph
+from app.core.config import Settings
+from app.core.config import get_settings
 from app.llm.mock_client import MockLLM
 from app.schemas.monitor_schema import MonitorRunStateResponse, MonitorRunSummary
 from app.storage.database import get_db, get_session_factory
@@ -27,6 +30,13 @@ from app.api.topics import get_topic_repository
 router = APIRouter(prefix="/api/monitor", tags=["monitor"])
 
 
+def _get_optional_settings() -> Settings | None:
+    try:
+        return get_settings()
+    except ValidationError:
+        return None
+
+
 def get_monitor_run_repository(
     session: Annotated[Session, Depends(get_db)],
 ) -> MonitorRunRepositoryProtocol:
@@ -39,7 +49,11 @@ def get_monitor_graph(
         Depends(get_monitor_run_repository),
     ],
 ) -> CompiledStateGraph:
-    return build_monitor_graph(llm=MockLLM(), run_repository=repository)
+    return build_monitor_graph(
+        llm=MockLLM(),
+        run_repository=repository,
+        settings=_get_optional_settings(),
+    )
 
 
 def _topic_to_graph_payload(topic: TopicRecord) -> dict[str, Any]:
@@ -142,7 +156,11 @@ def _invoke_graph_with_fresh_session(initial_state: dict[str, Any]) -> None:
     session = get_session_factory()()
     repository = build_monitor_run_repository(session)
     try:
-        graph = build_monitor_graph(llm=MockLLM(), run_repository=repository)
+        graph = build_monitor_graph(
+            llm=MockLLM(),
+            run_repository=repository,
+            settings=_get_optional_settings(),
+        )
         graph.invoke(deepcopy(initial_state))
     except Exception as exc:
         _mark_run_failed(repository, initial_state, exc)

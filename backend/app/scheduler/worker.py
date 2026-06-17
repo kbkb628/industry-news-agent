@@ -11,7 +11,12 @@ import uuid
 from typing import Any, Protocol
 
 from app.agent.graph import build_monitor_graph
-from app.api.monitor import _build_initial_state, _mark_run_failed, _persist_initial_run
+from app.api.monitor import (
+    _build_initial_state,
+    _get_optional_settings,
+    _mark_run_failed,
+    _persist_initial_run,
+)
 from app.core.config import Settings
 from app.llm.base import BaseLLMClient
 from app.llm.mock_client import MockLLM
@@ -188,6 +193,19 @@ class MonitorWorkerService:
         finally:
             executor.shutdown(wait=False, cancel_futures=True)
 
+    def _build_graph(self) -> Any:
+        settings = _get_optional_settings()
+        if settings is None:
+            return build_monitor_graph(
+                llm=self.llm,
+                run_repository=self.run_repository,
+            )
+        return build_monitor_graph(
+            llm=self.llm,
+            run_repository=self.run_repository,
+            settings=settings,
+        )
+
     def process_next(self) -> dict[str, Any] | None:
         message = self.queue.dequeue()
         if message is None:
@@ -241,7 +259,7 @@ class MonitorWorkerService:
             attempt_state = deepcopy(base_state)
             attempt_state["retry_count"] = attempt
             try:
-                graph = build_monitor_graph(llm=self.llm, run_repository=self.run_repository)
+                graph = self._build_graph()
                 result = self._invoke_graph_with_timeout(graph, attempt_state)
                 return {
                     "run_id": run_id,

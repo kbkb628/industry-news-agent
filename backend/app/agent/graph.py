@@ -17,6 +17,7 @@ from app.agent.nodes import (
     score_items_node,
 )
 from app.agent.state import MonitorState
+from app.core.config import Settings
 from app.llm.base import BaseLLMClient
 from app.llm.mock_client import MockLLM
 from app.mcp.local_gateway import LocalToolGateway
@@ -24,9 +25,12 @@ from app.storage.repository import MonitorRunRepositoryProtocol
 from app.tools.registry import build_default_tool_registry
 
 
-def _build_default_gateway(llm: BaseLLMClient) -> LocalToolGateway:
+def _build_default_gateway(
+    llm: BaseLLMClient,
+    settings: Settings | None,
+) -> LocalToolGateway:
     gateway = LocalToolGateway()
-    build_default_tool_registry(llm=llm).register_into(gateway)
+    build_default_tool_registry(llm=llm, settings=settings).register_into(gateway)
     return gateway
 
 
@@ -35,9 +39,10 @@ def build_monitor_graph(
     llm: BaseLLMClient | None = None,
     gateway: LocalToolGateway | None = None,
     run_repository: MonitorRunRepositoryProtocol | None = None,
+    settings: Settings | None = None,
 ):
     resolved_llm = llm or MockLLM()
-    resolved_gateway = gateway or _build_default_gateway(resolved_llm)
+    resolved_gateway = gateway or _build_default_gateway(resolved_llm, settings)
 
     graph = StateGraph(MonitorState)
     graph.add_node(

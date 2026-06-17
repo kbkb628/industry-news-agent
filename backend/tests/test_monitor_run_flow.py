@@ -14,6 +14,7 @@ from app.api.topics import get_topic_repository
 from app.agent.graph import build_monitor_graph
 from app.llm.mock_client import MockLLM
 from app.main import create_app
+from app.mcp.local_gateway import LocalToolGateway
 from app.scheduler.jobs import TopicSchedulerService
 from app.scheduler.worker import InMemoryRunQueue, MonitorWorkerLoop, MonitorWorkerService, RunQueueMessage
 from app.storage.repository import (
@@ -22,6 +23,7 @@ from app.storage.repository import (
     TopicCreateData,
     TopicRecord,
 )
+from app.tools.responses import ToolResponse
 
 
 def test_monitor_graph_runs_to_completion() -> None:
@@ -159,6 +161,175 @@ def test_monitor_graph_runs_to_completion() -> None:
     assert repository.push_records[0]["pushed_at"] is not None
     assert len(repository.run_events) == len(result["events"])
     assert len(repository.eval_results) == 1
+
+
+def test_monitor_graph_records_provider_and_browser_fallback_events() -> None:
+    class RecordingMonitorRunRepository:
+        def __init__(self) -> None:
+            self.monitor_runs: list[object] = []
+            self.push_records: list[dict[str, object]] = []
+            self.run_events: list[dict[str, object]] = []
+            self.eval_results: list[dict[str, object]] = []
+
+        def upsert_monitor_run(self, payload: object) -> object:
+            self.monitor_runs.append(payload)
+            return payload
+
+        def list_push_history(self, topic_id: str) -> list[dict[str, object]]:
+            return []
+
+        def create_push_records(
+            self,
+            payloads: tuple[object, ...],
+        ) -> list[dict[str, object]]:
+            return []
+
+        def create_run_events(
+            self,
+            payloads: tuple[object, ...],
+        ) -> list[dict[str, object]]:
+            persisted = [
+                {
+                    "run_id": payload.run_id,
+                    "topic_id": payload.topic_id,
+                    "event_type": payload.event_type,
+                    "node": payload.node,
+                    "message": payload.message,
+                    "payload": payload.payload,
+                    "elapsed_ms": payload.elapsed_ms,
+                    "created_at": datetime(2026, 6, 9, tzinfo=UTC),
+                }
+                for payload in payloads
+            ]
+            self.run_events.extend(persisted)
+            return persisted
+
+        def create_eval_result(self, payload: object) -> dict[str, object]:
+            persisted = {
+                "eval_id": "eval_001",
+                "run_id": payload.run_id,
+                "topic_id": payload.topic_id,
+                "retrieved_count": payload.retrieved_count,
+                "deduped_count": payload.deduped_count,
+                "dedup_rate": payload.dedup_rate,
+                "push_count": payload.push_count,
+                "duplicate_push_count": payload.duplicate_push_count,
+                "tool_success_rate": payload.tool_success_rate,
+                "fetch_success_rate": payload.fetch_success_rate,
+                "trace_completeness": payload.trace_completeness,
+                "suggestions": list(payload.suggestions),
+                "created_at": datetime(2026, 6, 9, tzinfo=UTC),
+            }
+            self.eval_results.append(persisted)
+            return persisted
+
+    repository = RecordingMonitorRunRepository()
+
+    def fallback_search_tool(run_id: str, topic: dict[str, object]) -> object:
+        return ToolResponse.success(
+            tool_name="search_news",
+            summary="Used mock search fallback.",
+            data={"run_id": run_id, "candidates": []},
+            metadata={
+                "provider": "open_websearch",
+                "fallback_provider": "mock_search",
+                "used_fallback": True,
+            },
+        )
+
+    def browser_fetch_tool(candidates: list[dict[str, object]]) -> object:
+        return ToolResponse.success(
+            tool_name="fetch_article_content",
+            summary="Fetched through browser fallback.",
+            data={"candidates": []},
+            metadata={"used_browser_fallback": True},
+        )
+
+    gateway = LocalToolGateway()
+    gateway.register("rss_fetch", lambda run_id, topic: ToolResponse.success(
+        tool_name="rss_fetch",
+        summary="No RSS candidates.",
+        data={"run_id": run_id, "candidates": []},
+    ))
+    gateway.register("mock_search", fallback_search_tool)
+    gateway.register("fetch_article_content", browser_fetch_tool)
+    gateway.register("extract_article", lambda run_id, topic, candidates: ToolResponse.success(
+        tool_name="extract_article",
+        summary="No articles.",
+        data={"articles": [], "skipped_candidate_ids": []},
+    ))
+    gateway.register("deduplicate_items", lambda articles: ToolResponse.success(
+        tool_name="deduplicate_items",
+        summary="No deduped articles.",
+        data={"articles": [], "deduped_count": 0, "dropped_candidate_ids": []},
+    ))
+    gateway.register("score_candidate", lambda topic, articles: ToolResponse.success(
+        tool_name="score_candidate",
+        summary="No scored articles.",
+        data={"articles": []},
+    ))
+    gateway.register("decide_push", lambda run_id, topic, articles, push_history: ToolResponse.success(
+        tool_name="decide_push",
+        summary="No push decisions.",
+        data={"pushes": [], "push_count": 0},
+    ))
+
+    graph = build_monitor_graph(
+        llm=MockLLM(),
+        gateway=gateway,
+        run_repository=repository,
+    )
+
+    result = graph.invoke(
+        {
+            "run_id": "run_phase2c_provider_events",
+            "topic_id": "topic_ai_agent",
+            "topic": {
+                "topic_id": "topic_ai_agent",
+                "name": "AI Agent",
+                "description": "Track enterprise AI agent launches.",
+                "seed_keywords": ["OpenAI", "enterprise"],
+                "trusted_sources": ["AI Search"],
+                "exclude_keywords": [],
+                "push_threshold": 0.72,
+                "cooldown_hours": 24,
+                "enabled": True,
+            },
+            "seed_keywords": ["OpenAI", "enterprise"],
+            "expanded_queries": [],
+            "business_context": {},
+            "source_plan": ["rss_fetch", "mock_search"],
+            "candidate_items": [],
+            "fetched_contents": [],
+            "extracted_items": [],
+            "deduped_items": [],
+            "scored_items": [],
+            "final_decisions": [],
+            "decision_reasons": [],
+            "push_records": [],
+            "push_history": [],
+            "tool_results": [],
+            "eval_result": {},
+            "events": [],
+            "errors": [],
+            "status": "created",
+        }
+    )
+
+    assert result["status"] == "completed"
+    provider_event = next(
+        event for event in repository.run_events
+        if event["event_type"] == "fallback_used"
+        and event["node"] == "retrieve_candidates"
+    )
+    browser_event = next(
+        event for event in repository.run_events
+        if event["event_type"] == "fallback_used"
+        and event["node"] == "fetch_contents"
+    )
+    assert provider_event["payload"]["provider"] == "open_websearch"
+    assert provider_event["payload"]["fallback_provider"] == "mock_search"
+    assert browser_event["payload"]["fallback"] == "browser_fetch"
 
 
 class InMemoryTopicRepository:
