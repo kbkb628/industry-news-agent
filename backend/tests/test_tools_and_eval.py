@@ -16,6 +16,7 @@ from app.rag.knowledge_loader import (
     KnowledgeDocument,
     load_knowledge_base,
 )
+from app.rag.bm25_retriever import BM25Retriever
 from app.tools.responses import ToolResponse
 
 from app.core.config import Settings, get_settings
@@ -344,6 +345,41 @@ def test_keyword_retriever_precomputes_document_tokens(monkeypatch) -> None:
 
     assert calls_after_init == len(documents)
     assert len(tokenize_calls) == len(documents) + 2
+
+
+def test_bm25_retriever_ranks_term_frequency_with_length_normalization() -> None:
+    documents = [
+        KnowledgeDocument(
+            doc_id="kb_short_relevant",
+            title="Trusted source ranking",
+            content="Trusted source ranking improves news quality.",
+            keywords=["trusted", "source", "ranking"],
+        ),
+        KnowledgeDocument(
+            doc_id="kb_long_repetitive",
+            title="Trusted source ranking",
+            content=(
+                "trusted source ranking " * 3
+                + "generic filler " * 80
+            ),
+            keywords=["trusted"],
+        ),
+        KnowledgeDocument(
+            doc_id="kb_irrelevant",
+            title="Article extraction",
+            content="Summaries and extraction are separate concerns.",
+            keywords=["summary"],
+        ),
+    ]
+
+    results = BM25Retriever(documents).retrieve("trusted source ranking", top_k=2)
+
+    assert [result.document.doc_id for result in results] == [
+        "kb_short_relevant",
+        "kb_long_repetitive",
+    ]
+    assert results[0].score > results[1].score
+    assert all(result.metadata["retriever"] == "bm25" for result in results)
 
 
 def test_local_tool_gateway_registers_and_calls_local_tools() -> None:

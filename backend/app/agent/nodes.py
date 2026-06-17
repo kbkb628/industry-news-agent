@@ -8,6 +8,7 @@ from app.eval.rule_scorer import score_run
 from app.llm.base import BaseLLMClient
 from app.mcp.local_gateway import LocalToolGateway
 from app.observability.event_logger import append_event
+from app.rag.bm25_retriever import BM25Retriever
 from app.rag.keyword_retriever import KeywordRetriever
 from app.rag.knowledge_loader import load_knowledge_base
 from app.storage.repository import (
@@ -127,25 +128,62 @@ def retrieve_business_context_node(state: dict[str, Any]) -> dict[str, Any]:
             *[str(item) for item in state.get("seed_keywords", [])],
         ]
     ).strip()
-    hits = KeywordRetriever(load_knowledge_base()).retrieve(query, top_k=3)
+    documents = load_knowledge_base()
+    keyword_hits = KeywordRetriever(documents).retrieve(query, top_k=3)
+    bm25_hits = BM25Retriever(documents).retrieve(query, top_k=3)
+    merged: dict[str, dict[str, Any]] = {}
+
+    for item in keyword_hits:
+        merged[item.document.doc_id] = {
+            "document": item.document,
+            "score": float(item.score),
+            "retrievers": ["keyword"],
+            "scores": {"keyword": float(item.score)},
+        }
+    for item in bm25_hits:
+        existing = merged.setdefault(
+            item.document.doc_id,
+            {
+                "document": item.document,
+                "score": 0.0,
+                "retrievers": [],
+                "scores": {},
+            },
+        )
+        existing["score"] = float(existing["score"]) + float(item.score)
+        existing["retrievers"].append("bm25")
+        existing["scores"]["bm25"] = float(item.score)
+
+    ranked_hits = sorted(
+        merged.values(),
+        key=lambda item: (-float(item["score"]), item["document"].doc_id),
+    )[:3]
     state["business_context"] = {
         "query": query,
+        "retrieval_mode": "hybrid_keyword_bm25",
+        "retrievers": ["keyword", "bm25"],
         "documents": [
             {
-                "doc_id": item.document.doc_id,
-                "title": item.document.title,
-                "content": item.document.content,
-                "keywords": list(item.document.keywords),
-                "score": item.score,
+                "doc_id": item["document"].doc_id,
+                "title": item["document"].title,
+                "content": item["document"].content,
+                "keywords": list(item["document"].keywords),
+                "score": item["score"],
+                "retrievers": list(item["retrievers"]),
+                "scores": dict(item["scores"]),
             }
-            for item in hits
+            for item in ranked_hits
         ],
     }
     return append_event(
         state,
         "retrieve_business_context",
         "Retrieved business context from local knowledge base.",
-        payload={"document_count": len(state["business_context"]["documents"])},
+        payload={
+            "document_count": len(state["business_context"]["documents"]),
+            "retrieval_mode": state["business_context"]["retrieval_mode"],
+            "retrievers": list(state["business_context"]["retrievers"]),
+        },
     )
 
 

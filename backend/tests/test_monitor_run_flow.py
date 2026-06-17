@@ -154,6 +154,13 @@ def test_monitor_graph_runs_to_completion() -> None:
     assert result["decision_reasons"]
     assert result["eval_result"]["push_count"] == 1
     assert any(event["node"] == "decide_push" for event in result["events"])
+    assert result["business_context"]["retrieval_mode"] == "hybrid_keyword_bm25"
+    assert "keyword" in result["business_context"]["retrievers"]
+    assert "bm25" in result["business_context"]["retrievers"]
+    assert all(
+        "retrievers" in document
+        for document in result["business_context"]["documents"]
+    )
     assert len(repository.monitor_runs) == 2
     assert len(repository.push_records) == 1
     assert repository.push_records[0]["title"]
