@@ -86,6 +86,12 @@ export default function App() {
     summary.status === "ready"
       ? percent(summary.data.avg_trace_completeness)
       : "-";
+  const fallbackTotal =
+    summary.status === "ready"
+      ? summary.data.total_raw_summary_count +
+        summary.data.total_browser_fallback_count +
+        summary.data.total_provider_fallback_count
+      : 0;
 
   return (
     <main className="shell">
@@ -94,8 +100,9 @@ export default function App() {
           <p className="eyebrow">Operations Console</p>
           <h1>Industry News Agent Dashboard</h1>
           <p className="hero-copy">
-            Monitor topics, push decisions, trace events, and quality signals
-            from the existing FastAPI backend.
+            Resume-facing operations view for the real multi-agent monitor loop:
+            topic planning, candidate retrieval, extraction, evaluation, queue
+            governance, and quality signals.
           </p>
         </div>
         <form className="run-search" onSubmit={loadRun}>
@@ -109,6 +116,37 @@ export default function App() {
             <button type="submit">Load run</button>
           </div>
         </form>
+      </section>
+
+      <section className="story-grid" aria-label="Architecture and governance">
+        <article className="story-card">
+          <p className="eyebrow">Multi-Agent Pipeline</p>
+          <h2>Supervisor -&gt; Planner -&gt; Retrieval -&gt; Extraction -&gt; Evaluation</h2>
+          <p>
+            The backend no longer presents a flat helper chain. A supervisor
+            controls run lifecycle while specialist agents exchange structured
+            state for planning, candidate recall, evidence extraction, and push
+            decisions.
+          </p>
+        </article>
+        <article className="story-card">
+          <p className="eyebrow">Queue Governance</p>
+          <h2>APScheduler, queue, worker, retry, active-run guard</h2>
+          <p>
+            Scheduled topics enqueue work, workers consume runs, and governance
+            events record dequeue timing, retry decisions, timeout handling, and
+            duplicate-active-run protection.
+          </p>
+        </article>
+        <article className="story-card">
+          <p className="eyebrow">Quality and fallback signals</p>
+          <h2>Trace completeness, tool success, fetch health, fallback counts</h2>
+          <p>
+            Evaluation persists run quality metrics so the project can show how
+            retrieval and extraction quality are observed instead of treated as
+            opaque model output.
+          </p>
+        </article>
       </section>
 
       <section className="metric-grid" aria-label="Dashboard summary">
@@ -138,7 +176,64 @@ export default function App() {
 
       <section className="panel-grid">
         <section className="panel">
+          <h2>Governance Snapshot</h2>
+          <p className="panel-copy">
+            This panel summarizes the operational story that supports the resume
+            claim around scheduled monitoring and queued worker execution.
+          </p>
+            <article className="row-card">
+              <h3>Execution path</h3>
+              <p>
+                Manual trigger or APScheduler enqueue {"->"} worker dequeue {"->"} monitor graph invocation.
+              </p>
+              <p>Redis Stream is used when available, with in-memory queue fallback.</p>
+            </article>
+          <article className="row-card">
+            <h3>Failure handling</h3>
+            <p>Workers emit retry, timeout, and active-run-guard governance events.</p>
+            <p>Failed runs are persisted instead of being silently dropped.</p>
+          </article>
+        </section>
+
+        <section className="panel">
+          <h2>Quality Snapshot</h2>
+          <p className="panel-copy">
+            These values come from persisted eval summaries rather than static
+            showcase data.
+          </p>
+          {summary.status === "loading" && <p>Loading quality summary...</p>}
+          {summary.status === "error" && (
+            <p className="error">{summary.message}</p>
+          )}
+          {summary.status === "ready" && (
+            <>
+              <article className="row-card">
+                <h3>Observed metrics</h3>
+                <p>Run count {summary.data.run_count}</p>
+                <p>Total push records {summary.data.total_push_count}</p>
+                <p>Fallback count {fallbackTotal}</p>
+              </article>
+              <article className="row-card">
+                <h3>Latest eval</h3>
+                <p>Latest run {summary.data.latest_eval.run_id}</p>
+                <p>Judge mode {summary.data.latest_eval.judge_mode ?? "mock_rule_judge"}</p>
+                <p>
+                  Suggestions:{" "}
+                  {(summary.data.latest_eval.suggestions ?? []).join(", ") || "-"}
+                </p>
+              </article>
+            </>
+          )}
+        </section>
+      </section>
+
+      <section className="panel-grid">
+        <section className="panel">
           <h2>Topics</h2>
+          <p className="panel-copy">
+            Topics define the monitoring intent, trusted sources, threshold, and
+            scheduler registration settings.
+          </p>
           {topics.status === "loading" && <p>Loading topics...</p>}
           {topics.status === "error" && <p className="error">{topics.message}</p>}
           {topics.status === "ready" && topics.data.length === 0 && (
@@ -162,6 +257,9 @@ export default function App() {
 
         <section className="panel">
           <h2>Pushes</h2>
+          <p className="panel-copy">
+            Push records are the persisted outcome of evaluation, not transient UI state.
+          </p>
           {pushes.status === "loading" && <p>Loading pushes...</p>}
           {pushes.status === "error" && <p className="error">{pushes.message}</p>}
           {pushes.status === "ready" && pushes.data.length === 0 && (
@@ -186,6 +284,10 @@ export default function App() {
       <section className="panel-grid">
         <section className="panel">
           <h2>Run Detail</h2>
+          <p className="panel-copy">
+            This view shows the API-facing compatibility snapshot while the
+            underlying graph uses structured multi-agent state contracts.
+          </p>
           {run === null && <p>Enter a run id to inspect monitor state.</p>}
           {run?.status === "loading" && <p>Loading run...</p>}
           {run?.status === "error" && <p className="error">{run.message}</p>}
@@ -213,6 +315,11 @@ export default function App() {
 
         <section className="panel">
           <h2>Trace Timeline</h2>
+          <p className="panel-copy">
+            Trace and governance events make the monitor flow explainable: source
+            planning, retrieval, extraction, evaluation, and worker handling all
+            leave visible records.
+          </p>
           {events === null && <p>Trace events appear after loading a run.</p>}
           {events?.status === "loading" && <p>Loading events...</p>}
           {events?.status === "error" && (

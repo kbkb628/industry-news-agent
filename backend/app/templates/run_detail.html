@@ -1,8 +1,34 @@
 {% extends "base.html" %}
+{% block title %}Run Detail | Industry News Agent{% endblock %}
 {% block content %}
-<section>
-  <h2>运行状态</h2>
-  <p>当前运行 ID：{{ run_id }}</p>
-  <p>展示 run_id、状态、候选池和决策摘要。</p>
+<section class="section-card">
+  <h2>运行状态 / Run detail for <code>{{ run_id }}</code></h2>
+  <p>
+    This page is tuned for showcase readability: it explains what a single execution represents,
+    which decisions matter, and how a reviewer should interpret the run at a glance.
+  </p>
+  <div class="grid three">
+    <article class="stat">
+      <strong>Planning layer</strong>
+      <p>Context-aware query expansion and source sequencing begin the run narrative.</p>
+    </article>
+    <article class="stat">
+      <strong>Retrieval layer</strong>
+      <p>Candidates, tool fallbacks, and source coverage become visible operational evidence.</p>
+    </article>
+    <article class="stat">
+      <strong>Decision layer</strong>
+      <p>Scoring and push thresholds explain why operators should trust the resulting alert.</p>
+    </article>
+  </div>
+</section>
+
+<section class="section-card">
+  <h3>Reviewer script</h3>
+  <ul class="timeline">
+    <li>Start with the run identifier to anchor the discussion in a specific execution.</li>
+    <li>Move to the event stream to show intermediate steps, degradations, and retries.</li>
+    <li>Finish on push outcomes and quality metrics to tie engineering detail back to product value.</li>
+  </ul>
 </section>
 {% endblock %}

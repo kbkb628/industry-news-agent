@@ -101,6 +101,10 @@ def create_app() -> FastAPI:
     def quality_page(request: Request):
         return templates.TemplateResponse(request, "quality.html")
 
+    @app.get("/resume-alignment", response_class=HTMLResponse)
+    def resume_alignment_page(request: Request):
+        return templates.TemplateResponse(request, "resume_alignment.html")
+
     @app.get("/runs/{run_id}", response_class=HTMLResponse)
     def run_detail_page(run_id: str, request: Request):
         return templates.TemplateResponse(

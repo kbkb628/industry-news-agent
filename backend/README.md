@@ -6,6 +6,10 @@ This backend implements the core industry-news monitoring project described in
 `DEVELOPMENT_GUIDE.md`, centered on a working end-to-end monitor loop plus a set
 of already completed optional integrations that remain truthful in scope.
 
+For a concise resume-to-code evidence map and claim status labels, see
+[`../docs/resume-alignment.md`](../docs/resume-alignment.md). Repository
+milestone tracking lives in [`../PROJECT_TODO.md`](../PROJECT_TODO.md).
+
 The core runtime is now a real in-process multi-agent monitor architecture:
 
 ```text

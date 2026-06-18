@@ -113,6 +113,19 @@ describe("App", () => {
     expect(
       await screen.findByRole("heading", { name: /Industry News Agent/i }),
     ).toBeInTheDocument();
+    expect(
+      await screen.findByText(
+        /Supervisor -> Planner -> Retrieval -> Extraction -> Evaluation/i,
+      ),
+    ).toBeInTheDocument();
+    expect(
+      await screen.findByText(/Quality and fallback signals/i),
+    ).toBeInTheDocument();
+    expect(
+      await screen.findByRole("heading", {
+        name: /APScheduler, queue, worker, retry, active-run guard/i,
+      }),
+    ).toBeInTheDocument();
     expect(await screen.findByText("AI Agent")).toBeInTheDocument();
     expect(await screen.findByText("push_001")).toBeInTheDocument();
     expect(await screen.findByText("Tool success")).toBeInTheDocument();

@@ -1,8 +1,33 @@
 {% extends "base.html" %}
+{% block title %}Run Events | Industry News Agent{% endblock %}
 {% block content %}
-<section>
-  <h2>事件时间线</h2>
-  <p>运行 ID：{{ run_id }}</p>
-  <p>展示工具调用、降级和评估事件。</p>
+<section class="section-card">
+  <h2>事件时间线 / Execution timeline for <code>{{ run_id }}</code></h2>
+  <p>
+    The events view is positioned as an evidence board. It helps interviewers and operators see
+    that the backend is not a black box: tool calls, fallbacks, and evaluation checkpoints are all
+    expected parts of the system story.
+  </p>
+</section>
+
+<section class="section-card">
+  <div class="grid two">
+    <article class="stat">
+      <strong>Why it matters</strong>
+      <ul class="checklist">
+        <li>Operational transparency reduces ambiguity when a run degrades gracefully.</li>
+        <li>Event visibility makes the agent easier to debug, trust, and demo live.</li>
+        <li>The page language is tuned for non-authors reading the project for the first time.</li>
+      </ul>
+    </article>
+    <article class="stat">
+      <strong>What to highlight in a walkthrough</strong>
+      <ul class="checklist">
+        <li>Which tools were invoked first and why.</li>
+        <li>Whether fallback paths activated and how the system kept moving.</li>
+        <li>How evaluation signals feed back into product confidence.</li>
+      </ul>
+    </article>
+  </div>
 </section>
 {% endblock %}

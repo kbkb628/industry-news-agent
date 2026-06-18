@@ -101,7 +101,8 @@ button {
 }
 
 .metric-grid,
-.panel-grid {
+.panel-grid,
+.story-grid {
   display: grid;
   gap: 18px;
   margin-top: 18px;
@@ -115,8 +116,13 @@ button {
   grid-template-columns: repeat(2, minmax(0, 1fr));
 }
 
+.story-grid {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
 .metric-card,
 .panel,
+.story-card,
 .row-card,
 .timeline-item,
 .inline-notice {
@@ -150,6 +156,27 @@ button {
 .panel {
   padding: 20px;
   min-width: 0;
+}
+
+.story-card {
+  padding: 20px;
+  box-shadow: 0 16px 44px rgba(42, 51, 46, 0.1);
+}
+
+.story-card h2 {
+  font-size: 1.2rem;
+  line-height: 1.2;
+}
+
+.story-card p {
+  color: var(--muted);
+  margin-bottom: 0;
+}
+
+.panel-copy {
+  color: var(--muted);
+  margin-top: -4px;
+  margin-bottom: 12px;
 }
 
 .row-card,
@@ -203,7 +230,8 @@ pre {
 @media (max-width: 760px) {
   .hero,
   .panel-grid,
-  .metric-grid {
+  .metric-grid,
+  .story-grid {
     grid-template-columns: 1fr;
   }
 

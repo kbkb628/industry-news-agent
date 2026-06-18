@@ -1,7 +1,59 @@
 {% extends "base.html" %}
+{% block title %}Topics Showcase | Industry News Agent{% endblock %}
 {% block content %}
-<section>
-  <h2>监控主题</h2>
-  <p>使用 Swagger 或 API 创建主题后，可在此查看。</p>
+<section class="section-card">
+  <h2>监控主题 / Agent workflow highlights</h2>
+  <p>
+    This overview page introduces the monitored domains, the intended retrieval behavior,
+    and why the MVP is useful in a product or operations interview. Instead of a raw admin shell,
+    it acts like a guided briefing for reviewers.
+  </p>
+  <div class="kpi-list">
+    <div class="kpi">
+      <span>Primary user</span>
+      <strong>Ops lead</strong>
+    </div>
+    <div class="kpi">
+      <span>Main loop</span>
+      <strong>Plan to push</strong>
+    </div>
+    <div class="kpi">
+      <span>Evidence style</span>
+      <strong>Readable trace</strong>
+    </div>
+    <div class="kpi">
+      <span>Showcase angle</span>
+      <strong>Backend clarity</strong>
+    </div>
+  </div>
+</section>
+
+<section class="section-card">
+  <div class="grid two">
+    <article class="stat">
+      <strong>What a recruiter should notice</strong>
+      <ul class="checklist">
+        <li>The product narrative is clear even before the API is explored.</li>
+        <li>Planning, retrieval, evaluation, and notification are surfaced as one coherent flow.</li>
+        <li>The page copy focuses on operational value instead of internal-only labels.</li>
+      </ul>
+    </article>
+    <article class="stat">
+      <strong>Where the live data comes from</strong>
+      <ul class="checklist">
+        <li>Topics are still created and edited through Swagger or existing API endpoints.</li>
+        <li>This page stays intentionally lightweight so it remains compatible with the current MVP.</li>
+        <li>The showcase layer explains the system without inventing new backend capabilities.</li>
+      </ul>
+    </article>
+  </div>
+</section>
+
+<section class="section-card">
+  <div class="callout">
+    <strong>Operator note</strong>
+    Once topics are created, use the run, events, pushes, and quality pages to walk interviewers
+    through how the system makes decisions and how reliability is measured.
+  </div>
 </section>
 {% endblock %}

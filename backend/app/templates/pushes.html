@@ -1,7 +1,30 @@
 {% extends "base.html" %}
+{% block title %}Push Outcomes | Industry News Agent{% endblock %}
 {% block content %}
-<section>
-  <h2>推送记录</h2>
-  <p>展示已推送与未推送记录。</p>
+<section class="section-card">
+  <h2>推送记录 / Push outcome review</h2>
+  <p>
+    This page reframes raw notification history as a trust and product-quality surface. A reviewer
+    should quickly understand how the backend avoids noisy alerts and why approved pushes are worth
+    sending to downstream users.
+  </p>
+  <div class="grid two">
+    <article class="stat">
+      <strong>Signal worth showing</strong>
+      <ul class="checklist">
+        <li>Accepted alerts demonstrate thresholding discipline rather than simple forwarding.</li>
+        <li>Suppressed items show that the MVP values operator attention as a scarce resource.</li>
+        <li>Delivery history supports reliability claims in a portfolio or resume discussion.</li>
+      </ul>
+    </article>
+    <article class="stat">
+      <strong>Interview framing</strong>
+      <ul class="checklist">
+        <li>Explain how push decisions combine retrieval relevance with downstream restraint.</li>
+        <li>Use this page to discuss user trust, precision, and alert fatigue prevention.</li>
+        <li>Connect the page back to the quality dashboard for measurable outcomes.</li>
+      </ul>
+    </article>
+  </div>
 </section>
 {% endblock %}

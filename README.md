@@ -49,6 +49,10 @@ Specialist agents collaborate through explicit shared-state sections:
 - `extraction_output`
 - `evaluation_output`
 
+For a claim-by-claim mapping from the resume wording to real code, APIs, pages,
+and truth boundaries, see [`docs/resume-alignment.md`](docs/resume-alignment.md).
+Current milestone status lives in [`PROJECT_TODO.md`](PROJECT_TODO.md).
+
 For API stability, the finalization stage mirrors key values back into legacy
 top-level fields such as `expanded_queries`, `candidate_items`,
 `final_decisions`, and `eval_result`.

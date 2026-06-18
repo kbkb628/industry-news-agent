@@ -1,17 +1,52 @@
 {% extends "base.html" %}
+{% block title %}Quality Signals | Industry News Agent{% endblock %}
 {% block content %}
-<section>
-  <h2>质量汇总</h2>
-  <p>汇总已持久化评估结果中的推送数量、降级路径和追踪完整度。</p>
-  <dl id="quality-summary">
-    <dt>运行次数</dt>
-    <dd id="run-count">加载中</dd>
-    <dt>平均工具成功率</dt>
-    <dd id="tool-success-rate">加载中</dd>
-    <dt>平均抓取成功率</dt>
-    <dd id="fetch-success-rate">加载中</dd>
-    <dt>Fallback 总数</dt>
-    <dd id="fallback-total">加载中</dd>
+<section class="section-card">
+  <h2>质量汇总 / Quality summary and reliability story</h2>
+  <p>
+    This showcase page retains the existing summary fetch, but it now frames evaluation metrics as
+    evidence for reliability engineering: success rates, fallback counts, and run volume are easier
+    to read and easier to explain.
+  </p>
+  <div class="grid two">
+    <article class="stat">
+      <strong>Quality reading guide</strong>
+      <ul class="scorecard">
+        <li>Run count shows how much evidence backs the showcase.</li>
+        <li>Tool success rate reflects orchestration stability under normal operation.</li>
+        <li>Fetch success rate indicates content acquisition health.</li>
+        <li>Fallback totals expose resilience tradeoffs rather than hiding them.</li>
+      </ul>
+    </article>
+    <article class="stat">
+      <strong>Showcase message</strong>
+      <p>
+        The project is strongest when it demonstrates graceful degradation, visible telemetry,
+        and a disciplined explanation of what the MVP can measure today.
+      </p>
+    </article>
+  </div>
+</section>
+
+<section class="section-card">
+  <h3>Live evaluation snapshot</h3>
+  <dl id="quality-summary" class="grid two">
+    <div class="stat">
+      <dt>Run count</dt>
+      <dd id="run-count">Loading</dd>
+    </div>
+    <div class="stat">
+      <dt>Average tool success rate</dt>
+      <dd id="tool-success-rate">Loading</dd>
+    </div>
+    <div class="stat">
+      <dt>Average fetch success rate</dt>
+      <dd id="fetch-success-rate">Loading</dd>
+    </div>
+    <div class="stat">
+      <dt>Total fallbacks</dt>
+      <dd id="fallback-total">Loading</dd>
+    </div>
   </dl>
 </section>
 <script>
@@ -32,7 +67,7 @@
         summary.total_provider_fallback_count;
     })
     .catch(() => {
-      document.getElementById("run-count").textContent = "暂无评估数据";
+      document.getElementById("run-count").textContent = "No evaluation summary yet";
       document.getElementById("tool-success-rate").textContent = "-";
       document.getElementById("fetch-success-rate").textContent = "-";
       document.getElementById("fallback-total").textContent = "-";
