@@ -6,10 +6,26 @@ This backend implements the core industry-news monitoring project described in
 `DEVELOPMENT_GUIDE.md`, centered on a working end-to-end monitor loop plus a set
 of already completed optional integrations that remain truthful in scope.
 
+The core runtime is now a real in-process multi-agent monitor architecture:
+
+```text
+supervisor_bootstrap
+  -> planner_agent
+  -> retrieval_agent
+  -> extraction_agent
+  -> evaluation_agent
+  -> supervisor_finalize
+```
+
+The supervisor owns run lifecycle and final persistence. Specialist agents
+collaborate through explicit shared-state contracts and then mirror compatible
+fields back into the legacy API-facing run snapshot.
+
 Included in the current codebase:
 
 - topic creation, listing, and detail APIs
-- MockLLM-backed monitor workflow through LangGraph
+- MockLLM-backed LangGraph monitor workflow with real supervisor/specialist
+  agent separation
 - persisted monitor runs, push records, run events, and eval results
 - persisted candidate, extracted item, and structured decision records for monitor runs with snapshot fallback
 - richer eval metrics for raw-summary, browser fallback, and provider fallback trends
@@ -29,6 +45,62 @@ Included in the current codebase:
 - deterministic MockEvalJudge adapter for the LLM-as-Judge evaluation contract
 - optional OpenAI-compatible LLM-as-Judge provider with mock fallback
 - local Docker Compose stack for backend, PostgreSQL, and Redis
+
+## Current Architecture
+
+### Agent Stages
+
+- `supervisor_bootstrap`
+- `planner_agent`
+- `retrieval_agent`
+- `extraction_agent`
+- `evaluation_agent`
+- `supervisor_finalize`
+
+### Shared State Contracts
+
+The multi-agent pipeline exchanges explicit state sections:
+
+- `run_context`
+- `business_memory`
+- `planner_output`
+- `retrieval_output`
+- `extraction_output`
+- `evaluation_output`
+
+These structured sections let the planner, retrieval, extraction, and
+evaluation stages collaborate without depending on each other's internal
+implementation details.
+
+### Compatibility Strategy
+
+Current HTTP run endpoints still expose the legacy snapshot fields required by
+the MVP contract, including:
+
+- `expanded_queries`
+- `candidate_items`
+- `final_decisions`
+- `errors`
+
+Those fields are mirrored from the structured multi-agent outputs during
+supervisor finalization so existing API responses, HTML pages, and dashboard
+screens continue to work while the internals use stronger contracts.
+
+### Queue And Worker Flow
+
+Manual runs can still be triggered directly through the monitor API, and topic
+schedules are registered through APScheduler. Scheduled work is enqueued and
+consumed by `MonitorWorkerService`, which provides:
+
+- active-run guard per topic
+- queue wait metrics
+- worker governance events
+- retry and timeout handling
+- persisted failed-run closure when execution breaks
+
+Redis Stream is used when Redis is available. The code falls back to an
+in-memory queue only as an execution fallback, not as the source of truth for
+business records.
 
 Not claimed by the current implementation:
 
@@ -270,6 +342,9 @@ configuration.
 - `GET /api/monitor/runs/{run_id}/events`
 - `POST /api/eval/run`
 - `GET /api/eval/summary`
+
+`GET /api/monitor/runs/{run_id}` currently returns the compatibility snapshot,
+not the full structured multi-agent contract surface.
 
 ## Minimal HTML Pages
 
