@@ -187,6 +187,13 @@ class MonitorWorkerService:
             return [MonitorWorkerService._serialize_payload_value(item) for item in value]
         return value
 
+    def _coordination_backend_name(self) -> str:
+        if isinstance(self.queue, RedisStreamRunQueue):
+            return "redis_stream"
+        if isinstance(self.queue, InMemoryRunQueue):
+            return "memory"
+        return self.queue.__class__.__name__.lower()
+
     def _build_queue_metrics(self, message: RunQueueMessage) -> dict[str, Any]:
         dequeued_at = datetime.now(UTC)
         queue_wait_ms = max(
@@ -198,6 +205,8 @@ class MonitorWorkerService:
             "enqueued_at": message.enqueued_at,
             "dequeued_at": dequeued_at,
             "queue_wait_ms": queue_wait_ms,
+            # Coordination backend remains short-lived transport metadata only.
+            "coordination_backend": self._coordination_backend_name(),
         }
 
     def _persist_governance_event(

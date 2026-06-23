@@ -18,7 +18,13 @@ from app.llm.mock_client import MockLLM
 from app.main import create_app
 from app.mcp.local_gateway import LocalToolGateway
 from app.scheduler.jobs import TopicSchedulerService
-from app.scheduler.worker import InMemoryRunQueue, MonitorWorkerLoop, MonitorWorkerService, RunQueueMessage
+from app.scheduler.worker import (
+    InMemoryRunQueue,
+    MonitorWorkerLoop,
+    MonitorWorkerService,
+    RedisStreamRunQueue,
+    RunQueueMessage,
+)
 from app.storage.repository import (
     MonitorRunRecord,
     MonitorRunUpsertData,
@@ -2596,6 +2602,147 @@ def test_worker_skips_duplicate_active_run_for_same_topic() -> None:
     assert skip_event["node"] == "worker_active_run_guard"
     assert skip_event["payload"]["active_run_id"] == active_run.run_id
     assert skip_event["payload"]["queue_wait_ms"] >= 0
+
+
+def test_worker_persists_active_run_guard_event_with_memory_coordination_backend() -> None:
+    topic_repository = InMemoryTopicRepository()
+    run_repository = InMemoryMonitorRunRepository()
+    topic = topic_repository.create_topic(
+        TopicCreateData(
+            name="AI Agent",
+            description="Track enterprise AI agent launches and deployment updates.",
+            seed_keywords=("OpenAI", "enterprise", "automation"),
+            trusted_sources=("AI Daily RSS", "AI Search"),
+            exclude_keywords=("rumor",),
+            push_threshold=0.72,
+            cooldown_hours=24,
+            enabled=True,
+            schedule_cron="0 */6 * * *",
+        )
+    )
+    active_run = MonitorRunRecord(
+        run_id="run_active_guard",
+        topic_id=topic.topic_id,
+        status="running",
+        state_snapshot={
+            "run_id": "run_active_guard",
+            "topic_id": topic.topic_id,
+            "trigger": "scheduler",
+            "status": "running",
+        },
+        error_summary=None,
+        started_at=datetime(2026, 6, 24, 9, 0, tzinfo=UTC),
+        finished_at=None,
+        created_at=datetime(2026, 6, 24, 9, 0, tzinfo=UTC),
+    )
+    run_repository.monitor_runs[active_run.run_id] = active_run
+    queue = InMemoryRunQueue()
+    queue.enqueue(RunQueueMessage(topic_id=topic.topic_id, trigger="scheduler"))
+
+    worker = MonitorWorkerService(
+        topic_repository=topic_repository,
+        run_repository=run_repository,
+        llm=MockLLM(),
+        queue=queue,
+    )
+
+    result = worker.process_next()
+
+    assert result is not None
+    assert result["status"] == "skipped_active_run"
+    events = run_repository.list_run_events(active_run.run_id)
+    assert events[0]["event_type"] == "governance_skipped"
+    assert events[0]["payload"]["active_run_id"] == "run_active_guard"
+    assert events[0]["payload"]["coordination_backend"] == "memory"
+
+
+def test_worker_persists_active_run_guard_event_with_redis_stream_coordination_backend() -> None:
+    class FakeRedisStreamClient:
+        def xgroup_create(
+            self,
+            name: str,
+            groupname: str,
+            id: str,
+            mkstream: bool,
+        ) -> None:
+            return None
+
+        def xreadgroup(
+            self,
+            *,
+            groupname: str,
+            consumername: str,
+            streams: dict[str, str],
+            count: int,
+            block: int,
+        ) -> list[tuple[bytes, list[tuple[bytes, dict[bytes, bytes]]]]]:
+            return [
+                (
+                    b"industry_news_agent:run_stream",
+                    [
+                        (
+                            b"1710000000000-0",
+                            {
+                                b"topic_id": b"topic_ai_agent",
+                                b"trigger": b"scheduler",
+                                b"enqueued_at": b"2026-06-24T09:00:00Z",
+                            },
+                        )
+                    ],
+                )
+            ]
+
+        def xack(self, name: str, groupname: str, id: bytes) -> int:
+            return 1
+
+    topic_repository = InMemoryTopicRepository()
+    run_repository = InMemoryMonitorRunRepository()
+    topic = topic_repository.create_topic(
+        TopicCreateData(
+            name="AI Agent",
+            description="Track enterprise AI agent launches and deployment updates.",
+            seed_keywords=("OpenAI", "enterprise", "automation"),
+            trusted_sources=("AI Daily RSS", "AI Search"),
+            exclude_keywords=("rumor",),
+            push_threshold=0.72,
+            cooldown_hours=24,
+            enabled=True,
+            schedule_cron="0 */6 * * *",
+        )
+    )
+    active_run = MonitorRunRecord(
+        run_id="run_active_guard_redis",
+        topic_id=topic.topic_id,
+        status="running",
+        state_snapshot={
+            "run_id": "run_active_guard_redis",
+            "topic_id": topic.topic_id,
+            "trigger": "scheduler",
+            "status": "running",
+        },
+        error_summary=None,
+        started_at=datetime(2026, 6, 24, 9, 0, tzinfo=UTC),
+        finished_at=None,
+        created_at=datetime(2026, 6, 24, 9, 0, tzinfo=UTC),
+    )
+    run_repository.monitor_runs[active_run.run_id] = active_run
+    queue = RedisStreamRunQueue(FakeRedisStreamClient())
+
+    worker = MonitorWorkerService(
+        topic_repository=topic_repository,
+        run_repository=run_repository,
+        llm=MockLLM(),
+        queue=queue,
+    )
+
+    result = worker.process_next()
+
+    assert result is not None
+    assert result["status"] == "skipped_active_run"
+    events = run_repository.list_run_events(active_run.run_id)
+    assert events[0]["event_type"] == "governance_skipped"
+    assert events[0]["payload"]["active_run_id"] == "run_active_guard_redis"
+    assert events[0]["payload"]["coordination_backend"] == "redis_stream"
 
 
 def test_scheduler_job_enqueues_and_worker_processes_topic_run() -> None:

@@ -1161,19 +1161,19 @@ def test_reset_engine_registry_disposes_and_rebuilds_engine() -> None:
     assert first_engine is not second_engine
 
 
-def test_build_redis_client_uses_configured_url_without_connecting() -> None:
+def test_build_redis_client_uses_runtime_settings_url() -> None:
     settings = Settings(
         database_url="postgresql+psycopg://user:pass@localhost:5432/news_agent",
-        redis_url="redis://localhost:6379/2",
+        redis_url="redis://localhost:6379/5",
     )
 
     client = build_redis_client(settings)
 
     assert client.connection_pool.connection_kwargs["decode_responses"] is True
-    assert client.connection_pool.connection_kwargs["db"] == 2
+    assert client.connection_pool.connection_kwargs["db"] == 5
 
 
-def test_build_run_queue_falls_back_to_in_memory_when_redis_ping_fails(
+def test_build_run_queue_falls_back_to_memory_when_redis_ping_fails(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     class FailingRedis:
@@ -1185,7 +1185,12 @@ def test_build_run_queue_falls_back_to_in_memory_when_redis_ping_fails(
         lambda settings=None: FailingRedis(),
     )
 
-    queue = build_run_queue()
+    queue = build_run_queue(
+        Settings(
+            database_url="postgresql+psycopg://user:pass@localhost:5432/news_agent",
+            redis_url="redis://localhost:6379/0",
+        )
+    )
 
     assert isinstance(queue, InMemoryRunQueue)
 
