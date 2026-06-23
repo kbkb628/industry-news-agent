@@ -2605,6 +2605,86 @@ def test_worker_skips_duplicate_active_run_for_same_topic() -> None:
     assert skip_event["payload"]["queue_wait_ms"] >= 0
 
 
+def test_worker_acknowledges_queue_message_when_skipping_duplicate_active_run() -> None:
+    class RecordingQueue:
+        def __init__(self, message: RunQueueMessage) -> None:
+            self.message = message
+            self.acknowledged: list[tuple[str, str | None]] = []
+
+        def enqueue(self, message: RunQueueMessage) -> dict[str, object]:
+            return {
+                "status": "queued",
+                "topic_id": message.topic_id,
+                "trigger": message.trigger,
+            }
+
+        def dequeue(self) -> RunQueueMessage | None:
+            current = self.message
+            self.message = None  # type: ignore[assignment]
+            return current
+
+        def acknowledge(self, delivery: RunQueueMessage) -> None:
+            self.acknowledged.append((delivery.topic_id, delivery.queue_message_id))
+
+        def requeue(self, delivery: RunQueueMessage, *, reason: str) -> None:
+            raise AssertionError("active-run skip path must not requeue")
+
+    topic_repository = InMemoryTopicRepository()
+    run_repository = InMemoryMonitorRunRepository()
+    topic = topic_repository.create_topic(
+        TopicCreateData(
+            name="AI Agent",
+            description="Track enterprise AI agent launches and deployment updates.",
+            seed_keywords=("OpenAI", "enterprise", "automation"),
+            trusted_sources=("AI Daily RSS", "AI Search"),
+            exclude_keywords=("rumor",),
+            push_threshold=0.72,
+            cooldown_hours=24,
+            enabled=True,
+            schedule_cron="0 */6 * * *",
+        )
+    )
+    active_run = MonitorRunRecord(
+        run_id="run_active_ack_skip",
+        topic_id=topic.topic_id,
+        status="running",
+        state_snapshot={
+            "run_id": "run_active_ack_skip",
+            "topic_id": topic.topic_id,
+            "trigger": "scheduler",
+            "status": "running",
+        },
+        error_summary=None,
+        started_at=datetime(2026, 6, 24, 9, 0, tzinfo=UTC),
+        finished_at=None,
+        created_at=datetime(2026, 6, 24, 9, 0, tzinfo=UTC),
+    )
+    run_repository.monitor_runs[active_run.run_id] = active_run
+    queue = RecordingQueue(
+        RunQueueMessage(
+            topic_id=topic.topic_id,
+            trigger="scheduler",
+            enqueued_at=datetime(2026, 6, 24, 9, 5, tzinfo=UTC),
+            queue_message_id="1710000000000-0",
+            queue_stream="industry_news_agent:run_stream",
+        )
+    )
+
+    worker = MonitorWorkerService(
+        topic_repository=topic_repository,
+        run_repository=run_repository,
+        llm=MockLLM(),
+        queue=queue,
+    )
+
+    result = worker.process_next()
+
+    assert result is not None
+    assert result["status"] == "skipped_active_run"
+    assert result["run_id"] == active_run.run_id
+    assert queue.acknowledged == [(topic.topic_id, "1710000000000-0")]
+
+
 def test_worker_persists_active_run_guard_event_with_memory_coordination_backend() -> None:
     topic_repository = InMemoryTopicRepository()
     run_repository = InMemoryMonitorRunRepository()
