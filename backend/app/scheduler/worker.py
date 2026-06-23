@@ -37,12 +37,18 @@ class RunQueueMessage:
     topic_id: str
     trigger: str
     enqueued_at: datetime = field(default_factory=lambda: datetime.now(UTC))
+    queue_message_id: str | None = None
+    queue_stream: str | None = None
 
 
 class RunQueueProtocol(Protocol):
     def enqueue(self, message: RunQueueMessage) -> dict[str, Any]: ...
 
     def dequeue(self) -> RunQueueMessage | None: ...
+
+    def acknowledge(self, delivery: RunQueueMessage) -> None: ...
+
+    def requeue(self, delivery: RunQueueMessage, *, reason: str) -> None: ...
 
 
 class InMemoryRunQueue:
@@ -62,6 +68,17 @@ class InMemoryRunQueue:
         if not self._queue:
             return None
         return self._queue.popleft()
+
+    def acknowledge(self, delivery: RunQueueMessage) -> None:
+        return None
+
+    def requeue(self, delivery: RunQueueMessage, *, reason: str) -> None:
+        self.enqueue(
+            RunQueueMessage(
+                topic_id=delivery.topic_id,
+                trigger=delivery.trigger,
+            )
+        )
 
 
 class RedisStreamRunQueue:
@@ -133,16 +150,32 @@ class RedisStreamRunQueue:
             self._to_text(key): self._to_text(value)
             for key, value in raw_payload.items()
         }
-        self.redis_client.xack(
-            self._to_text(stream_name),
-            self.group_name,
-            message_id,
-        )
         return RunQueueMessage(
             topic_id=str(payload["topic_id"]),
             trigger=str(payload["trigger"]),
             enqueued_at=datetime.fromisoformat(str(payload["enqueued_at"]).replace("Z", "+00:00")),
+            queue_message_id=self._to_text(message_id),
+            queue_stream=self._to_text(stream_name),
         )
+
+    def acknowledge(self, delivery: RunQueueMessage) -> None:
+        if delivery.queue_message_id is None or delivery.queue_stream is None:
+            return None
+        self.redis_client.xack(
+            delivery.queue_stream,
+            self.group_name,
+            delivery.queue_message_id.encode("utf-8"),
+        )
+
+    def requeue(self, delivery: RunQueueMessage, *, reason: str) -> None:
+        self.enqueue(
+            RunQueueMessage(
+                topic_id=delivery.topic_id,
+                trigger=delivery.trigger,
+                enqueued_at=delivery.enqueued_at,
+            )
+        )
+        self.acknowledge(delivery)
 
 
 def build_run_queue(settings: Settings | None = None) -> RunQueueProtocol:
@@ -270,6 +303,7 @@ class MonitorWorkerService:
 
         topic = self.topic_repository.get_topic(message.topic_id)
         if topic is None:
+            self.queue.acknowledge(message)
             return {
                 "topic_id": message.topic_id,
                 "trigger": message.trigger,
@@ -289,6 +323,7 @@ class MonitorWorkerService:
                     "active_run_id": active_run.run_id,
                 },
             )
+            self.queue.acknowledge(message)
             return {
                 "run_id": active_run.run_id,
                 "topic_id": topic.topic_id,
@@ -318,6 +353,7 @@ class MonitorWorkerService:
             try:
                 graph = self._build_graph()
                 result = self._invoke_graph_with_timeout(graph, attempt_state)
+                self.queue.acknowledge(message)
                 return {
                     "run_id": run_id,
                     "topic_id": topic.topic_id,
@@ -355,6 +391,7 @@ class MonitorWorkerService:
                         },
                     )
                     _mark_run_failed(self.run_repository, attempt_state, exc)
+                    self.queue.acknowledge(message)
                     return {
                         "run_id": run_id,
                         "topic_id": topic.topic_id,
@@ -375,6 +412,7 @@ class MonitorWorkerService:
                         **queue_metrics,
                     },
                 )
+                self.queue.requeue(message, reason=str(exc))
                 _persist_initial_run(self.run_repository, attempt_state)
 
         if last_error is not None:

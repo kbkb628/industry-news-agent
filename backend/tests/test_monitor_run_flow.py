@@ -3020,3 +3020,84 @@ def test_worker_times_out_and_marks_failed_run(monkeypatch) -> None:
     assert failure_event["payload"]["max_retries"] == 0
     assert failure_event["payload"]["attempt"] == 1
     assert "timed out" in failure_event["payload"]["error_message"]
+
+
+def test_worker_acknowledges_queue_message_only_after_failed_run_is_persisted(
+    monkeypatch,
+) -> None:
+    class RecordingQueue:
+        def __init__(self, message: RunQueueMessage) -> None:
+            self.message = message
+            self.acknowledged: list[tuple[str, str | None]] = []
+            self.requeued: list[dict[str, str | None]] = []
+
+        def enqueue(self, message: RunQueueMessage) -> dict[str, object]:
+            return {"status": "queued", "topic_id": message.topic_id, "trigger": message.trigger}
+
+        def dequeue(self) -> RunQueueMessage | None:
+            current = self.message
+            self.message = None  # type: ignore[assignment]
+            return current
+
+        def acknowledge(self, delivery: RunQueueMessage) -> None:
+            self.acknowledged.append((delivery.topic_id, delivery.queue_message_id))
+
+        def requeue(self, delivery: RunQueueMessage, *, reason: str) -> None:
+            self.requeued.append(
+                {
+                    "topic_id": delivery.topic_id,
+                    "queue_message_id": delivery.queue_message_id,
+                    "reason": reason,
+                }
+            )
+
+    topic_repository = InMemoryTopicRepository()
+    run_repository = InMemoryMonitorRunRepository()
+    topic = topic_repository.create_topic(
+        TopicCreateData(
+            name="AI Agent",
+            description="Track enterprise AI agent launches and deployment updates.",
+            seed_keywords=("OpenAI", "enterprise", "automation"),
+            trusted_sources=("AI Daily RSS", "AI Search"),
+            exclude_keywords=("rumor",),
+            push_threshold=0.72,
+            cooldown_hours=24,
+            enabled=True,
+            schedule_cron="0 */6 * * *",
+        )
+    )
+    delivery = RunQueueMessage(
+        topic_id=topic.topic_id,
+        trigger="scheduler",
+        enqueued_at=datetime(2026, 6, 24, 9, 0, tzinfo=UTC),
+        queue_message_id="1710000000000-0",
+        queue_stream="industry_news_agent:run_stream",
+    )
+    queue = RecordingQueue(delivery)
+
+    class FailingGraph:
+        def invoke(self, state: dict[str, object]) -> dict[str, object]:
+            raise RuntimeError("graph failed")
+
+    monkeypatch.setattr(
+        "app.scheduler.worker.build_monitor_graph",
+        lambda llm, run_repository: FailingGraph(),
+    )
+
+    worker = MonitorWorkerService(
+        topic_repository=topic_repository,
+        run_repository=run_repository,
+        llm=MockLLM(),
+        queue=queue,
+        max_retries=0,
+    )
+
+    result = worker.process_next()
+
+    assert result is not None
+    assert result["status"] == "failed"
+    run_record = run_repository.get_monitor_run(result["run_id"])
+    assert run_record is not None
+    assert run_record.status == "failed"
+    assert queue.requeued == []
+    assert queue.acknowledged == [(topic.topic_id, "1710000000000-0")]

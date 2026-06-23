@@ -50,7 +50,7 @@ Included in the current codebase:
 - local React + Vite dashboard over existing backend APIs
 - APScheduler topic jobs that enqueue worker runs
 - Redis-backed run queue with in-memory fallback
-- Redis Stream consumer-group flow for queued monitor runs
+- Redis Stream consumer-group flow for queued monitor runs with explicit post-processing acknowledge/requeue semantics
 - worker retry, timeout, active-run guard, and governance events
 - optional OneSearch-compatible MCP gateway boundary for `search_news`
 - optional OpenWebSearch provider path with mock search fallback
@@ -119,11 +119,14 @@ APScheduler owns topic-bound cron registration and trigger production. It does
 not execute the heavy monitor flow directly; scheduled jobs enqueue work for
 worker consumption.
 
-Redis Stream is used when Redis is available. The code falls back to an
-in-memory queue only as an execution fallback, not as the source of truth for
-business records. Governance events keep the coordination backend visible in
-persisted run traces while PostgreSQL remains the authoritative record of run
-facts.
+Redis Stream is used when Redis is available. Deliveries are not acknowledged on
+dequeue; the worker acknowledges only after successful completion, after an
+intentional active-run skip, or after a final failed run has been persisted.
+Retryable failures are re-enqueued before the original delivery is acknowledged.
+The code falls back to an in-memory queue only as an execution fallback, not as
+the source of truth for business records. Governance events keep the
+coordination backend visible in persisted run traces while PostgreSQL remains
+the authoritative record of run facts.
 
 Not claimed by the current implementation:
 

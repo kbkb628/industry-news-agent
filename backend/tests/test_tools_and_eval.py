@@ -1195,7 +1195,7 @@ def test_build_run_queue_falls_back_to_memory_when_redis_ping_fails(
     assert isinstance(queue, InMemoryRunQueue)
 
 
-def test_redis_stream_run_queue_uses_consumer_group_ack_flow() -> None:
+def test_redis_stream_run_queue_acknowledges_only_after_explicit_success() -> None:
     class FakeRedisStreamClient:
         def __init__(self) -> None:
             self.created_groups: list[dict[str, object]] = []
@@ -1278,6 +1278,8 @@ def test_redis_stream_run_queue_uses_consumer_group_ack_flow() -> None:
     assert message.topic_id == "topic_ai_agent"
     assert message.trigger == "scheduler"
     assert message.enqueued_at == datetime(2026, 6, 9, 12, 0, tzinfo=UTC)
+    assert message.queue_message_id == "1710000000000-0"
+    assert message.queue_stream == "industry_news_agent:run_stream"
     assert client.created_groups == [
         {
             "name": "industry_news_agent:run_stream",
@@ -1286,6 +1288,95 @@ def test_redis_stream_run_queue_uses_consumer_group_ack_flow() -> None:
             "mkstream": True,
         }
     ]
+    assert client.added == [
+        {
+            "name": "industry_news_agent:run_stream",
+            "fields": {
+                "topic_id": "topic_ai_agent",
+                "trigger": "scheduler",
+                "enqueued_at": "2026-06-09T12:00:00Z",
+            },
+        }
+    ]
+    assert client.acked == []
+
+    queue.acknowledge(message)
+
+    assert client.acked == [
+        {
+            "name": "industry_news_agent:run_stream",
+            "groupname": "monitor-workers",
+            "id": b"1710000000000-0",
+        }
+    ]
+
+
+def test_redis_stream_run_queue_requeues_failed_delivery() -> None:
+    class FakeRedisStreamClient:
+        def __init__(self) -> None:
+            self.created_groups: list[dict[str, object]] = []
+            self.added: list[dict[str, object]] = []
+            self.acked: list[dict[str, object]] = []
+
+        def xgroup_create(
+            self,
+            name: str,
+            groupname: str,
+            id: str,
+            mkstream: bool,
+        ) -> None:
+            self.created_groups.append(
+                {
+                    "name": name,
+                    "groupname": groupname,
+                    "id": id,
+                    "mkstream": mkstream,
+                }
+            )
+
+        def xadd(self, name: str, fields: dict[str, str]) -> str:
+            self.added.append({"name": name, "fields": fields})
+            return "1710000000001-0"
+
+        def xreadgroup(
+            self,
+            groupname: str,
+            consumername: str,
+            streams: dict[str, str],
+            count: int,
+            block: int,
+        ) -> list[tuple[bytes, list[tuple[bytes, dict[bytes, bytes]]]]]:
+            return [
+                (
+                    b"industry_news_agent:run_stream",
+                    [
+                        (
+                            b"1710000000000-0",
+                            {
+                                b"topic_id": b"topic_ai_agent",
+                                b"trigger": b"scheduler",
+                                b"enqueued_at": b"2026-06-09T12:00:00Z",
+                            },
+                        )
+                    ],
+                )
+            ]
+
+        def xack(self, name: str, groupname: str, id: bytes) -> int:
+            self.acked.append({"name": name, "groupname": groupname, "id": id})
+            return 1
+
+    client = FakeRedisStreamClient()
+    queue = RedisStreamRunQueue(client)
+
+    message = queue.dequeue()
+
+    assert message is not None
+    assert client.added == []
+    assert client.acked == []
+
+    queue.requeue(message, reason="transient failure")
+
     assert client.added == [
         {
             "name": "industry_news_agent:run_stream",
