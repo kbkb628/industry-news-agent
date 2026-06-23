@@ -3173,6 +3173,64 @@ def test_opensearch_history_index_serializes_datetime_and_quotes_document_id() -
     assert client.requests[0]["json"]["created_at"] == "2026-06-09T12:00:00Z"
 
 
+def test_opensearch_history_index_can_search_candidate_documents() -> None:
+    from app.search.history_index import OpenSearchHistoryIndex
+
+    class FakeResponse:
+        def __init__(self, payload: dict[str, object]) -> None:
+            self.payload = payload
+
+        def raise_for_status(self) -> None:
+            return None
+
+        def json(self) -> dict[str, object]:
+            return self.payload
+
+    class FakeClient:
+        def __init__(self) -> None:
+            self.put_requests: list[dict[str, object]] = []
+            self.post_requests: list[dict[str, object]] = []
+
+        def put(self, url: str, **kwargs: object) -> FakeResponse:
+            self.put_requests.append({"url": url, **kwargs})
+            return FakeResponse({"result": "created"})
+
+        def post(self, url: str, **kwargs: object) -> FakeResponse:
+            self.post_requests.append({"url": url, **kwargs})
+            return FakeResponse(
+                {
+                    "hits": {
+                        "hits": [
+                            {
+                                "_source": {
+                                    "candidate_id": "cand_001",
+                                    "title": "OpenAI agent update",
+                                    "topic_id": "topic_ai",
+                                }
+                            }
+                        ]
+                    }
+                }
+            )
+
+    client = FakeClient()
+    index = OpenSearchHistoryIndex(
+        base_url="http://localhost:9200",
+        index_name="industry-news-candidates",
+        http_client=client,
+        timeout_seconds=3.0,
+    )
+
+    search_result = index.search_candidates("OpenAI agent", top_k=3)
+
+    assert search_result["provider"] == "opensearch"
+    assert search_result["query"] == "OpenAI agent"
+    assert search_result["items"][0]["candidate_id"] == "cand_001"
+    assert client.post_requests[0]["url"] == (
+        "http://localhost:9200/industry-news-candidates/_search"
+    )
+
+
 def test_build_history_index_returns_noop_without_complete_opensearch_settings() -> None:
     from app.search.history_index import NoopHistoryIndex, build_history_index
 

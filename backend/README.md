@@ -229,11 +229,12 @@ Optional history-index variables:
 - `OPENSEARCH_INDEX_NAME` defaults to `industry-news-candidates`.
 - `OPENSEARCH_TIMEOUT_SECONDS` defaults to `10.0`.
 
-The history index is a projection of persisted candidate records during final
-evaluation as the monitor run completes. PostgreSQL remains the source of truth.
-Index failures are recorded as run events/errors and do not masquerade as
-successful indexing. This does not implement a vector database or external
-embedding pipeline.
+The history index is a derived candidate-history retrieval layer backed by a
+projection of persisted candidate records during final evaluation as the monitor
+run completes. It supports projection and query, while PostgreSQL remains the
+durable source of truth. Index/search failures are recorded as run events/errors
+and do not masquerade as successful retrieval capability. This does not
+implement a vector database or external embedding pipeline.
 
 Optional semantic-dedup variables:
 

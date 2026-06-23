@@ -1572,6 +1572,226 @@ def test_supervisor_finalize_records_history_index_failure_without_failing_run()
     assert "opensearch unavailable" in failed_event["payload"]["error_message"]
 
 
+def test_supervisor_finalize_records_history_index_search_metadata(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    class RecordingIndex:
+        def __init__(self) -> None:
+            self.search_calls: list[dict[str, object]] = []
+
+        def index_candidates(
+            self,
+            candidates: list[dict[str, object]],
+        ) -> dict[str, object]:
+            return {"indexed_count": len(candidates), "provider": "opensearch"}
+
+        def search_candidates(self, query: str, top_k: int = 5) -> dict[str, object]:
+            self.search_calls.append({"query": query, "top_k": top_k})
+            return {
+                "provider": "opensearch",
+                "query": query,
+                "items": [
+                    {
+                        "candidate_id": "cand_001",
+                        "title": "OpenAI agent update",
+                    }
+                ],
+            }
+
+    class RecordingRepository:
+        def __init__(self) -> None:
+            self.candidate_records: list[dict[str, object]] = []
+            self.run_events: list[dict[str, object]] = []
+
+        def upsert_extracted_item_records(
+            self,
+            payloads: tuple[object, ...],
+        ) -> list[dict[str, object]]:
+            return []
+
+        def upsert_decision_records(
+            self,
+            payloads: tuple[object, ...],
+        ) -> list[dict[str, object]]:
+            return []
+
+        def upsert_candidate_records(
+            self,
+            payloads: tuple[object, ...],
+        ) -> list[dict[str, object]]:
+            records = [
+                {
+                    "candidate_id": payload.candidate_id,
+                    "run_id": payload.run_id,
+                    "topic_id": payload.topic_id,
+                    "source_type": payload.source_type,
+                    "source_name": payload.source_name,
+                    "title": payload.title,
+                    "url": payload.url,
+                    "published_at": payload.published_at,
+                    "raw_summary": payload.raw_summary,
+                    "fetch_status": payload.fetch_status,
+                    "content": payload.content,
+                    "structured_payload": payload.structured_payload,
+                    "score": payload.score,
+                    "decision": payload.decision,
+                    "decision_reason": payload.decision_reason,
+                }
+                for payload in payloads
+            ]
+            self.candidate_records.extend(records)
+            return records
+
+        def create_run_events(
+            self,
+            payloads: tuple[object, ...],
+        ) -> list[dict[str, object]]:
+            events = [
+                {
+                    "run_id": payload.run_id,
+                    "topic_id": payload.topic_id,
+                    "event_type": payload.event_type,
+                    "node": payload.node,
+                    "message": payload.message,
+                    "payload": payload.payload,
+                    "elapsed_ms": payload.elapsed_ms,
+                }
+                for payload in payloads
+            ]
+            self.run_events.extend(events)
+            return events
+
+        def create_eval_result(self, payload: object) -> dict[str, object]:
+            return {
+                "run_id": payload.run_id,
+                "topic_id": payload.topic_id,
+                "retrieved_count": payload.retrieved_count,
+                "deduped_count": payload.deduped_count,
+                "dedup_rate": payload.dedup_rate,
+                "push_count": payload.push_count,
+                "duplicate_push_count": payload.duplicate_push_count,
+                "tool_success_rate": payload.tool_success_rate,
+                "fetch_success_rate": payload.fetch_success_rate,
+                "trace_completeness": payload.trace_completeness,
+                "raw_summary_count": payload.raw_summary_count,
+                "browser_fallback_count": payload.browser_fallback_count,
+                "provider_fallback_count": payload.provider_fallback_count,
+                "judge_mode": payload.judge_mode,
+                "judge_score": payload.judge_score,
+                "judge_reason": payload.judge_reason,
+                "judge_issues": payload.judge_issues,
+                "suggestions": payload.suggestions,
+            }
+
+        def upsert_monitor_run(self, payload: object) -> object:
+            return payload
+
+    recording_index = RecordingIndex()
+    monkeypatch.setattr(
+        "app.agent.nodes.build_history_index",
+        lambda **kwargs: recording_index,
+    )
+
+    repository = RecordingRepository()
+    state = {
+        "run_id": "run_index_search",
+        "topic_id": "topic_ai",
+        "topic": {"name": "AI Agent"},
+        "retrieval_output": {
+            "candidate_pool": [
+                {
+                    "candidate_id": "cand_001",
+                    "run_id": "run_index_search",
+                    "topic_id": "topic_ai",
+                    "source_type": "search",
+                    "source_name": "OpenWebSearch",
+                    "title": "OpenAI agent update",
+                    "url": "https://example.com/agent",
+                    "published_at": None,
+                    "raw_summary": "Agent workflow update.",
+                }
+            ]
+        },
+        "extraction_output": {
+            "fetched_contents": [
+                {
+                    "candidate_id": "cand_001",
+                    "fetch_status": "fetched",
+                    "content": "Full article body.",
+                }
+            ],
+            "evidence_items": [],
+        },
+        "evaluation_output": {
+            "scored_items": [{"candidate_id": "cand_001", "score": 0.91}],
+            "final_decisions": [
+                {
+                    "candidate_id": "cand_001",
+                    "run_id": "run_index_search",
+                    "topic_id": "topic_ai",
+                    "extracted_id": None,
+                    "source_type": "search",
+                    "source_name": "OpenWebSearch",
+                    "title": "OpenAI agent update",
+                    "url": "https://example.com/agent",
+                    "published_at": None,
+                    "summary": "Agent workflow update.",
+                    "score": 0.91,
+                    "should_push": True,
+                    "decision_reason": "Above threshold",
+                }
+            ],
+            "eval_result": {
+                "retrieved_count": 1,
+                "deduped_count": 0,
+                "dedup_rate": 1.0,
+                "push_count": 1,
+                "duplicate_push_count": 0,
+                "tool_success_rate": 1.0,
+                "fetch_success_rate": 1.0,
+                "trace_completeness": 1.0,
+                "raw_summary_count": 0,
+                "browser_fallback_count": 0,
+                "provider_fallback_count": 0,
+                "judge_mode": "mock_rule_judge",
+                "judge_score": 1.0,
+                "judge_reason": "Mock judge found no rule-based quality issues.",
+                "judge_issues": [],
+                "suggestions": [],
+            },
+        },
+        "events": [],
+        "errors": [],
+        "tool_results": [],
+        "status": "running",
+    }
+
+    result = supervisor_finalize_node(
+        state,
+        run_repository=repository,
+        settings=None,
+    )
+
+    assert result["history_index_result"]["indexed_count"] == 1
+    assert result["history_index_search_result"] == {
+        "provider": "opensearch",
+        "query": "AI Agent",
+        "items": [
+            {
+                "candidate_id": "cand_001",
+                "title": "OpenAI agent update",
+            }
+        ],
+    }
+    search_event = next(
+        event for event in result["events"] if event["node"] == "search_history_index"
+    )
+    assert search_event["payload"]["provider"] == "opensearch"
+    assert search_event["payload"]["query"] == "AI Agent"
+    assert search_event["payload"]["matched_candidate_ids"] == ["cand_001"]
+    assert recording_index.search_calls == [{"query": "AI Agent", "top_k": 5}]
+
+
 def test_evaluate_run_node_only_closes_status_and_eval_result_without_persisting() -> None:
     class RecordingRepository:
         def __init__(self) -> None:

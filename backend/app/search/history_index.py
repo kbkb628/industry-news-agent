@@ -14,11 +14,16 @@ from app.core.config import Settings
 
 class HistoryIndexProtocol(Protocol):
     def index_candidates(self, candidates: list[dict[str, Any]]) -> dict[str, Any]: ...
+    def search_candidates(self, query: str, top_k: int = 5) -> dict[str, Any]: ...
 
 
 class NoopHistoryIndex:
     def index_candidates(self, candidates: list[dict[str, Any]]) -> dict[str, Any]:
         return {"indexed_count": 0, "provider": "none"}
+
+    def search_candidates(self, query: str, top_k: int = 5) -> dict[str, Any]:
+        _ = top_k
+        return {"provider": "none", "query": query, "items": []}
 
 
 class OpenSearchHistoryIndex:
@@ -55,6 +60,35 @@ class OpenSearchHistoryIndex:
             indexed_count += 1
 
         return {"indexed_count": indexed_count, "provider": "opensearch"}
+
+    def search_candidates(self, query: str, top_k: int = 5) -> dict[str, Any]:
+        client = self.http_client
+        if client is None:
+            if httpx is None:
+                raise RuntimeError("httpx is unavailable for OpenSearch search.")
+            client = httpx
+
+        response = client.post(
+            f"{self.base_url}/{self.index_name}/_search",
+            json={
+                "size": top_k,
+                "query": {
+                    "multi_match": {
+                        "query": query,
+                        "fields": ["title^3", "raw_summary^2", "content", "decision_reason"],
+                    }
+                },
+            },
+            timeout=self.timeout_seconds,
+        )
+        response.raise_for_status()
+        payload = response.json()
+        hits = payload.get("hits", {}).get("hits", [])
+        return {
+            "provider": "opensearch",
+            "query": query,
+            "items": [dict(hit.get("_source", {})) for hit in hits],
+        }
 
     @staticmethod
     def _build_document_id(candidate: dict[str, Any]) -> str:
