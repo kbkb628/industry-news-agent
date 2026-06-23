@@ -4,6 +4,7 @@ from collections.abc import Iterator
 from contextlib import contextmanager
 from datetime import UTC, datetime
 
+from apscheduler.schedulers.background import BackgroundScheduler
 from fastapi.testclient import TestClient
 import pytest
 from sqlalchemy.exc import SQLAlchemyError
@@ -11,6 +12,7 @@ from sqlalchemy.exc import SQLAlchemyError
 from app.core.config import DEFAULT_PUSH_THRESHOLD
 from app.main import create_app
 from app.scheduler.jobs import TopicSchedulerService
+from app.scheduler.worker import InMemoryRunQueue
 from app.storage.repository import SqlAlchemyTopicRepository, TopicCreateData, TopicRecord
 
 
@@ -143,6 +145,75 @@ def test_create_topic_rejects_invalid_schedule_cron_before_persistence() -> None
 
     assert response.status_code == 422
     assert repository.list_topics() == []
+
+
+def test_register_topic_removes_existing_job_when_schedule_is_disabled() -> None:
+    scheduler = BackgroundScheduler()
+    scheduler.start(paused=True)
+    try:
+        queue = InMemoryRunQueue()
+        service = TopicSchedulerService(scheduler=scheduler, queue=queue)
+        service.register_topic(
+            topic_id="topic_001",
+            schedule_cron="0 */6 * * *",
+            enabled=True,
+        )
+        assert scheduler.get_job("topic:topic_001") is not None
+
+        service.register_topic(
+            topic_id="topic_001",
+            schedule_cron=None,
+            enabled=False,
+        )
+
+        assert scheduler.get_job("topic:topic_001") is None
+    finally:
+        scheduler.shutdown(wait=False)
+
+
+def test_rehydrate_topics_registers_only_enabled_topics_with_cron() -> None:
+    scheduler = BackgroundScheduler()
+    scheduler.start(paused=True)
+    try:
+        queue = InMemoryRunQueue()
+        service = TopicSchedulerService(scheduler=scheduler, queue=queue)
+        topics = [
+            type(
+                "TopicLike",
+                (),
+                {
+                    "topic_id": "topic_enabled",
+                    "schedule_cron": "0 */6 * * *",
+                    "enabled": True,
+                },
+            )(),
+            type(
+                "TopicLike",
+                (),
+                {
+                    "topic_id": "topic_disabled",
+                    "schedule_cron": "0 */6 * * *",
+                    "enabled": False,
+                },
+            )(),
+            type(
+                "TopicLike",
+                (),
+                {
+                    "topic_id": "topic_missing_cron",
+                    "schedule_cron": None,
+                    "enabled": True,
+                },
+            )(),
+        ]
+
+        service.rehydrate_topics(topics)
+
+        assert scheduler.get_job("topic:topic_enabled") is not None
+        assert scheduler.get_job("topic:topic_disabled") is None
+        assert scheduler.get_job("topic:topic_missing_cron") is None
+    finally:
+        scheduler.shutdown(wait=False)
 
 
 def test_app_startup_rehydrates_scheduler_jobs_from_existing_topics() -> None:

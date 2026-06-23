@@ -24,6 +24,7 @@ from app.scheduler.worker import (
     MonitorWorkerService,
     RedisStreamRunQueue,
     RunQueueMessage,
+    enqueue_topic_run,
 )
 from app.storage.repository import (
     MonitorRunRecord,
@@ -2743,6 +2744,17 @@ def test_worker_persists_active_run_guard_event_with_redis_stream_coordination_b
     assert events[0]["event_type"] == "governance_skipped"
     assert events[0]["payload"]["active_run_id"] == "run_active_guard_redis"
     assert events[0]["payload"]["coordination_backend"] == "redis_stream"
+
+
+def test_scheduler_job_enqueues_message_with_scheduler_trigger() -> None:
+    queue = InMemoryRunQueue()
+    result = enqueue_topic_run("topic_001", queue=queue, trigger="scheduler")
+    message = queue.dequeue()
+
+    assert result["status"] == "queued"
+    assert message is not None
+    assert message.topic_id == "topic_001"
+    assert message.trigger == "scheduler"
 
 
 def test_scheduler_job_enqueues_and_worker_processes_topic_run() -> None:

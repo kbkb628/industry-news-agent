@@ -115,6 +115,10 @@ consumed by `MonitorWorkerService`, which provides:
 - retry and timeout handling
 - persisted failed-run closure when execution breaks
 
+APScheduler owns topic-bound cron registration and trigger production. It does
+not execute the heavy monitor flow directly; scheduled jobs enqueue work for
+worker consumption.
+
 Redis Stream is used when Redis is available. The code falls back to an
 in-memory queue only as an execution fallback, not as the source of truth for
 business records. Governance events keep the coordination backend visible in
