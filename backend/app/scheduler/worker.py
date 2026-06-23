@@ -40,6 +40,8 @@ class RunQueueMessage:
     queue_message_id: str | None = None
     queue_stream: str | None = None
     retry_reason: str | None = None
+    retry_count: int = 0
+    max_retries: int | None = None
 
 
 class RunQueueProtocol(Protocol):
@@ -79,6 +81,8 @@ class InMemoryRunQueue:
                 topic_id=delivery.topic_id,
                 trigger=delivery.trigger,
                 retry_reason=reason,
+                retry_count=delivery.retry_count + 1,
+                max_retries=delivery.max_retries,
             )
         )
         self.acknowledge(delivery)
@@ -127,6 +131,10 @@ class RedisStreamRunQueue:
         }
         if message.retry_reason is not None:
             payload["retry_reason"] = message.retry_reason
+        if message.retry_count:
+            payload["retry_count"] = str(message.retry_count)
+        if message.max_retries is not None:
+            payload["max_retries"] = str(message.max_retries)
         message_id = self.redis_client.xadd(self.stream_key, payload)
         return {
             "topic_id": message.topic_id,
@@ -161,6 +169,11 @@ class RedisStreamRunQueue:
             enqueued_at=datetime.fromisoformat(str(payload["enqueued_at"]).replace("Z", "+00:00")),
             queue_message_id=self._to_text(message_id),
             queue_stream=self._to_text(stream_name),
+            retry_reason=payload.get("retry_reason"),
+            retry_count=int(payload.get("retry_count", "0")),
+            max_retries=(
+                int(payload["max_retries"]) if payload.get("max_retries") is not None else None
+            ),
         )
 
     def acknowledge(self, delivery: RunQueueMessage) -> None:
@@ -178,6 +191,8 @@ class RedisStreamRunQueue:
             trigger=delivery.trigger,
             enqueued_at=datetime.now(UTC),
             retry_reason=reason,
+            retry_count=delivery.retry_count + 1,
+            max_retries=delivery.max_retries,
         )
         self.enqueue(requeued_message)
         self.acknowledge(delivery)
@@ -317,30 +332,37 @@ class MonitorWorkerService:
         queue_metrics = self._build_queue_metrics(message)
         active_run = self.run_repository.get_active_run_for_topic(topic.topic_id)
         if active_run is not None:
-            self._persist_governance_event(
-                run_id=active_run.run_id,
-                topic_id=topic.topic_id,
-                event_type="governance_skipped",
-                node="worker_active_run_guard",
-                message="Skipped queued run because a monitor run is already active for the topic.",
-                payload={
-                    **queue_metrics,
-                    "active_run_id": active_run.run_id,
-                },
-            )
-            self.queue.acknowledge(message)
-            return {
-                "run_id": active_run.run_id,
-                "topic_id": topic.topic_id,
-                "trigger": message.trigger,
-                "status": "skipped_active_run",
-            }
-
-        run_id = f"run_{uuid.uuid4().hex[:12]}"
+            if message.retry_reason == "worker_retry":
+                run_id = active_run.run_id
+            else:
+                self._persist_governance_event(
+                    run_id=active_run.run_id,
+                    topic_id=topic.topic_id,
+                    event_type="governance_skipped",
+                    node="worker_active_run_guard",
+                    message="Skipped queued run because a monitor run is already active for the topic.",
+                    payload={
+                        **queue_metrics,
+                        "active_run_id": active_run.run_id,
+                    },
+                )
+                self.queue.acknowledge(message)
+                return {
+                    "run_id": active_run.run_id,
+                    "topic_id": topic.topic_id,
+                    "trigger": message.trigger,
+                    "status": "skipped_active_run",
+                }
+        else:
+            run_id = f"run_{uuid.uuid4().hex[:12]}"
         base_state = _build_initial_state(topic, run_id)
         base_state["trigger"] = message.trigger
-        base_state["retry_count"] = 0
-        base_state["max_retries"] = self.max_retries
+        effective_max_retries = (
+            message.max_retries if message.max_retries is not None else self.max_retries
+        )
+        current_retry_count = message.retry_count
+        base_state["retry_count"] = current_retry_count
+        base_state["max_retries"] = effective_max_retries
         _persist_initial_run(self.run_repository, base_state)
         self._persist_governance_event(
             run_id=run_id,
@@ -352,80 +374,92 @@ class MonitorWorkerService:
         )
 
         last_error: Exception | None = None
-        for attempt in range(self.max_retries + 1):
-            attempt_state = deepcopy(base_state)
-            attempt_state["retry_count"] = attempt
-            try:
-                graph = self._build_graph()
-                result = self._invoke_graph_with_timeout(graph, attempt_state)
+        attempt = current_retry_count
+        attempt_state = deepcopy(base_state)
+        attempt_state["retry_count"] = attempt
+        try:
+            graph = self._build_graph()
+            result = self._invoke_graph_with_timeout(graph, attempt_state)
+            self.queue.acknowledge(message)
+            return {
+                "run_id": run_id,
+                "topic_id": topic.topic_id,
+                "trigger": message.trigger,
+                "status": result["status"],
+                "retry_count": attempt,
+            }
+        except Exception as exc:
+            last_error = exc
+            if attempt >= effective_max_retries:
+                attempt_state["retry_count"] = attempt + 1
+                failure_node = (
+                    "worker_timeout" if isinstance(exc, TimeoutError) else "worker_failed"
+                )
+                failure_event_type = (
+                    "governance_timeout"
+                    if isinstance(exc, TimeoutError)
+                    else "governance_failed"
+                )
+                self._persist_governance_event(
+                    run_id=run_id,
+                    topic_id=topic.topic_id,
+                    event_type=failure_event_type,
+                    node=failure_node,
+                    message=(
+                        "Worker invocation timed out and the queued run was marked failed."
+                        if isinstance(exc, TimeoutError)
+                        else "Worker invocation failed and the queued run was marked failed."
+                    ),
+                    payload={
+                        "attempt": attempt + 1,
+                        "max_retries": effective_max_retries,
+                        "error_message": str(exc),
+                        **queue_metrics,
+                    },
+                )
+                _mark_run_failed(self.run_repository, attempt_state, exc)
                 self.queue.acknowledge(message)
                 return {
                     "run_id": run_id,
                     "topic_id": topic.topic_id,
                     "trigger": message.trigger,
-                    "status": result["status"],
+                    "status": "failed",
                     "retry_count": attempt,
                 }
-            except Exception as exc:
-                last_error = exc
-                if attempt >= self.max_retries:
-                    attempt_state["retry_count"] = attempt + 1
-                    failure_node = (
-                        "worker_timeout" if isinstance(exc, TimeoutError) else "worker_failed"
-                    )
-                    failure_event_type = (
-                        "governance_timeout"
-                        if isinstance(exc, TimeoutError)
-                        else "governance_failed"
-                    )
-                    self._persist_governance_event(
-                        run_id=run_id,
-                        topic_id=topic.topic_id,
-                        event_type=failure_event_type,
-                        node=failure_node,
-                        message=(
-                            "Worker invocation timed out and the queued run was marked failed."
-                            if isinstance(exc, TimeoutError)
-                            else "Worker invocation failed and the queued run was marked failed."
-                        ),
-                        payload={
-                            "attempt": attempt + 1,
-                            "max_retries": self.max_retries,
-                            "error_message": str(exc),
-                            **queue_metrics,
-                        },
-                    )
-                    _mark_run_failed(self.run_repository, attempt_state, exc)
-                    self.queue.acknowledge(message)
-                    return {
-                        "run_id": run_id,
-                        "topic_id": topic.topic_id,
-                        "trigger": message.trigger,
-                        "status": "failed",
-                        "retry_count": attempt,
-                    }
-                self._persist_governance_event(
-                    run_id=run_id,
-                    topic_id=topic.topic_id,
-                    event_type="governance_retry",
-                    node="worker_retry",
-                    message="Worker invocation failed and will be retried.",
-                    payload={
-                        "attempt": attempt + 1,
-                        "max_retries": self.max_retries,
-                        "error_message": str(exc),
-                        **queue_metrics,
-                    },
-                )
-                self.queue.requeue(message, reason="worker_retry")
-                _persist_initial_run(self.run_repository, attempt_state)
-                return {
-                    "run_id": run_id,
-                    "topic_id": topic.topic_id,
-                    "trigger": message.trigger,
-                    "status": "queued_for_retry",
-                    "retry_count": attempt,
-                }
+            self._persist_governance_event(
+                run_id=run_id,
+                topic_id=topic.topic_id,
+                event_type="governance_retry",
+                node="worker_retry",
+                message="Worker invocation failed and will be retried.",
+                payload={
+                    "attempt": attempt + 1,
+                    "max_retries": effective_max_retries,
+                    "error_message": str(exc),
+                    **queue_metrics,
+                },
+            )
+            self.queue.requeue(
+                RunQueueMessage(
+                    topic_id=message.topic_id,
+                    trigger=message.trigger,
+                    enqueued_at=message.enqueued_at,
+                    queue_message_id=message.queue_message_id,
+                    queue_stream=message.queue_stream,
+                    retry_reason=message.retry_reason,
+                    retry_count=attempt,
+                    max_retries=effective_max_retries,
+                ),
+                reason="worker_retry",
+            )
+            _persist_initial_run(self.run_repository, attempt_state)
+            return {
+                "run_id": run_id,
+                "topic_id": topic.topic_id,
+                "trigger": message.trigger,
+                "status": "queued_for_retry",
+                "retry_count": attempt,
+            }
 
         if last_error is not None:
             raise last_error

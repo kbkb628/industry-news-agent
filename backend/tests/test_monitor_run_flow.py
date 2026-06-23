@@ -3072,6 +3072,82 @@ def test_worker_requeues_retryable_failure_and_stops_current_delivery(monkeypatc
     assert queued_retry.topic_id == topic.topic_id
     assert queued_retry.trigger == "scheduler"
     assert queued_retry.retry_reason == "worker_retry"
+    assert queued_retry.retry_count == 1
+    assert queued_retry.max_retries == 1
+
+
+def test_worker_marks_run_failed_after_retry_budget_is_exhausted_across_deliveries(
+    monkeypatch,
+) -> None:
+    topic_repository = InMemoryTopicRepository()
+    run_repository = InMemoryMonitorRunRepository()
+    topic = topic_repository.create_topic(
+        TopicCreateData(
+            name="AI Agent",
+            description="Track enterprise AI agent launches and deployment updates.",
+            seed_keywords=("OpenAI", "enterprise", "automation"),
+            trusted_sources=("AI Daily RSS", "AI Search"),
+            exclude_keywords=("rumor",),
+            push_threshold=0.72,
+            cooldown_hours=24,
+            enabled=True,
+            schedule_cron="0 */6 * * *",
+        )
+    )
+    queue = InMemoryRunQueue()
+    queue.enqueue(
+        RunQueueMessage(
+            topic_id=topic.topic_id,
+            trigger="scheduler",
+        )
+    )
+
+    class AlwaysFailingGraph:
+        def invoke(self, state: dict[str, object]) -> dict[str, object]:
+            raise RuntimeError("transient failure")
+
+    monkeypatch.setattr(
+        "app.scheduler.worker.build_monitor_graph",
+        lambda llm, run_repository: AlwaysFailingGraph(),
+    )
+
+    worker = MonitorWorkerService(
+        topic_repository=topic_repository,
+        run_repository=run_repository,
+        llm=MockLLM(),
+        queue=queue,
+        max_retries=1,
+    )
+
+    first_result = worker.process_next()
+
+    assert first_result is not None
+    assert first_result["status"] == "queued_for_retry"
+    queued_retry = queue.dequeue()
+    assert queued_retry is not None
+    assert queued_retry.retry_count == 1
+    assert queued_retry.max_retries == 1
+    queue.enqueue(queued_retry)
+
+    second_result = worker.process_next()
+
+    assert second_result is not None
+    assert second_result["status"] == "failed"
+    assert second_result["retry_count"] == 1
+    assert queue.dequeue() is None
+    assert second_result["run_id"] == first_result["run_id"]
+    first_run = run_repository.get_monitor_run(first_result["run_id"])
+    assert first_run is not None
+    assert first_run.status == "failed"
+    assert first_run.state_snapshot["retry_count"] == 2
+    failure_event = next(
+        event
+        for event in run_repository.list_run_events(second_result["run_id"])
+        if event["node"] == "worker_failed"
+    )
+    assert failure_event["payload"]["attempt"] == 2
+    assert failure_event["payload"]["max_retries"] == 1
+    assert failure_event["payload"]["error_message"] == "transient failure"
 
 
 def test_worker_acknowledges_queue_message_after_successful_completion(

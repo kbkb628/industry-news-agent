@@ -124,7 +124,9 @@ dequeue; the worker acknowledges only after successful completion, after an
 intentional active-run skip, or after a final failed run has been persisted.
 Retryable failures are re-enqueued with `retry_reason=worker_retry` before the
 original delivery is acknowledged, and the current worker invocation stops at
-that handoff point. The queue owns the next retry delivery.
+that handoff point. The queue owns the next retry delivery, including the
+persisted `retry_count` and `max_retries` metadata needed to exhaust the retry
+budget across later deliveries and eventually mark the run failed.
 The code falls back to an in-memory queue only as an execution fallback, not as
 the source of truth for business records. Governance events keep the
 coordination backend visible in persisted run traces while PostgreSQL remains

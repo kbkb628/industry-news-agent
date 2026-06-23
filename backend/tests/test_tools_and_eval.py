@@ -1372,6 +1372,15 @@ def test_redis_stream_run_queue_requeues_failed_delivery() -> None:
     message = queue.dequeue()
 
     assert message is not None
+    message = RunQueueMessage(
+        topic_id=message.topic_id,
+        trigger=message.trigger,
+        enqueued_at=message.enqueued_at,
+        queue_message_id=message.queue_message_id,
+        queue_stream=message.queue_stream,
+        retry_count=message.retry_count,
+        max_retries=2,
+    )
     assert client.added == []
     assert client.acked == []
 
@@ -1383,6 +1392,8 @@ def test_redis_stream_run_queue_requeues_failed_delivery() -> None:
     assert requeued_payload["fields"]["topic_id"] == "topic_ai_agent"
     assert requeued_payload["fields"]["trigger"] == "scheduler"
     assert requeued_payload["fields"]["retry_reason"] == "transient failure"
+    assert requeued_payload["fields"]["retry_count"] == "1"
+    assert requeued_payload["fields"]["max_retries"] == "2"
     assert requeued_payload["fields"]["enqueued_at"] != "2026-06-09T12:00:00Z"
     assert datetime.fromisoformat(
         str(requeued_payload["fields"]["enqueued_at"]).replace("Z", "+00:00")
@@ -1394,6 +1405,70 @@ def test_redis_stream_run_queue_requeues_failed_delivery() -> None:
             "id": b"1710000000000-0",
         }
     ]
+
+
+def test_redis_stream_run_queue_round_trip_preserves_retry_metadata() -> None:
+    class FakeRedisStreamClient:
+        def __init__(self) -> None:
+            self.created_groups: list[dict[str, object]] = []
+            self.added: list[dict[str, object]] = []
+
+        def xgroup_create(
+            self,
+            name: str,
+            groupname: str,
+            id: str,
+            mkstream: bool,
+        ) -> None:
+            self.created_groups.append(
+                {
+                    "name": name,
+                    "groupname": groupname,
+                    "id": id,
+                    "mkstream": mkstream,
+                }
+            )
+
+        def xadd(self, name: str, fields: dict[str, str]) -> str:
+            self.added.append({"name": name, "fields": fields})
+            return "1710000000001-0"
+
+        def xreadgroup(
+            self,
+            groupname: str,
+            consumername: str,
+            streams: dict[str, str],
+            count: int,
+            block: int,
+        ) -> list[tuple[bytes, list[tuple[bytes, dict[bytes, bytes]]]]]:
+            return [
+                (
+                    b"industry_news_agent:run_stream",
+                    [
+                        (
+                            b"1710000000001-0",
+                            {
+                                b"topic_id": b"topic_ai_agent",
+                                b"trigger": b"scheduler",
+                                b"enqueued_at": b"2026-06-09T12:05:00Z",
+                                b"retry_reason": b"worker_retry",
+                                b"retry_count": b"1",
+                                b"max_retries": b"2",
+                            },
+                        )
+                    ],
+                )
+            ]
+
+    client = FakeRedisStreamClient()
+    queue = RedisStreamRunQueue(client)
+
+    message = queue.dequeue()
+
+    assert message is not None
+    assert message.retry_reason == "worker_retry"
+    assert message.retry_count == 1
+    assert message.max_retries == 2
 
 
 def test_run_queue_message_default_timestamp_is_per_instance() -> None:
