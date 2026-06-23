@@ -78,8 +78,10 @@ class InMemoryRunQueue:
             RunQueueMessage(
                 topic_id=delivery.topic_id,
                 trigger=delivery.trigger,
+                retry_reason=reason,
             )
         )
+        self.acknowledge(delivery)
 
 
 class RedisStreamRunQueue:
@@ -417,6 +419,13 @@ class MonitorWorkerService:
                 )
                 self.queue.requeue(message, reason="worker_retry")
                 _persist_initial_run(self.run_repository, attempt_state)
+                return {
+                    "run_id": run_id,
+                    "topic_id": topic.topic_id,
+                    "trigger": message.trigger,
+                    "status": "queued_for_retry",
+                    "retry_count": attempt,
+                }
 
         if last_error is not None:
             raise last_error

@@ -2875,6 +2875,7 @@ def test_worker_persists_failed_run_when_graph_raises(
         run_repository=run_repository,
         llm=MockLLM(),
         queue=queue,
+        max_retries=0,
     )
     class FailingGraph:
         def invoke(self, state: dict[str, object]) -> dict[str, object]:
@@ -2896,7 +2897,7 @@ def test_worker_persists_failed_run_when_graph_raises(
     assert run_record.error_summary == "graph failed"
 
 
-def test_worker_retries_once_before_marking_run_failed(monkeypatch) -> None:
+def test_worker_requeues_retryable_failure_and_stops_current_delivery(monkeypatch) -> None:
     topic_repository = InMemoryTopicRepository()
     run_repository = InMemoryMonitorRunRepository()
     topic = topic_repository.create_topic(
@@ -2964,12 +2965,12 @@ def test_worker_retries_once_before_marking_run_failed(monkeypatch) -> None:
     result = worker.process_next()
 
     assert result is not None
-    assert result["status"] == "completed"
-    assert result["retry_count"] == 1
-    assert attempts["count"] == 2
+    assert result["status"] == "queued_for_retry"
+    assert result["retry_count"] == 0
+    assert attempts["count"] == 1
     run_record = run_repository.get_monitor_run(result["run_id"])
     assert run_record is not None
-    assert run_record.status == "running" or run_record.status == "completed"
+    assert run_record.status == "running"
     events = run_repository.list_run_events(result["run_id"])
     dequeue_event = next(event for event in events if event["node"] == "worker_dequeue")
     retry_event = next(event for event in events if event["node"] == "worker_retry")
@@ -2986,6 +2987,11 @@ def test_worker_retries_once_before_marking_run_failed(monkeypatch) -> None:
         }
     ]
     assert queue.acknowledged == [(topic.topic_id, None)]
+    queued_retry = queue.dequeue()
+    assert queued_retry is not None
+    assert queued_retry.topic_id == topic.topic_id
+    assert queued_retry.trigger == "scheduler"
+    assert queued_retry.retry_reason == "worker_retry"
 
 
 def test_worker_acknowledges_queue_message_after_successful_completion(
