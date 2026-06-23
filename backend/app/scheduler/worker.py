@@ -36,6 +36,7 @@ from sqlalchemy.orm import sessionmaker
 class RunQueueMessage:
     topic_id: str
     trigger: str
+    run_id: str | None = None
     enqueued_at: datetime = field(default_factory=lambda: datetime.now(UTC))
     queue_message_id: str | None = None
     queue_stream: str | None = None
@@ -63,6 +64,7 @@ class InMemoryRunQueue:
         return {
             "topic_id": message.topic_id,
             "trigger": message.trigger,
+            "run_id": message.run_id,
             "status": "queued",
             "enqueued_at": message.enqueued_at,
         }
@@ -80,6 +82,7 @@ class InMemoryRunQueue:
             RunQueueMessage(
                 topic_id=delivery.topic_id,
                 trigger=delivery.trigger,
+                run_id=delivery.run_id,
                 retry_reason=reason,
                 retry_count=delivery.retry_count + 1,
                 max_retries=delivery.max_retries,
@@ -97,12 +100,16 @@ class RedisStreamRunQueue:
         group_name: str = "monitor-workers",
         consumer_name: str = "monitor-worker-1",
         block_ms: int = 0,
+        claim_min_idle_ms: int = 60_000,
+        claim_count: int = 1,
     ) -> None:
         self.redis_client = redis_client
         self.stream_key = stream_key
         self.group_name = group_name
         self.consumer_name = consumer_name
         self.block_ms = block_ms
+        self.claim_min_idle_ms = claim_min_idle_ms
+        self.claim_count = claim_count
         self._ensure_group()
 
     @staticmethod
@@ -129,6 +136,8 @@ class RedisStreamRunQueue:
             "trigger": message.trigger,
             "enqueued_at": message.enqueued_at.isoformat().replace("+00:00", "Z"),
         }
+        if message.run_id is not None:
+            payload["run_id"] = message.run_id
         if message.retry_reason is not None:
             payload["retry_reason"] = message.retry_reason
         if message.retry_count:
@@ -144,7 +153,57 @@ class RedisStreamRunQueue:
             "message_id": self._to_text(message_id),
         }
 
+    def _decode_message(
+        self,
+        stream_name: Any,
+        message_id: Any,
+        raw_payload: dict[Any, Any],
+    ) -> RunQueueMessage:
+        payload = {
+            self._to_text(key): self._to_text(value)
+            for key, value in raw_payload.items()
+        }
+        return RunQueueMessage(
+            topic_id=str(payload["topic_id"]),
+            trigger=str(payload["trigger"]),
+            run_id=payload.get("run_id"),
+            enqueued_at=datetime.fromisoformat(str(payload["enqueued_at"]).replace("Z", "+00:00")),
+            queue_message_id=self._to_text(message_id),
+            queue_stream=self._to_text(stream_name),
+            retry_reason=payload.get("retry_reason"),
+            retry_count=int(payload.get("retry_count", "0")),
+            max_retries=(
+                int(payload["max_retries"]) if payload.get("max_retries") is not None else None
+            ),
+        )
+
+    def _claim_pending_delivery(self) -> RunQueueMessage | None:
+        xautoclaim = getattr(self.redis_client, "xautoclaim", None)
+        if xautoclaim is None:
+            return None
+        claimed = xautoclaim(
+            name=self.stream_key,
+            groupname=self.group_name,
+            consumername=self.consumer_name,
+            min_idle_time=self.claim_min_idle_ms,
+            start_id="0-0",
+            count=self.claim_count,
+        )
+        if not claimed:
+            return None
+        if len(claimed) < 2:
+            return None
+        messages = claimed[1]
+        if not messages:
+            return None
+        message_id, raw_payload = messages[0]
+        return self._decode_message(self.stream_key, message_id, raw_payload)
+
     def dequeue(self) -> RunQueueMessage | None:
+        pending_delivery = self._claim_pending_delivery()
+        if pending_delivery is not None:
+            return pending_delivery
+
         streams = self.redis_client.xreadgroup(
             groupname=self.group_name,
             consumername=self.consumer_name,
@@ -159,22 +218,7 @@ class RedisStreamRunQueue:
         if not messages:
             return None
         message_id, raw_payload = messages[0]
-        payload = {
-            self._to_text(key): self._to_text(value)
-            for key, value in raw_payload.items()
-        }
-        return RunQueueMessage(
-            topic_id=str(payload["topic_id"]),
-            trigger=str(payload["trigger"]),
-            enqueued_at=datetime.fromisoformat(str(payload["enqueued_at"]).replace("Z", "+00:00")),
-            queue_message_id=self._to_text(message_id),
-            queue_stream=self._to_text(stream_name),
-            retry_reason=payload.get("retry_reason"),
-            retry_count=int(payload.get("retry_count", "0")),
-            max_retries=(
-                int(payload["max_retries"]) if payload.get("max_retries") is not None else None
-            ),
-        )
+        return self._decode_message(stream_name, message_id, raw_payload)
 
     def acknowledge(self, delivery: RunQueueMessage) -> None:
         if delivery.queue_message_id is None or delivery.queue_stream is None:
@@ -189,6 +233,7 @@ class RedisStreamRunQueue:
         requeued_message = RunQueueMessage(
             topic_id=delivery.topic_id,
             trigger=delivery.trigger,
+            run_id=delivery.run_id,
             enqueued_at=datetime.now(UTC),
             retry_reason=reason,
             retry_count=delivery.retry_count + 1,
@@ -224,6 +269,7 @@ class MonitorWorkerService:
         self.queue = queue
         self.max_retries = max_retries
         self.invocation_timeout_seconds = invocation_timeout_seconds
+        self._cancelled_run_ids: set[str] = set()
 
     @staticmethod
     def _serialize_payload_value(value: Any) -> Any:
@@ -297,22 +343,75 @@ class MonitorWorkerService:
             return future.result(timeout=self.invocation_timeout_seconds)
         except FuturesTimeoutError as exc:
             future.cancel()
+            self._cancelled_run_ids.add(str(initial_state["run_id"]))
             raise TimeoutError(
                 f"graph invocation timed out after {self.invocation_timeout_seconds} seconds"
             ) from exc
         finally:
             executor.shutdown(wait=False, cancel_futures=True)
 
+    def _build_guarded_run_repository(self) -> MonitorRunRepositoryProtocol:
+        parent = self
+        repository = self.run_repository
+
+        class GuardedRunRepository:
+            _blocked_methods = {
+                "upsert_monitor_run",
+                "create_push_records",
+                "upsert_candidate_records",
+                "upsert_extracted_item_records",
+                "upsert_decision_records",
+                "create_run_events",
+                "create_eval_result",
+            }
+
+            def __getattr__(self, name: str) -> Any:
+                target = getattr(repository, name)
+                if name not in self._blocked_methods:
+                    return target
+
+                def guarded(*args: Any, **kwargs: Any) -> Any:
+                    run_id = self._extract_run_id(args, kwargs)
+                    if run_id is not None and run_id in parent._cancelled_run_ids:
+                        return self._default_result(name)
+                    return target(*args, **kwargs)
+
+                return guarded
+
+            @staticmethod
+            def _extract_run_id(args: tuple[Any, ...], kwargs: dict[str, Any]) -> str | None:
+                if "run_id" in kwargs and kwargs["run_id"] is not None:
+                    return str(kwargs["run_id"])
+                for arg in args:
+                    if hasattr(arg, "run_id"):
+                        return str(getattr(arg, "run_id"))
+                    if isinstance(arg, tuple) and arg:
+                        first = arg[0]
+                        if hasattr(first, "run_id"):
+                            return str(getattr(first, "run_id"))
+                return None
+
+            @staticmethod
+            def _default_result(name: str) -> Any:
+                if name == "upsert_monitor_run":
+                    return None
+                if name == "create_eval_result":
+                    return None
+                return []
+
+        return GuardedRunRepository()  # type: ignore[return-value]
+
     def _build_graph(self) -> Any:
         settings = _get_optional_settings()
+        guarded_run_repository = self._build_guarded_run_repository()
         if settings is None:
             return build_monitor_graph(
                 llm=self.llm,
-                run_repository=self.run_repository,
+                run_repository=guarded_run_repository,
             )
         return build_monitor_graph(
             llm=self.llm,
-            run_repository=self.run_repository,
+            run_repository=guarded_run_repository,
             settings=settings,
         )
 
@@ -332,7 +431,9 @@ class MonitorWorkerService:
         queue_metrics = self._build_queue_metrics(message)
         active_run = self.run_repository.get_active_run_for_topic(topic.topic_id)
         if active_run is not None:
-            if message.retry_reason == "worker_retry":
+            if message.retry_reason == "worker_retry" and message.run_id is not None:
+                run_id = message.run_id
+            elif message.retry_reason == "worker_retry":
                 run_id = active_run.run_id
             else:
                 self._persist_governance_event(
@@ -354,7 +455,7 @@ class MonitorWorkerService:
                     "status": "skipped_active_run",
                 }
         else:
-            run_id = f"run_{uuid.uuid4().hex[:12]}"
+            run_id = message.run_id or f"run_{uuid.uuid4().hex[:12]}"
         base_state = _build_initial_state(topic, run_id)
         base_state["trigger"] = message.trigger
         effective_max_retries = (
@@ -443,6 +544,7 @@ class MonitorWorkerService:
                 RunQueueMessage(
                     topic_id=message.topic_id,
                     trigger=message.trigger,
+                    run_id=run_id,
                     enqueued_at=message.enqueued_at,
                     queue_message_id=message.queue_message_id,
                     queue_stream=message.queue_stream,

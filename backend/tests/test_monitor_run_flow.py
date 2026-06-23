@@ -3150,6 +3150,98 @@ def test_worker_marks_run_failed_after_retry_budget_is_exhausted_across_deliveri
     assert failure_event["payload"]["error_message"] == "transient failure"
 
 
+def test_worker_retry_delivery_uses_queued_run_id_instead_of_current_active_run(
+    monkeypatch,
+) -> None:
+    topic_repository = InMemoryTopicRepository()
+    run_repository = InMemoryMonitorRunRepository()
+    topic = topic_repository.create_topic(
+        TopicCreateData(
+            name="AI Agent",
+            description="Track enterprise AI agent launches and deployment updates.",
+            seed_keywords=("OpenAI", "enterprise", "automation"),
+            trusted_sources=("AI Daily RSS", "AI Search"),
+            exclude_keywords=("rumor",),
+            push_threshold=0.72,
+            cooldown_hours=24,
+            enabled=True,
+            schedule_cron="0 */6 * * *",
+        )
+    )
+    original_run = MonitorRunRecord(
+        run_id="run_retry_original",
+        topic_id=topic.topic_id,
+        status="running",
+        state_snapshot={
+            "run_id": "run_retry_original",
+            "topic_id": topic.topic_id,
+            "trigger": "scheduler",
+            "status": "running",
+        },
+        error_summary=None,
+        started_at=datetime(2026, 6, 24, 9, 0, tzinfo=UTC),
+        finished_at=None,
+        created_at=datetime(2026, 6, 24, 9, 0, tzinfo=UTC),
+    )
+    newer_active_run = MonitorRunRecord(
+        run_id="run_unrelated_active",
+        topic_id=topic.topic_id,
+        status="running",
+        state_snapshot={
+            "run_id": "run_unrelated_active",
+            "topic_id": topic.topic_id,
+            "trigger": "manual",
+            "status": "running",
+        },
+        error_summary=None,
+        started_at=datetime(2026, 6, 24, 9, 5, tzinfo=UTC),
+        finished_at=None,
+        created_at=datetime(2026, 6, 24, 9, 5, tzinfo=UTC),
+    )
+    run_repository.monitor_runs[original_run.run_id] = original_run
+    run_repository.monitor_runs[newer_active_run.run_id] = newer_active_run
+    queue = InMemoryRunQueue()
+    queue.enqueue(
+        RunQueueMessage(
+            topic_id=topic.topic_id,
+            trigger="scheduler",
+            run_id=original_run.run_id,
+            retry_reason="worker_retry",
+            retry_count=1,
+            max_retries=2,
+        )
+    )
+    observed_run_ids: list[str] = []
+
+    class SuccessfulGraph:
+        def invoke(self, state: dict[str, object]) -> dict[str, object]:
+            observed_run_ids.append(str(state["run_id"]))
+            return {**state, "status": "completed"}
+
+    monkeypatch.setattr(
+        "app.scheduler.worker.build_monitor_graph",
+        lambda llm, run_repository: SuccessfulGraph(),
+    )
+
+    worker = MonitorWorkerService(
+        topic_repository=topic_repository,
+        run_repository=run_repository,
+        llm=MockLLM(),
+        queue=queue,
+        max_retries=2,
+    )
+
+    result = worker.process_next()
+
+    assert result is not None
+    assert result["status"] == "completed"
+    assert result["run_id"] == "run_retry_original"
+    assert observed_run_ids == ["run_retry_original"]
+    unrelated_run = run_repository.get_monitor_run("run_unrelated_active")
+    assert unrelated_run is not None
+    assert unrelated_run.status == "running"
+
+
 def test_worker_acknowledges_queue_message_after_successful_completion(
     monkeypatch,
 ) -> None:
@@ -3458,3 +3550,78 @@ def test_worker_acknowledges_queue_message_only_after_failed_run_is_persisted(
     assert run_record.status == "failed"
     assert queue.requeued == []
     assert queue.acknowledged == [(topic.topic_id, "1710000000000-0")]
+
+
+def test_worker_timeout_blocks_late_background_persistence(monkeypatch) -> None:
+    topic_repository = InMemoryTopicRepository()
+    run_repository = InMemoryMonitorRunRepository()
+    topic = topic_repository.create_topic(
+        TopicCreateData(
+            name="AI Agent",
+            description="Track enterprise AI agent launches and deployment updates.",
+            seed_keywords=("OpenAI", "enterprise", "automation"),
+            trusted_sources=("AI Daily RSS", "AI Search"),
+            exclude_keywords=("rumor",),
+            push_threshold=0.72,
+            cooldown_hours=24,
+            enabled=True,
+            schedule_cron="0 */6 * * *",
+        )
+    )
+    queue = InMemoryRunQueue()
+    queue.enqueue(
+        RunQueueMessage(
+            topic_id=topic.topic_id,
+            trigger="scheduler",
+        )
+    )
+    release_graph = Event()
+    graph_run_repository: object | None = None
+
+    class LateWritingGraph:
+        def __init__(self, repository: object) -> None:
+            self.repository = repository
+
+        def invoke(self, state: dict[str, object]) -> dict[str, object]:
+            assert release_graph.wait(timeout=1.0)
+            self.repository.create_run_events(
+                (
+                    type(
+                        "Payload",
+                        (),
+                        {
+                            "run_id": state["run_id"],
+                            "topic_id": state["topic_id"],
+                            "event_type": "late_write",
+                            "node": "late_write",
+                            "message": "late background write",
+                            "payload": {"source": "background"},
+                            "elapsed_ms": None,
+                        },
+                    )(),
+                )
+            )
+            return {**state, "status": "completed"}
+
+    monkeypatch.setattr(
+        "app.scheduler.worker.build_monitor_graph",
+        lambda llm, run_repository: LateWritingGraph(run_repository),
+    )
+
+    worker = MonitorWorkerService(
+        topic_repository=topic_repository,
+        run_repository=run_repository,
+        llm=MockLLM(),
+        queue=queue,
+        max_retries=0,
+        invocation_timeout_seconds=0.01,
+    )
+
+    result = worker.process_next()
+    assert result is not None
+    assert result["status"] == "failed"
+    release_graph.set()
+    time.sleep(0.05)
+
+    events = run_repository.list_run_events(result["run_id"])
+    assert all(event["node"] != "late_write" for event in events)

@@ -119,14 +119,21 @@ APScheduler owns topic-bound cron registration and trigger production. It does
 not execute the heavy monitor flow directly; scheduled jobs enqueue work for
 worker consumption.
 
-Redis Stream is used when Redis is available. Deliveries are not acknowledged on
-dequeue; the worker acknowledges only after successful completion, after an
-intentional active-run skip, or after a final failed run has been persisted.
-Retryable failures are re-enqueued with `retry_reason=worker_retry` before the
-original delivery is acknowledged, and the current worker invocation stops at
-that handoff point. The queue owns the next retry delivery, including the
-persisted `retry_count` and `max_retries` metadata needed to exhaust the retry
-budget across later deliveries and eventually mark the run failed.
+Redis Stream is used when Redis is available. Before reading only new stream
+entries, the worker performs a bounded pending-delivery reclaim pass so
+abandoned deliveries can be retried by another consumer. Deliveries are not
+acknowledged on dequeue; the worker acknowledges only after successful
+completion, after an intentional active-run skip, or after a final failed run
+has been persisted. Retryable failures are re-enqueued with
+`retry_reason=worker_retry` before the original delivery is acknowledged, and
+the current worker invocation stops at that handoff point. The queue owns the
+next retry delivery, including the durable `run_id` plus persisted
+`retry_count` and `max_retries` metadata needed to exhaust the retry budget
+across later deliveries and eventually mark the run failed.
+Timeout handling is best-effort in the current in-process thread model. The
+worker marks the run failed, records governance timeout events, and blocks late
+repository writes from the timed-out invocation path, but it does not guarantee
+an OS-level hard stop of arbitrary user code already running inside that thread.
 The code falls back to an in-memory queue only as an execution fallback, not as
 the source of truth for business records. Governance events keep the
 coordination backend visible in persisted run traces while PostgreSQL remains
