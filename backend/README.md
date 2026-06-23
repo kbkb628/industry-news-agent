@@ -25,6 +25,17 @@ The supervisor owns run lifecycle and final persistence. Specialist agents
 collaborate through explicit shared-state contracts and then mirror compatible
 fields back into the legacy API-facing run snapshot.
 
+Durable storage contract:
+
+- PostgreSQL is the runtime durable source of truth for topics, monitor runs,
+  candidates, extracted items, decisions, push records, run events, and eval
+  results.
+- Redis and Redis Stream are short-lived coordination layers for queue
+  transport and worker execution state. They do not replace PostgreSQL business
+  facts.
+- OpenSearch/Elasticsearch is a derived retrieval projection of persisted
+  records, not an authoritative store.
+
 Included in the current codebase:
 
 - topic creation, listing, and detail APIs

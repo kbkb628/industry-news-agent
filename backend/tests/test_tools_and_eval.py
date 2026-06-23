@@ -57,9 +57,10 @@ from app.storage.repository import (
     EvalResultCreateData,
     ExtractedItemRecordUpsertData,
     SqlAlchemyMonitorRunRepository,
+    build_monitor_run_repository,
+    build_topic_repository,
 )
 from app.storage.redis_store import build_redis_client
-
 
 def test_settings_accept_explicit_connection_values() -> None:
     settings = Settings(
@@ -975,6 +976,106 @@ def test_sqlalchemy_repository_summarizes_eval_quality_metrics() -> None:
     assert summary["avg_fetch_success_rate"] == 0.75
     assert summary["avg_trace_completeness"] == 0.95
     assert summary["latest_eval"]["run_id"] == "run_002"
+
+
+def test_sqlalchemy_repository_round_trips_all_phase_a_entities(
+    seeded_phase_a_sqlalchemy,
+) -> None:
+    with seeded_phase_a_sqlalchemy.session_factory() as session:
+        topic_repository = build_topic_repository(session)
+        run_repository = build_monitor_run_repository(session)
+
+        loaded_topic = topic_repository.get_topic(seeded_phase_a_sqlalchemy.topic_id)
+        loaded_run = run_repository.get_monitor_run(seeded_phase_a_sqlalchemy.run_id)
+        candidate_records = run_repository.list_candidate_records(
+            seeded_phase_a_sqlalchemy.run_id
+        )
+        extracted_records = run_repository.list_extracted_item_records(
+            seeded_phase_a_sqlalchemy.run_id
+        )
+        decision_records = run_repository.list_decision_records(
+            seeded_phase_a_sqlalchemy.run_id
+        )
+        push_records = run_repository.list_push_records(
+            run_id=seeded_phase_a_sqlalchemy.run_id
+        )
+        run_events = run_repository.list_run_events(seeded_phase_a_sqlalchemy.run_id)
+        eval_result = run_repository.get_eval_result(seeded_phase_a_sqlalchemy.run_id)
+
+    assert loaded_topic is not None
+    assert loaded_topic.name == "AI Agent"
+    assert loaded_run is not None
+    assert loaded_run.status == "completed"
+    assert loaded_run.state_snapshot["trigger"] == "scheduler"
+    assert [candidate["candidate_id"] for candidate in candidate_records] == ["cand_001"]
+    assert [item["extracted_id"] for item in extracted_records] == ["ext_001"]
+    assert [decision["decision_id"] for decision in decision_records] == ["dec_001"]
+    assert [push["candidate_id"] for push in push_records] == ["cand_001"]
+    assert [event["event_type"] for event in run_events] == ["notification_sent"]
+    assert eval_result is not None
+    assert eval_result["run_id"] == seeded_phase_a_sqlalchemy.run_id
+    assert eval_result["push_count"] == 1
+
+
+def test_monitor_detail_endpoints_read_persisted_phase_a_entities(
+    seeded_phase_a_sqlalchemy,
+    sqlalchemy_client_factory,
+) -> None:
+    with sqlalchemy_client_factory(seeded_phase_a_sqlalchemy.session_factory) as client:
+        run_response = client.get(
+            f"/api/monitor/runs/{seeded_phase_a_sqlalchemy.run_id}"
+        )
+        candidates_response = client.get(
+            f"/api/monitor/runs/{seeded_phase_a_sqlalchemy.run_id}/candidates"
+        )
+        events_response = client.get(
+            f"/api/monitor/runs/{seeded_phase_a_sqlalchemy.run_id}/events"
+        )
+        pushes_response = client.get("/api/pushes")
+        latest_eval_response = client.post("/api/eval/run")
+        summary_response = client.get("/api/eval/summary")
+
+    assert run_response.status_code == 200
+    assert run_response.json()["run_id"] == seeded_phase_a_sqlalchemy.run_id
+    assert run_response.json()["status"] == "completed"
+    assert run_response.json()["candidate_items"] == [
+        {
+            "candidate_id": "cand_001",
+            "title": "OpenAI agent update",
+            "url": "https://example.com/agent-update",
+        }
+    ]
+    assert run_response.json()["final_decisions"] == [
+        {
+            "candidate_id": "cand_001",
+            "should_push": True,
+            "decision_reason": "Above threshold",
+        }
+    ]
+
+    assert candidates_response.status_code == 200
+    assert candidates_response.json()["run_id"] == seeded_phase_a_sqlalchemy.run_id
+    assert [candidate["candidate_id"] for candidate in candidates_response.json()["candidates"]] == [
+        "cand_001"
+    ]
+
+    assert events_response.status_code == 200
+    assert events_response.json()["run_id"] == seeded_phase_a_sqlalchemy.run_id
+    assert [event["event_type"] for event in events_response.json()["events"]] == [
+        "notification_sent"
+    ]
+
+    assert pushes_response.status_code == 200
+    assert [push["candidate_id"] for push in pushes_response.json()["pushes"]] == ["cand_001"]
+
+    assert latest_eval_response.status_code == 200
+    assert latest_eval_response.json()["run_id"] == seeded_phase_a_sqlalchemy.run_id
+    assert latest_eval_response.json()["push_count"] == 1
+
+    assert summary_response.status_code == 200
+    assert summary_response.json()["run_count"] == 1
+    assert summary_response.json()["latest_eval"]["run_id"] == seeded_phase_a_sqlalchemy.run_id
+    assert summary_response.json()["latest_eval"]["push_count"] == 1
 
 
 def test_score_run_reports_phase2_quality_fallback_metrics() -> None:
