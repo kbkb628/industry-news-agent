@@ -1377,16 +1377,16 @@ def test_redis_stream_run_queue_requeues_failed_delivery() -> None:
 
     queue.requeue(message, reason="transient failure")
 
-    assert client.added == [
-        {
-            "name": "industry_news_agent:run_stream",
-            "fields": {
-                "topic_id": "topic_ai_agent",
-                "trigger": "scheduler",
-                "enqueued_at": "2026-06-09T12:00:00Z",
-            },
-        }
-    ]
+    assert len(client.added) == 1
+    requeued_payload = client.added[0]
+    assert requeued_payload["name"] == "industry_news_agent:run_stream"
+    assert requeued_payload["fields"]["topic_id"] == "topic_ai_agent"
+    assert requeued_payload["fields"]["trigger"] == "scheduler"
+    assert requeued_payload["fields"]["retry_reason"] == "transient failure"
+    assert requeued_payload["fields"]["enqueued_at"] != "2026-06-09T12:00:00Z"
+    assert datetime.fromisoformat(
+        str(requeued_payload["fields"]["enqueued_at"]).replace("Z", "+00:00")
+    ) > datetime(2026, 6, 9, 12, 0, tzinfo=UTC)
     assert client.acked == [
         {
             "name": "industry_news_agent:run_stream",

@@ -39,6 +39,7 @@ class RunQueueMessage:
     enqueued_at: datetime = field(default_factory=lambda: datetime.now(UTC))
     queue_message_id: str | None = None
     queue_stream: str | None = None
+    retry_reason: str | None = None
 
 
 class RunQueueProtocol(Protocol):
@@ -122,6 +123,8 @@ class RedisStreamRunQueue:
             "trigger": message.trigger,
             "enqueued_at": message.enqueued_at.isoformat().replace("+00:00", "Z"),
         }
+        if message.retry_reason is not None:
+            payload["retry_reason"] = message.retry_reason
         message_id = self.redis_client.xadd(self.stream_key, payload)
         return {
             "topic_id": message.topic_id,
@@ -168,13 +171,13 @@ class RedisStreamRunQueue:
         )
 
     def requeue(self, delivery: RunQueueMessage, *, reason: str) -> None:
-        self.enqueue(
-            RunQueueMessage(
-                topic_id=delivery.topic_id,
-                trigger=delivery.trigger,
-                enqueued_at=delivery.enqueued_at,
-            )
+        requeued_message = RunQueueMessage(
+            topic_id=delivery.topic_id,
+            trigger=delivery.trigger,
+            enqueued_at=datetime.now(UTC),
+            retry_reason=reason,
         )
+        self.enqueue(requeued_message)
         self.acknowledge(delivery)
 
 
@@ -412,7 +415,7 @@ class MonitorWorkerService:
                         **queue_metrics,
                     },
                 )
-                self.queue.requeue(message, reason=str(exc))
+                self.queue.requeue(message, reason="worker_retry")
                 _persist_initial_run(self.run_repository, attempt_state)
 
         if last_error is not None:

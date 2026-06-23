@@ -122,7 +122,9 @@ worker consumption.
 Redis Stream is used when Redis is available. Deliveries are not acknowledged on
 dequeue; the worker acknowledges only after successful completion, after an
 intentional active-run skip, or after a final failed run has been persisted.
-Retryable failures are re-enqueued before the original delivery is acknowledged.
+Retryable failures are re-enqueued before the original delivery is acknowledged,
+using a fresh enqueue timestamp plus an explicit `retry_reason=worker_retry`
+payload field on the re-enqueued stream message.
 The code falls back to an in-memory queue only as an execution fallback, not as
 the source of truth for business records. Governance events keep the
 coordination backend visible in persisted run traces while PostgreSQL remains

@@ -2912,7 +2912,26 @@ def test_worker_retries_once_before_marking_run_failed(monkeypatch) -> None:
             schedule_cron="0 */6 * * *",
         )
     )
-    queue = InMemoryRunQueue()
+    class RecordingQueue(InMemoryRunQueue):
+        def __init__(self) -> None:
+            super().__init__()
+            self.acknowledged: list[tuple[str, str | None]] = []
+            self.requeued: list[dict[str, str | None]] = []
+
+        def acknowledge(self, delivery: RunQueueMessage) -> None:
+            self.acknowledged.append((delivery.topic_id, delivery.queue_message_id))
+
+        def requeue(self, delivery: RunQueueMessage, *, reason: str) -> None:
+            self.requeued.append(
+                {
+                    "topic_id": delivery.topic_id,
+                    "queue_message_id": delivery.queue_message_id,
+                    "reason": reason,
+                }
+            )
+            super().requeue(delivery, reason=reason)
+
+    queue = RecordingQueue()
     queue.enqueue(
         RunQueueMessage(
             topic_id=topic.topic_id,
@@ -2959,6 +2978,182 @@ def test_worker_retries_once_before_marking_run_failed(monkeypatch) -> None:
     assert retry_event["payload"]["attempt"] == 1
     assert retry_event["payload"]["max_retries"] == 1
     assert retry_event["payload"]["error_message"] == "transient failure"
+    assert queue.requeued == [
+        {
+            "topic_id": topic.topic_id,
+            "queue_message_id": None,
+            "reason": "worker_retry",
+        }
+    ]
+    assert queue.acknowledged == [(topic.topic_id, None)]
+
+
+def test_worker_acknowledges_queue_message_after_successful_completion(
+    monkeypatch,
+) -> None:
+    class RecordingQueue:
+        def __init__(self, message: RunQueueMessage) -> None:
+            self.message = message
+            self.acknowledged: list[tuple[str, str | None]] = []
+
+        def enqueue(self, message: RunQueueMessage) -> dict[str, object]:
+            return {"status": "queued", "topic_id": message.topic_id, "trigger": message.trigger}
+
+        def dequeue(self) -> RunQueueMessage | None:
+            current = self.message
+            self.message = None  # type: ignore[assignment]
+            return current
+
+        def acknowledge(self, delivery: RunQueueMessage) -> None:
+            self.acknowledged.append((delivery.topic_id, delivery.queue_message_id))
+
+        def requeue(self, delivery: RunQueueMessage, *, reason: str) -> None:
+            raise AssertionError("success path must not requeue")
+
+    topic_repository = InMemoryTopicRepository()
+    run_repository = InMemoryMonitorRunRepository()
+    topic = topic_repository.create_topic(
+        TopicCreateData(
+            name="AI Agent",
+            description="Track enterprise AI agent launches and deployment updates.",
+            seed_keywords=("OpenAI", "enterprise", "automation"),
+            trusted_sources=("AI Daily RSS", "AI Search"),
+            exclude_keywords=("rumor",),
+            push_threshold=0.72,
+            cooldown_hours=24,
+            enabled=True,
+            schedule_cron="0 */6 * * *",
+        )
+    )
+    queue = RecordingQueue(
+        RunQueueMessage(
+            topic_id=topic.topic_id,
+            trigger="scheduler",
+            queue_message_id="1710000000000-0",
+            queue_stream="industry_news_agent:run_stream",
+        )
+    )
+
+    class SuccessfulGraph:
+        def invoke(self, state: dict[str, object]) -> dict[str, object]:
+            return {**state, "status": "completed"}
+
+    monkeypatch.setattr(
+        "app.scheduler.worker.build_monitor_graph",
+        lambda llm, run_repository: SuccessfulGraph(),
+    )
+
+    worker = MonitorWorkerService(
+        topic_repository=topic_repository,
+        run_repository=run_repository,
+        llm=MockLLM(),
+        queue=queue,
+    )
+
+    result = worker.process_next()
+
+    assert result is not None
+    assert result["status"] == "completed"
+    assert queue.acknowledged == [(topic.topic_id, "1710000000000-0")]
+
+
+def test_redis_stream_queued_run_can_be_consumed_end_to_end_by_worker() -> None:
+    class FakeRedisStreamClient:
+        def __init__(self) -> None:
+            self.created_groups: list[dict[str, object]] = []
+            self.added: list[dict[str, object]] = []
+            self.acked: list[dict[str, object]] = []
+            self.pending_messages: list[
+                tuple[bytes, dict[bytes, bytes]]
+            ] = []
+
+        def xgroup_create(
+            self,
+            name: str,
+            groupname: str,
+            id: str,
+            mkstream: bool,
+        ) -> None:
+            self.created_groups.append(
+                {
+                    "name": name,
+                    "groupname": groupname,
+                    "id": id,
+                    "mkstream": mkstream,
+                }
+            )
+
+        def xadd(self, name: str, fields: dict[str, str]) -> str:
+            self.added.append({"name": name, "fields": fields})
+            return "1710000000000-0"
+
+        def xreadgroup(
+            self,
+            *,
+            groupname: str,
+            consumername: str,
+            streams: dict[str, str],
+            count: int,
+            block: int,
+        ) -> list[tuple[bytes, list[tuple[bytes, dict[bytes, bytes]]]]]:
+            if not self.pending_messages:
+                return []
+            return [(b"industry_news_agent:run_stream", [self.pending_messages.pop(0)])]
+
+        def xack(self, name: str, groupname: str, id: bytes) -> int:
+            self.acked.append({"name": name, "groupname": groupname, "id": id})
+            return 1
+
+    topic_repository = InMemoryTopicRepository()
+    run_repository = InMemoryMonitorRunRepository()
+    topic = topic_repository.create_topic(
+        TopicCreateData(
+            name="AI Agent",
+            description="Track enterprise AI agent launches and deployment updates.",
+            seed_keywords=("OpenAI", "enterprise", "automation"),
+            trusted_sources=("AI Daily RSS", "AI Search"),
+            exclude_keywords=("rumor",),
+            push_threshold=0.72,
+            cooldown_hours=24,
+            enabled=True,
+            schedule_cron="0 */6 * * *",
+        )
+    )
+    client = FakeRedisStreamClient()
+    client.pending_messages.append(
+        (
+            b"1710000000000-0",
+            {
+                b"topic_id": topic.topic_id.encode("utf-8"),
+                b"trigger": b"scheduler",
+                b"enqueued_at": b"2026-06-24T09:00:00Z",
+            },
+        )
+    )
+    queue = RedisStreamRunQueue(client)
+
+    worker = MonitorWorkerService(
+        topic_repository=topic_repository,
+        run_repository=run_repository,
+        llm=MockLLM(),
+        queue=queue,
+    )
+
+    result = worker.process_next()
+
+    assert result is not None
+    assert result["topic_id"] == topic.topic_id
+    assert result["status"] == "completed"
+    run_record = run_repository.get_monitor_run(result["run_id"])
+    assert run_record is not None
+    assert run_record.status == "completed"
+    assert client.acked == [
+        {
+            "name": "industry_news_agent:run_stream",
+            "groupname": "monitor-workers",
+            "id": b"1710000000000-0",
+        }
+    ]
 
 
 def test_worker_times_out_and_marks_failed_run(monkeypatch) -> None:
