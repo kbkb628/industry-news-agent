@@ -17,6 +17,11 @@ def _dedupe_strings(values: Iterable[str]) -> list[str]:
     return deduped
 
 
+def _read_semantic_memory(business_context: dict[str, Any] | None) -> dict[str, Any]:
+    semantic_memory = (business_context or {}).get("semantic_memory", {})
+    return dict(semantic_memory) if isinstance(semantic_memory, dict) else {}
+
+
 def build_query_plan(expanded_queries: Iterable[str]) -> list[dict[str, Any]]:
     unique_queries: list[str] = []
     seen: set[str] = set()
@@ -52,31 +57,62 @@ def build_structured_source_plan(
     push_history: Iterable[dict[str, Any]],
     business_context: dict[str, Any] | None = None,
 ) -> list[dict[str, Any]]:
+    semantic_memory = _read_semantic_memory(business_context)
     topic_trusted_sources = topic.get("trusted_sources", [])
-    combined_trusted_sources = _dedupe_strings([*topic_trusted_sources, *trusted_sources])
+    semantic_trusted_sources = semantic_memory.get("trusted_source_hints", [])
+    combined_trusted_sources = _dedupe_strings(
+        [*topic_trusted_sources, *trusted_sources, *semantic_trusted_sources]
+    )
+    source_preferences = _dedupe_strings(semantic_memory.get("source_preferences", []))
+    prefer_rss = any(
+        preference in {"rss_first", "trusted_domain_priority"}
+        for preference in source_preferences
+    )
     history_count = sum(1 for _ in push_history)
     context_documents = list((business_context or {}).get("documents", []))
     has_trusted_sources = bool(combined_trusted_sources)
     has_context = bool(context_documents)
     search_priority = 1 if not has_trusted_sources and not has_context else 2
     rss_priority = 2 if search_priority == 1 else 1
+    if prefer_rss:
+        rss_priority = 1
+        search_priority = 2
+
+    rss_reason = "Trusted feeds are stable and low-cost for repeat monitoring."
+    if semantic_trusted_sources or source_preferences:
+        guidance_bits: list[str] = []
+        if semantic_trusted_sources:
+            guidance_bits.append("semantic trusted-source hints expanded domain coverage")
+        if source_preferences:
+            guidance_bits.append(
+                "semantic source preferences favored RSS/trusted-domain retrieval"
+            )
+        rss_reason = (
+            "Trusted feeds are stable and low-cost for repeat monitoring. "
+            + "; ".join(guidance_bits)
+            + "."
+        )
+
+    search_reason = (
+        "Search leads when trusted-source memory is sparse and recall needs widening."
+        if search_priority == 1
+        else "Search complements feed coverage for non-RSS discovery."
+    )
+    if source_preferences:
+        search_reason += " Semantic source preferences were considered."
 
     source_plan = [
         {
             "tool_name": "mock_search",
             "priority": search_priority,
-            "reason": (
-                "Search leads when trusted-source memory is sparse and recall needs widening."
-                if search_priority == 1
-                else "Search complements feed coverage for non-RSS discovery."
-            ),
+            "reason": search_reason,
             "history_signal": {"prior_push_count": history_count},
             "context_signal": {"document_count": len(context_documents)},
         },
         {
             "tool_name": "rss_fetch",
             "priority": rss_priority,
-            "reason": "Trusted feeds are stable and low-cost for repeat monitoring.",
+            "reason": rss_reason,
             "trusted_sources": combined_trusted_sources,
         },
     ]
@@ -108,12 +144,32 @@ def build_planning_reasons(
     push_history: Iterable[dict[str, Any]],
 ) -> list[str]:
     document_count = len(list(business_context.get("documents", [])))
-    trusted_source_count = len([source for source in trusted_sources if str(source).strip()])
+    semantic_memory = _read_semantic_memory(business_context)
+    semantic_trusted_sources = _dedupe_strings(semantic_memory.get("trusted_source_hints", []))
+    combined_trusted_sources = _dedupe_strings([*trusted_sources, *semantic_trusted_sources])
+    trusted_source_count = len(
+        [source for source in combined_trusted_sources if str(source).strip()]
+    )
     history_count = sum(1 for _ in push_history)
+    source_preferences = _dedupe_strings(semantic_memory.get("source_preferences", []))
+    evidence_summary = _dedupe_strings(semantic_memory.get("evidence_summary", []))
 
-    return [
+    reasons = [
         f"Topic '{topic_name}' requires recall across feed and search sources.",
         f"Loaded {document_count} business-context documents into planning.",
         f"Trusted source bias applied to {trusted_source_count} domains.",
         f"Considered {history_count} historical push records to avoid narrow planning.",
     ]
+    if source_preferences:
+        reasons.append(
+            "Semantic memory source preferences applied: "
+            + ", ".join(source_preferences)
+            + "."
+        )
+    if evidence_summary:
+        reasons.append(
+            "Semantic memory evidence informed planning: "
+            + "; ".join(evidence_summary)
+            + "."
+        )
+    return reasons

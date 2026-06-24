@@ -103,7 +103,16 @@ def build_empty_run_context(*, run_id: str, topic_id: str) -> RunContext:
 def build_empty_business_memory() -> BusinessMemory:
     return {
         "seed_keywords": [],
-        "business_context": {},
+        "business_context": {
+            "semantic_memory": {
+                "topic_keywords": [],
+                "trusted_source_hints": [],
+                "source_preferences": [],
+                "push_rules": [],
+                "history_guidance": [],
+                "evidence_summary": [],
+            }
+        },
         "push_history": [],
         "trusted_sources": [],
         "degradation_hints": [],

@@ -1819,6 +1819,45 @@ def test_planner_agent_builds_context_aware_plan() -> None:
     assert untrusted_output["planning_reasons"]
 
 
+def test_planner_agent_merges_semantic_memory_topic_keywords_into_expanded_queries() -> None:
+    from app.agent.planner_agent import PlannerAgent
+
+    planner = PlannerAgent(llm=MockLLM())
+    state = {
+        "topic": {
+            "topic_id": "topic_ai",
+            "name": "AI Agent",
+            "trusted_sources": ["openai.com"],
+        },
+        "business_memory": {
+            "seed_keywords": ["OpenAI", "enterprise"],
+            "trusted_sources": ["openai.com"],
+            "push_history": [],
+            "business_context": {
+                "documents": [],
+                "semantic_memory": {
+                    "topic_keywords": ["MCP", "LangGraph"],
+                    "trusted_source_hints": ["github.com"],
+                    "source_preferences": ["rss_first", "trusted_domain_priority"],
+                    "push_rules": [],
+                    "history_guidance": [],
+                    "evidence_summary": [
+                        "knowledge base matched trusted-source guidance"
+                    ],
+                },
+            },
+        },
+        "planner_output": {},
+        "expanded_queries": [],
+        "source_plan": [],
+    }
+
+    result = planner.run(state)
+
+    assert "MCP" in result["planner_output"]["expanded_queries"]
+    assert "LangGraph" in result["planner_output"]["expanded_queries"]
+
+
 def test_legacy_build_source_plan_keeps_tool_name_list_contract() -> None:
     from app.agent.planner import build_source_plan
 
@@ -1892,6 +1931,33 @@ def test_plan_sources_node_preserves_existing_expanded_queries() -> None:
 
     assert result["expanded_queries"] == ["custom-expanded-query"]
     assert result["planner_output"]["expanded_queries"] == ["custom-expanded-query"]
+
+
+def test_build_structured_source_plan_uses_semantic_memory_preferences_and_trusted_sources() -> None:
+    from app.agent.planner import build_structured_source_plan
+
+    source_plan = build_structured_source_plan(
+        {
+            "trusted_sources": ["openai.com"],
+        },
+        trusted_sources=["openai.com"],
+        push_history=[],
+        business_context={
+            "documents": [{"doc_id": "kb_1"}],
+            "semantic_memory": {
+                "topic_keywords": [],
+                "trusted_source_hints": ["github.com"],
+                "source_preferences": ["rss_first", "trusted_domain_priority"],
+                "push_rules": [],
+                "history_guidance": [],
+                "evidence_summary": [],
+            },
+        },
+    )
+
+    assert source_plan[0]["tool_name"] == "rss_fetch"
+    assert "trusted" in source_plan[0]["reason"].lower()
+    assert "github.com" in source_plan[0]["trusted_sources"]
 
 
 def test_knowledge_loader_and_keyword_retriever_support_local_rag() -> None:

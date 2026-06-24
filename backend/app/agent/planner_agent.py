@@ -12,6 +12,19 @@ from app.agent.planner import (
 from app.llm.base import BaseLLMClient
 
 
+def _dedupe_preserve_order(values: list[str]) -> list[str]:
+    deduped: list[str] = []
+    seen: set[str] = set()
+    for value in values:
+        normalized = str(value).strip()
+        lowered = normalized.lower()
+        if not normalized or lowered in seen:
+            continue
+        seen.add(lowered)
+        deduped.append(normalized)
+    return deduped
+
+
 class PlannerAgent:
     def __init__(self, *, llm: BaseLLMClient) -> None:
         self.llm = llm
@@ -28,13 +41,20 @@ class PlannerAgent:
         )
         push_history = list(business_memory.get("push_history", []))
         business_context = dict(business_memory.get("business_context", {}))
+        semantic_memory = dict(business_context.get("semantic_memory", {}))
+        semantic_topic_keywords = list(semantic_memory.get("topic_keywords", []))
 
         expanded_queries = list(state.get("expanded_queries", []))
         if not expanded_queries:
             expanded_queries = self.llm.expand_keywords(
                 topic_name=topic_name,
-                seed_keywords=seed_keywords,
+                seed_keywords=_dedupe_preserve_order(
+                    [*seed_keywords, *semantic_topic_keywords]
+                ),
             )
+        expanded_queries = _dedupe_preserve_order(
+            [*semantic_topic_keywords, *expanded_queries]
+        )
         query_plan = build_query_plan(expanded_queries)
         source_plan = build_structured_source_plan(
             topic,
