@@ -75,6 +75,19 @@ class CandidateTaskOrchestrator:
             }
         ]
 
+    def concurrency_limit_for_stage(self, stage: str) -> int:
+        if stage == "fetch":
+            return self.fetch_concurrency
+        if stage == "extract":
+            return self.extract_concurrency
+        return self.evaluate_concurrency
+
+    def mark_task_in_progress(self, task: dict[str, Any]) -> dict[str, Any]:
+        started = dict(task)
+        started["status"] = "in_progress"
+        started["started_at"] = datetime.now(UTC).isoformat().replace("+00:00", "Z")
+        return started
+
     def mark_task_completed(
         self,
         task: dict[str, Any],
@@ -84,8 +97,39 @@ class CandidateTaskOrchestrator:
         completed = dict(task)
         completed["status"] = "completed"
         completed["output_ref"] = dict(output_ref or {})
+        completed["started_at"] = task.get("started_at")
         completed["finished_at"] = datetime.now(UTC).isoformat().replace("+00:00", "Z")
         return completed
+
+    def mark_task_failed(
+        self,
+        task: dict[str, Any],
+        *,
+        error_code: str,
+        error_message: str,
+    ) -> dict[str, Any]:
+        failed = dict(task)
+        failed["status"] = "failed"
+        failed["error_code"] = error_code
+        failed["error_message"] = error_message
+        failed["started_at"] = task.get("started_at")
+        failed["finished_at"] = datetime.now(UTC).isoformat().replace("+00:00", "Z")
+        return failed
+
+    def build_retry_task(self, task: dict[str, Any]) -> dict[str, Any] | None:
+        attempt = int(task.get("attempt", 1))
+        max_attempts = int(task.get("max_attempts", 1))
+        if attempt >= max_attempts:
+            return None
+        retried = dict(task)
+        retried["status"] = "ready"
+        retried["attempt"] = attempt + 1
+        retried["error_code"] = None
+        retried["error_message"] = None
+        retried["started_at"] = None
+        retried["finished_at"] = None
+        retried["output_ref"] = {}
+        return retried
 
     def build_runtime_view(self, tasks: list[dict[str, Any]]) -> dict[str, Any]:
         return {

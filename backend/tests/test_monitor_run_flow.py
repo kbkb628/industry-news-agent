@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from contextlib import contextmanager
 from datetime import UTC, datetime
-from threading import Event
+from threading import Barrier, Event, Lock, Thread
 import time
 from typing import Callable, Iterator
 
@@ -2952,6 +2952,145 @@ def build_gateway_with_failing_fetch_tool() -> LocalToolGateway:
     return gateway
 
 
+def build_gateway_with_blocking_candidate_fetch_and_extract_tools(
+    *,
+    fetch_started: Event,
+    release_fetch: Event,
+    fetch_barrier: Barrier,
+    fetch_call_order: list[str],
+    fetch_lock: Lock,
+) -> LocalToolGateway:
+    from app.tools.registry import build_default_tool_registry
+
+    gateway = LocalToolGateway()
+    build_default_tool_registry(llm=MockLLM()).register_into(gateway)
+
+    def fetch_article_content(candidates: list[dict[str, object]]) -> ToolResponse:
+        candidate = dict(candidates[0])
+        candidate_id = str(candidate["candidate_id"])
+        with fetch_lock:
+            fetch_call_order.append(candidate_id)
+        fetch_started.set()
+        fetch_barrier.wait(timeout=1.0)
+        assert release_fetch.wait(1.0)
+        return ToolResponse.success(
+            tool_name="fetch_article_content",
+            summary="Fetched candidate content.",
+            data={
+                "candidates": [
+                    {
+                        **candidate,
+                        "content": f"content for {candidate_id}",
+                        "fetch_status": "fetched",
+                    }
+                ]
+            },
+        )
+
+    def extract_article(
+        run_id: str,
+        topic: dict[str, object],
+        candidates: list[dict[str, object]],
+    ) -> ToolResponse:
+        candidate = dict(candidates[0])
+        candidate_id = str(candidate["candidate_id"])
+        return ToolResponse.success(
+            tool_name="extract_article",
+            summary="Extracted evidence item.",
+            data={
+                "articles": [
+                    {
+                        "extracted_id": f"ext_{candidate_id}",
+                        "candidate_id": candidate_id,
+                        "run_id": run_id,
+                        "topic_id": topic["topic_id"],
+                        "source_type": candidate["source_type"],
+                        "source_name": candidate["source_name"],
+                        "title": candidate["title"],
+                        "url": candidate["url"],
+                        "summary": f"summary for {candidate_id}",
+                        "content": candidate["content"],
+                        "fetch_status": candidate["fetch_status"],
+                        "extraction_mode": "structured",
+                    }
+                ]
+            },
+        )
+
+    gateway._handlers["fetch_article_content"] = fetch_article_content
+    gateway._handlers["extract_article"] = extract_article
+    return gateway
+
+
+def build_gateway_with_retrying_fetch_tool() -> LocalToolGateway:
+    from app.tools.registry import build_default_tool_registry
+
+    gateway = LocalToolGateway()
+    build_default_tool_registry(llm=MockLLM()).register_into(gateway)
+    attempts_by_candidate: dict[str, int] = {}
+
+    def fetch_article_content(candidates: list[dict[str, object]]) -> ToolResponse:
+        candidate = dict(candidates[0])
+        candidate_id = str(candidate["candidate_id"])
+        attempt = attempts_by_candidate.get(candidate_id, 0) + 1
+        attempts_by_candidate[candidate_id] = attempt
+        if candidate_id == "cand_retry" and attempt == 1:
+            return ToolResponse.failure(
+                tool_name="fetch_article_content",
+                summary="Fetch failed.",
+                code="fetch_failed",
+                message="transient fetch failure",
+            )
+        return ToolResponse.success(
+            tool_name="fetch_article_content",
+            summary="Fetched candidate content.",
+            data={
+                "candidates": [
+                    {
+                        **candidate,
+                        "content": f"content for {candidate_id}",
+                        "fetch_status": "fetched",
+                    }
+                ]
+            },
+            metadata={"attempt": attempt},
+        )
+
+    def extract_article(
+        run_id: str,
+        topic: dict[str, object],
+        candidates: list[dict[str, object]],
+    ) -> ToolResponse:
+        candidate = dict(candidates[0])
+        candidate_id = str(candidate["candidate_id"])
+        return ToolResponse.success(
+            tool_name="extract_article",
+            summary="Extracted evidence item.",
+            data={
+                "articles": [
+                    {
+                        "extracted_id": f"ext_{candidate_id}",
+                        "candidate_id": candidate_id,
+                        "run_id": run_id,
+                        "topic_id": topic["topic_id"],
+                        "source_type": candidate["source_type"],
+                        "source_name": candidate["source_name"],
+                        "title": candidate["title"],
+                        "url": candidate["url"],
+                        "summary": f"summary for {candidate_id}",
+                        "content": candidate["content"],
+                        "fetch_status": candidate["fetch_status"],
+                        "extraction_mode": "structured",
+                    }
+                ]
+            },
+        )
+
+    gateway._handlers["fetch_article_content"] = fetch_article_content
+    gateway._handlers["extract_article"] = extract_article
+    return gateway
+
+
 def test_run_monitor_endpoint_executes_full_flow() -> None:
     topic_repository = InMemoryTopicRepository()
     run_repository = InMemoryMonitorRunRepository()
@@ -3099,6 +3238,190 @@ def test_candidate_orchestrator_records_failed_task_without_fake_success() -> No
     assert result["candidate_task_summary"]["failed_count"] == 1
     assert result["errors"][-1]["code"] == "tool_error"
     assert not result["final_decisions"]
+
+
+def test_candidate_orchestrator_executes_same_stage_candidate_tasks_concurrently() -> None:
+    repository = InMemoryMonitorRunRepository()
+    fetch_started = Event()
+    release_fetch = Event()
+    fetch_lock = Lock()
+    fetch_barrier = Barrier(2)
+    fetch_call_order: list[str] = []
+    state = {
+        "run_id": "run_candidate_concurrency",
+        "topic_id": "topic_ai",
+        "topic": {
+            "topic_id": "topic_ai",
+            "name": "AI Agent",
+            "push_threshold": 0.7,
+            "cooldown_hours": 24,
+        },
+        "seed_keywords": ["AI Agent"],
+        "expanded_queries": ["AI Agent"],
+        "retrieval_output": {
+            "candidate_pool": [
+                {
+                    "candidate_id": "cand_001",
+                    "run_id": "run_candidate_concurrency",
+                    "topic_id": "topic_ai",
+                    "source_type": "search",
+                    "source_name": "Mock Search",
+                    "title": "AI Agent funding update",
+                    "url": "https://example.com/funding",
+                    "fetch_status": "pending",
+                    "raw_summary": "funding summary",
+                },
+                {
+                    "candidate_id": "cand_002",
+                    "run_id": "run_candidate_concurrency",
+                    "topic_id": "topic_ai",
+                    "source_type": "search",
+                    "source_name": "Mock Search",
+                    "title": "AI Agent product launch",
+                    "url": "https://example.com/product",
+                    "fetch_status": "pending",
+                    "raw_summary": "product summary",
+                },
+            ]
+        },
+        "candidate_items": [],
+        "fetched_contents": [],
+        "extracted_items": [],
+        "scored_items": [],
+        "final_decisions": [],
+        "decision_reasons": [],
+        "push_records": [],
+        "tool_results": [],
+        "events": [],
+        "errors": [],
+        "status": "running",
+        "business_memory": {"push_history": []},
+        "evaluation_output": {},
+        "extraction_output": {},
+    }
+
+    result_box: dict[str, dict[str, object]] = {}
+
+    def run_node() -> None:
+        result_box["result"] = candidate_task_orchestrator_node(
+            state,
+            gateway=build_gateway_with_blocking_candidate_fetch_and_extract_tools(
+                fetch_started=fetch_started,
+                release_fetch=release_fetch,
+                fetch_barrier=fetch_barrier,
+                fetch_call_order=fetch_call_order,
+                fetch_lock=fetch_lock,
+            ),
+            run_repository=repository,
+            settings=Settings(
+                database_url="postgresql+psycopg://user:pass@localhost:5432/news_agent",
+                redis_url="redis://localhost:6379/0",
+                candidate_fetch_concurrency=2,
+                candidate_extract_concurrency=1,
+                candidate_evaluate_concurrency=1,
+            ),
+        )
+
+    worker = Thread(target=run_node)
+    worker.start()
+
+    assert fetch_started.wait(0.5)
+    time.sleep(0.1)
+    assert worker.is_alive()
+
+    release_fetch.set()
+    worker.join(timeout=2.0)
+    assert not worker.is_alive()
+
+    result = result_box["result"]
+    task_plan = list(result["candidate_task_plan"])
+    fetch_tasks = [task for task in task_plan if task["stage"] == "fetch"]
+    extract_tasks = [task for task in task_plan if task["stage"] == "extract"]
+    evaluate_tasks = [task for task in task_plan if task["stage"] == "evaluate"]
+
+    assert fetch_call_order == ["cand_001", "cand_002"]
+    assert len(fetch_tasks) == 2
+    assert all(task["status"] == "completed" for task in fetch_tasks)
+    assert all(task["status"] == "completed" for task in extract_tasks)
+    assert all(task["status"] == "completed" for task in evaluate_tasks)
+    assert len(repository.candidate_task_records) == 6
+    persisted_stages = [record["stage"] for record in repository.candidate_task_records]
+    assert persisted_stages[:2] == ["fetch", "fetch"]
+    assert persisted_stages[2:4] == ["extract", "extract"]
+    assert persisted_stages[4:] == ["evaluate", "evaluate"]
+    assert all(record["created_at"] is not None for record in repository.candidate_task_records)
+
+
+def test_candidate_orchestrator_persists_retry_attempts_in_task_ledger() -> None:
+    repository = InMemoryMonitorRunRepository()
+    state = {
+        "run_id": "run_candidate_retry",
+        "topic_id": "topic_ai",
+        "topic": {
+            "topic_id": "topic_ai",
+            "name": "AI Agent",
+            "push_threshold": 0.7,
+            "cooldown_hours": 24,
+        },
+        "seed_keywords": ["AI Agent"],
+        "expanded_queries": ["AI Agent"],
+        "retrieval_output": {
+            "candidate_pool": [
+                {
+                    "candidate_id": "cand_retry",
+                    "run_id": "run_candidate_retry",
+                    "topic_id": "topic_ai",
+                    "source_type": "search",
+                    "source_name": "Mock Search",
+                    "title": "AI Agent retry candidate",
+                    "url": "https://example.com/retry",
+                    "fetch_status": "pending",
+                    "raw_summary": "retry summary",
+                }
+            ]
+        },
+        "candidate_items": [],
+        "fetched_contents": [],
+        "extracted_items": [],
+        "scored_items": [],
+        "final_decisions": [],
+        "decision_reasons": [],
+        "push_records": [],
+        "tool_results": [],
+        "events": [],
+        "errors": [],
+        "status": "running",
+        "business_memory": {"push_history": []},
+        "evaluation_output": {},
+        "extraction_output": {},
+    }
+
+    result = candidate_task_orchestrator_node(
+        state,
+        gateway=build_gateway_with_retrying_fetch_tool(),
+        run_repository=repository,
+        settings=Settings(
+            database_url="postgresql+psycopg://user:pass@localhost:5432/news_agent",
+            redis_url="redis://localhost:6379/0",
+            candidate_fetch_concurrency=1,
+            candidate_extract_concurrency=1,
+            candidate_evaluate_concurrency=1,
+        ),
+    )
+
+    fetch_records = [
+        record
+        for record in repository.candidate_task_records
+        if record["candidate_id"] == "cand_retry" and record["stage"] == "fetch"
+    ]
+    assert [record["attempt"] for record in fetch_records] == [1, 2]
+    assert [record["status"] for record in fetch_records] == ["failed", "completed"]
+    assert fetch_records[0]["error_code"] == "tool_error"
+    assert fetch_records[0]["error_message"] == "fetch_article_content failed: Fetch failed."
+    assert fetch_records[1]["depends_on_task_ids"] == []
+    assert result["candidate_task_summary"]["failed_count"] == 1
+    assert result["candidate_task_summary"]["completed_count"] == 3
+    assert result["candidate_task_summary"]["task_count"] == 4
 
 
 def test_run_detail_api_returns_candidate_task_summary_and_ledger() -> None:

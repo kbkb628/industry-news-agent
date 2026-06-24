@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from datetime import UTC, datetime
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from typing import Any
 
 from app.agent.contracts import (
@@ -754,6 +755,200 @@ def candidate_task_orchestrator_node(
     run_repository: MonitorRunRepositoryProtocol | None = None,
     settings: Settings | None = None,
 ) -> dict[str, Any]:
+    def merge_candidate_items(
+        existing: list[dict[str, Any]],
+        updates: list[dict[str, Any]],
+    ) -> list[dict[str, Any]]:
+        merged = [dict(item) for item in existing]
+        for update in updates:
+            candidate_id = str(update.get("candidate_id", ""))
+            replaced = False
+            for index, item in enumerate(merged):
+                if str(item.get("candidate_id", "")) == candidate_id:
+                    merged[index] = dict(update)
+                    replaced = True
+                    break
+            if not replaced:
+                merged.append(dict(update))
+        return merged
+
+    def persist_task_records(tasks_to_persist: list[dict[str, Any]]) -> None:
+        if (
+            run_repository is None
+            or not tasks_to_persist
+            or not hasattr(run_repository, "create_candidate_task_records")
+        ):
+            return
+        run_repository.create_candidate_task_records(
+            tuple(
+                CandidateTaskRecordCreateData(
+                    task_id=str(task["task_id"]),
+                    run_id=str(task["run_id"]),
+                    candidate_id=str(task["candidate_id"]),
+                    stage=str(task["stage"]),
+                    status=str(task["status"]),
+                    attempt=int(task.get("attempt", 1)),
+                    max_attempts=int(task.get("max_attempts", 1)),
+                    depends_on_task_ids=tuple(
+                        str(item) for item in task.get("depends_on_task_ids", [])
+                    ),
+                    input_ref=dict(task.get("input_ref", {})),
+                    output_ref=dict(task.get("output_ref", {})),
+                    error_code=(
+                        None if task.get("error_code") is None else str(task["error_code"])
+                    ),
+                    error_message=(
+                        None
+                        if task.get("error_message") is None
+                        else str(task["error_message"])
+                    ),
+                    started_at=(
+                        None
+                        if task.get("started_at") is None
+                        else str(task["started_at"])
+                    ),
+                    finished_at=(
+                        None
+                        if task.get("finished_at") is None
+                        else str(task["finished_at"])
+                    ),
+                )
+                for task in tasks_to_persist
+            )
+        )
+
+    def merge_state_updates(task_state: dict[str, Any]) -> None:
+        if "fetched_contents" in task_state:
+            state["fetched_contents"] = merge_candidate_items(
+                list(state.get("fetched_contents", [])),
+                list(task_state.get("fetched_contents", [])),
+            )
+        if "extracted_items" in task_state:
+            state["extracted_items"] = merge_candidate_items(
+                list(state.get("extracted_items", [])),
+                list(task_state.get("extracted_items", [])),
+            )
+        if "scored_items" in task_state:
+            state["scored_items"] = merge_candidate_items(
+                list(state.get("scored_items", [])),
+                list(task_state.get("scored_items", [])),
+            )
+        if "final_decisions" in task_state:
+            state["final_decisions"] = merge_candidate_items(
+                list(state.get("final_decisions", [])),
+                list(task_state.get("final_decisions", [])),
+            )
+        if "decision_reasons" in task_state:
+            state["decision_reasons"] = list(task_state.get("decision_reasons", []))
+        if "push_records" in task_state:
+            state["push_records"] = merge_candidate_items(
+                list(state.get("push_records", [])),
+                list(task_state.get("push_records", [])),
+            )
+        if "extraction_output" in task_state:
+            extraction_output = dict(state.get("extraction_output", {}))
+            incoming_extraction_output = dict(task_state.get("extraction_output", {}))
+            extraction_output["fetched_contents"] = merge_candidate_items(
+                list(extraction_output.get("fetched_contents", [])),
+                list(incoming_extraction_output.get("fetched_contents", [])),
+            )
+            extraction_output["evidence_items"] = merge_candidate_items(
+                list(extraction_output.get("evidence_items", [])),
+                list(incoming_extraction_output.get("evidence_items", [])),
+            )
+            extraction_output["content_fallbacks"] = list(
+                extraction_output.get("content_fallbacks", [])
+            ) + list(incoming_extraction_output.get("content_fallbacks", []))
+            extraction_output["extraction_failures"] = list(
+                extraction_output.get("extraction_failures", [])
+            ) + list(incoming_extraction_output.get("extraction_failures", []))
+            state["extraction_output"] = extraction_output
+        if "evaluation_output" in task_state:
+            evaluation_output = dict(state.get("evaluation_output", {}))
+            incoming_evaluation_output = dict(task_state.get("evaluation_output", {}))
+            evaluation_output["deduped_items"] = merge_candidate_items(
+                list(evaluation_output.get("deduped_items", [])),
+                list(incoming_evaluation_output.get("deduped_items", [])),
+            )
+            evaluation_output["scored_items"] = merge_candidate_items(
+                list(evaluation_output.get("scored_items", [])),
+                list(incoming_evaluation_output.get("scored_items", [])),
+            )
+            evaluation_output["final_decisions"] = merge_candidate_items(
+                list(evaluation_output.get("final_decisions", [])),
+                list(incoming_evaluation_output.get("final_decisions", [])),
+            )
+            evaluation_output["decision_reasons"] = list(
+                incoming_evaluation_output.get(
+                    "decision_reasons",
+                    evaluation_output.get("decision_reasons", []),
+                )
+            )
+            evaluation_output["push_records"] = merge_candidate_items(
+                list(evaluation_output.get("push_records", [])),
+                list(incoming_evaluation_output.get("push_records", [])),
+            )
+            if incoming_evaluation_output.get("eval_result"):
+                evaluation_output["eval_result"] = dict(
+                    incoming_evaluation_output["eval_result"]
+                )
+            state["evaluation_output"] = evaluation_output
+        state["tool_results"] = list(state.get("tool_results", [])) + list(
+            task_state.get("tool_results", [])
+        )
+        state["errors"] = list(state.get("errors", [])) + list(task_state.get("errors", []))
+        state["events"] = list(state.get("events", [])) + list(task_state.get("events", []))
+
+    def run_stage_task(task: dict[str, Any]) -> tuple[dict[str, Any], dict[str, Any] | None]:
+        task_state = {
+            **state,
+            "candidate_items": list(state.get("candidate_items", [])),
+            "fetched_contents": list(state.get("fetched_contents", [])),
+            "extracted_items": list(state.get("extracted_items", [])),
+            "scored_items": list(state.get("scored_items", [])),
+            "final_decisions": list(state.get("final_decisions", [])),
+            "decision_reasons": list(state.get("decision_reasons", [])),
+            "push_records": list(state.get("push_records", [])),
+            "tool_results": [],
+            "errors": [],
+            "events": [],
+            "extraction_output": dict(state.get("extraction_output", {})),
+            "evaluation_output": dict(state.get("evaluation_output", {})),
+        }
+        if task["stage"] == "fetch":
+            result = extraction_agent.run_fetch_task(task, task_state)
+            task_state["candidate_items"] = list(
+                task_state.get("retrieval_output", {}).get("candidate_pool", [])
+            )
+            append_event(
+                task_state,
+                "fetch_contents",
+                "Fetched candidate content for candidate task.",
+                payload={"candidate_id": str(result["candidate_id"])},
+            )
+            return task_state, {"fetched_candidate_id": str(result["candidate_id"])}
+        if task["stage"] == "extract":
+            result = extraction_agent.run_extract_task(task, task_state)
+            append_event(
+                task_state,
+                "extract_structured_items",
+                "Extracted structured item for candidate task.",
+                payload={"candidate_id": str(result["candidate_id"])},
+            )
+            return task_state, {"extracted_candidate_id": str(result["candidate_id"])}
+
+        result = evaluation_agent.run_evaluate_task(task, task_state)
+        if result.get("task_status") == "skipped":
+            candidate_id = str(result.get("candidate_id", task["candidate_id"]))
+            skipped = dict(task)
+            skipped["status"] = "skipped"
+            skipped["output_ref"] = {"skipped_candidate_id": candidate_id}
+            skipped["error_code"] = None
+            skipped["error_message"] = None
+            skipped["finished_at"] = datetime.now(UTC).isoformat().replace("+00:00", "Z")
+            return task_state, {"skipped_candidate_id": candidate_id, "__skip__": True}
+        return task_state, {"decision_candidate_id": str(result["candidate_id"])}
+
     orchestrator = CandidateTaskOrchestrator(
         fetch_concurrency=(settings.candidate_fetch_concurrency if settings else 2),
         extract_concurrency=(settings.candidate_extract_concurrency if settings else 2),
@@ -776,72 +971,79 @@ def candidate_task_orchestrator_node(
     )
 
     while queue:
-        task = queue.pop(0)
-        try:
-            if task["stage"] == "fetch":
-                result = extraction_agent.run_fetch_task(task, state)
-                state["candidate_items"] = list(
-                    state.get("retrieval_output", {}).get("candidate_pool", [])
-                )
-                append_event(
-                    state,
-                    "fetch_contents",
-                    "Fetched candidate content for candidate task.",
-                    payload={"candidate_id": str(result["candidate_id"])},
-                )
-                output_ref = {"fetched_candidate_id": str(result["candidate_id"])}
-            elif task["stage"] == "extract":
-                result = extraction_agent.run_extract_task(task, state)
-                append_event(
-                    state,
-                    "extract_structured_items",
-                    "Extracted structured item for candidate task.",
-                    payload={"candidate_id": str(result["candidate_id"])},
-                )
-                output_ref = {"extracted_candidate_id": str(result["candidate_id"])}
-            else:
-                result = evaluation_agent.run_evaluate_task(task, state)
-                if result.get("task_status") == "skipped":
-                    candidate_id = str(
-                        result.get("candidate_id", task["candidate_id"])
-                    )
-                    skipped = dict(task)
-                    skipped["status"] = "skipped"
-                    skipped["output_ref"] = {
-                        "skipped_candidate_id": candidate_id
-                    }
-                    skipped["error_code"] = None
-                    skipped["error_message"] = None
-                    skipped["finished_at"] = datetime.now(UTC).isoformat().replace(
-                        "+00:00", "Z"
-                    )
-                    completed_tasks.append(skipped)
-                    continue
-                output_ref = {"decision_candidate_id": str(result["candidate_id"])}
+        stage = str(queue[0]["stage"])
+        ready_tasks = [task for task in queue if str(task["stage"]) == stage]
+        queue = [task for task in queue if str(task["stage"]) != stage]
+        ready_tasks = [orchestrator.mark_task_in_progress(task) for task in ready_tasks]
+        limit = max(1, orchestrator.concurrency_limit_for_stage(stage))
+        pending_retries: list[dict[str, Any]] = []
+        stage_completed: list[dict[str, Any]] = []
+        stage_failed: list[dict[str, Any]] = []
+        follow_up_tasks: list[dict[str, Any]] = []
 
-            completed = orchestrator.mark_task_completed(task, output_ref=output_ref)
-            completed_tasks.append(completed)
-            queue.extend(orchestrator.build_follow_up_tasks(completed))
-        except Exception as exc:
-            failed = dict(task)
-            failed["status"] = "failed"
-            failed["error_code"] = "tool_error"
-            failed["error_message"] = str(exc)
-            failed["finished_at"] = datetime.now(UTC).isoformat().replace("+00:00", "Z")
-            failed_tasks.append(failed)
-            errors = list(state.get("errors", []))
-            errors.append(
-                {
-                    "tool_name": "candidate_task_orchestrator",
-                    "code": "tool_error",
-                    "message": str(exc),
-                    "details": {
-                        "candidate_id": task["candidate_id"],
-                        "stage": task["stage"],
-                    },
-                }
-            )
-            state["errors"] = errors
+        with ThreadPoolExecutor(max_workers=limit) as executor:
+            future_to_task = {
+                executor.submit(run_stage_task, task): task for task in ready_tasks
+            }
+            for future in as_completed(future_to_task):
+                task = future_to_task[future]
+                try:
+                    task_state, output_ref = future.result()
+                    merge_state_updates(task_state)
+                    if output_ref is not None and output_ref.get("__skip__") is True:
+                        skipped = dict(task)
+                        skipped["status"] = "skipped"
+                        skipped["output_ref"] = {
+                            "skipped_candidate_id": str(output_ref["skipped_candidate_id"])
+                        }
+                        skipped["error_code"] = None
+                        skipped["error_message"] = None
+                        skipped["finished_at"] = datetime.now(UTC).isoformat().replace(
+                            "+00:00", "Z"
+                        )
+                        stage_completed.append(skipped)
+                        persist_task_records([skipped])
+                        continue
+
+                    completed = orchestrator.mark_task_completed(
+                        task,
+                        output_ref=output_ref,
+                    )
+                    stage_completed.append(completed)
+                    persist_task_records([completed])
+                    follow_up_tasks.extend(orchestrator.build_follow_up_tasks(completed))
+                except Exception as exc:
+                    failed = orchestrator.mark_task_failed(
+                        task,
+                        error_code="tool_error",
+                        error_message=str(exc),
+                    )
+                    stage_failed.append(failed)
+                    persist_task_records([failed])
+                    retry_task = orchestrator.build_retry_task(task)
+                    if retry_task is not None:
+                        pending_retries.append(retry_task)
+                    errors = list(state.get("errors", []))
+                    errors.append(
+                        {
+                            "tool_name": "candidate_task_orchestrator",
+                            "code": "tool_error",
+                            "message": str(exc),
+                            "details": {
+                                "candidate_id": task["candidate_id"],
+                                "stage": task["stage"],
+                                "attempt": task.get("attempt", 1),
+                            },
+                        }
+                    )
+                    state["errors"] = errors
+
+        completed_tasks.extend(stage_completed)
+        failed_tasks.extend(stage_failed)
+        if pending_retries:
+            queue = pending_retries + queue
+        else:
+            queue = follow_up_tasks + queue
 
     all_tasks = completed_tasks + failed_tasks
     if state.get("extracted_items"):
@@ -892,41 +1094,6 @@ def candidate_task_orchestrator_node(
         "push_records": list(state.get("push_records", [])),
         "eval_result": dict(state["eval_result"]),
     }
-
-    if (
-        run_repository is not None
-        and all_tasks
-        and hasattr(run_repository, "create_candidate_task_records")
-    ):
-        run_repository.create_candidate_task_records(
-            tuple(
-                CandidateTaskRecordCreateData(
-                    task_id=str(task["task_id"]),
-                    run_id=str(task["run_id"]),
-                    candidate_id=str(task["candidate_id"]),
-                    stage=str(task["stage"]),
-                    status=str(task["status"]),
-                    attempt=int(task.get("attempt", 1)),
-                    max_attempts=int(task.get("max_attempts", 1)),
-                    depends_on_task_ids=tuple(
-                        str(item) for item in task.get("depends_on_task_ids", [])
-                    ),
-                    input_ref=dict(task.get("input_ref", {})),
-                    output_ref=dict(task.get("output_ref", {})),
-                    error_code=(
-                        None if task.get("error_code") is None else str(task["error_code"])
-                    ),
-                    error_message=(
-                        None
-                        if task.get("error_message") is None
-                        else str(task["error_message"])
-                    ),
-                    started_at=None,
-                    finished_at=None,
-                )
-                for task in all_tasks
-            )
-        )
 
     append_event(
         state,

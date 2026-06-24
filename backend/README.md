@@ -112,9 +112,12 @@ demo surfaces.
 Candidate-level orchestration now runs inside the LangGraph monitor flow after
 retrieval. Fetch, extract, and evaluate still remain real specialist
 behaviors, but they are scheduled under `candidate_task_orchestrator` instead
-of being modeled as separate top-level graph nodes. Redis/runtime state owns
-short-lived candidate task coordination, while PostgreSQL persists candidate
-task ledger facts for historical readback.
+of being modeled as separate top-level graph nodes. The orchestrator now uses
+bounded in-process workers per stage, honoring the `candidate_*_concurrency`
+settings while still preserving fetch -> extract -> evaluate ordering for each
+candidate. Redis/runtime state owns short-lived candidate task coordination,
+while PostgreSQL persists candidate task ledger facts, including retry
+attempts, for historical readback.
 `GET /api/monitor/runs/{run_id}/candidate-tasks` exposes durable task evidence.
 
 ### Queue And Worker Flow

@@ -219,6 +219,10 @@ class ExtractionAgent:
         scoped_state = {
             **state,
             "candidate_items": matched,
+            "retrieval_output": {
+                **dict(state.get("retrieval_output", {})),
+                "candidate_pool": matched,
+            },
             "fetched_contents": list(state.get("fetched_contents", [])),
             "extraction_output": dict(state.get("extraction_output", {})),
         }
@@ -262,7 +266,10 @@ class ExtractionAgent:
             **state,
             "fetched_contents": matched,
             "extracted_items": list(state.get("extracted_items", [])),
-            "extraction_output": dict(state.get("extraction_output", {})),
+            "extraction_output": {
+                **dict(state.get("extraction_output", {})),
+                "fetched_contents": matched,
+            },
         }
         self.extract_evidence(scoped_state)
         extracted_items = list(scoped_state.get("extracted_items", []))
