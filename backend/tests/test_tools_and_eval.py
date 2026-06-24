@@ -3285,7 +3285,6 @@ def test_opensearch_history_index_search_excludes_current_run_documents() -> Non
         "OpenAI agent",
         top_k=3,
         exclude_run_id="run_001",
-        exclude_candidate_ids=["cand_001", "cand_002"],
     )
 
     assert search_result == {
@@ -3312,7 +3311,6 @@ def test_opensearch_history_index_search_excludes_current_run_documents() -> Non
                 ],
                 "must_not": [
                     {"term": {"run_id": "run_001"}},
-                    {"terms": {"candidate_id": ["cand_001", "cand_002"]}},
                 ],
             }
         },

@@ -531,20 +531,32 @@ def _build_history_index_search_evidence(search_result: dict[str, Any]) -> dict[
     return {
         "provider": search_result.get("provider"),
         "query": search_result.get("query"),
+        "status": "completed",
         "item_count": len(items),
         "items": items,
     }
 
 
 def _build_history_index_exclusions(state: dict[str, Any]) -> dict[str, Any]:
-    candidate_ids = [
-        str(item["candidate_id"])
-        for item in state.get("candidate_records", [])
-        if item.get("candidate_id") is not None
-    ]
     return {
         "exclude_run_id": str(state.get("run_id", "")).strip() or None,
-        "exclude_candidate_ids": candidate_ids or None,
+        "exclude_candidate_ids": None,
+    }
+
+
+def _build_history_index_search_failure_evidence(
+    *,
+    provider: Any,
+    query: str,
+    error_message: str,
+) -> dict[str, Any]:
+    return {
+        "provider": provider,
+        "query": query,
+        "status": "failed",
+        "item_count": 0,
+        "items": [],
+        "error": {"message": error_message},
     }
 
 
@@ -796,6 +808,7 @@ def supervisor_finalize_node(
                 list(state["candidate_records"])
             )
             if state["history_index_result"].get("provider") != "none":
+                search_failed = False
                 query = _build_history_index_query(state)
                 if query:
                     exclusions = _build_history_index_exclusions(state)
@@ -810,6 +823,14 @@ def supervisor_finalize_node(
                             _build_history_index_search_evidence(search_result)
                         )
                     except Exception as exc:
+                        search_failed = True
+                        state["history_index_result"]["search"] = (
+                            _build_history_index_search_failure_evidence(
+                                provider=state["history_index_result"].get("provider"),
+                                query=query,
+                                error_message=str(exc),
+                            )
+                        )
                         errors = list(state.get("errors", []))
                         errors.append(
                             {
@@ -838,18 +859,19 @@ def supervisor_finalize_node(
                                 "error_message": str(exc),
                             },
                         )
-                append_event(
-                    state,
-                    "index_history",
-                    "Indexed candidate history projection.",
-                    payload={
-                        "provider": state["history_index_result"].get("provider"),
-                        "indexed_count": state["history_index_result"].get(
-                            "indexed_count",
-                            0,
-                        ),
-                    },
-                )
+                if not search_failed:
+                    append_event(
+                        state,
+                        "index_history",
+                        "Indexed candidate history projection.",
+                        payload={
+                            "provider": state["history_index_result"].get("provider"),
+                            "indexed_count": state["history_index_result"].get(
+                                "indexed_count",
+                                0,
+                            ),
+                        },
+                    )
         except Exception as exc:
             errors = list(state.get("errors", []))
             errors.append(

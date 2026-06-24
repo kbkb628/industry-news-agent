@@ -94,8 +94,7 @@ class OpenSearchHistoryIndex:
         must_not: list[dict[str, Any]] = []
         if exclude_run_id:
             must_not.append({"term": {"run_id": exclude_run_id}})
-        if exclude_candidate_ids:
-            must_not.append({"terms": {"candidate_id": list(exclude_candidate_ids)}})
+        _ = exclude_candidate_ids
 
         query_body: dict[str, Any] = {
             "bool": {
