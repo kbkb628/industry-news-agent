@@ -11,7 +11,14 @@ from langgraph.graph.state import CompiledStateGraph
 from pydantic import ValidationError
 from sqlalchemy.orm import Session
 
-from app.agent.contracts import build_empty_candidate_task_output
+from app.agent.contracts import (
+    build_empty_business_memory,
+    build_empty_candidate_task_output,
+    build_empty_evaluation_output,
+    build_empty_extraction_output,
+    build_empty_planner_output,
+    build_empty_retrieval_output,
+)
 from app.agent.graph import build_monitor_graph
 from app.core.config import Settings
 from app.core.config import get_settings
@@ -88,6 +95,11 @@ def _build_initial_state(topic: TopicRecord, run_id: str) -> dict[str, Any]:
         "business_context": {},
         "source_plan": [],
         "candidate_items": [],
+        "business_memory": build_empty_business_memory(),
+        "planner_output": build_empty_planner_output(),
+        "retrieval_output": build_empty_retrieval_output(),
+        "extraction_output": build_empty_extraction_output(),
+        "evaluation_output": build_empty_evaluation_output(),
         "fetched_contents": [],
         "extracted_items": [],
         "deduped_items": [],

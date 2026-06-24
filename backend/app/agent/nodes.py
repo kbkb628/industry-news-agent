@@ -943,10 +943,14 @@ def supervisor_finalize_node(
     settings: Settings | None = None,
     history_index_http_client: Any | None = None,
 ) -> dict[str, Any]:
+    planner_output = dict(state.get("planner_output", {}))
     retrieval_output = dict(state.get("retrieval_output", {}))
     extraction_output = dict(state.get("extraction_output", {}))
     evaluation_output = dict(state.get("evaluation_output", {}))
 
+    state["expanded_queries"] = list(
+        planner_output.get("expanded_queries", state.get("expanded_queries", []))
+    )
     state["candidate_items"] = list(
         retrieval_output.get("candidate_pool", state.get("candidate_items", []))
     )

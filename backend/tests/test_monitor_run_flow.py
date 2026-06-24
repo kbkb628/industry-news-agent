@@ -344,6 +344,9 @@ def test_supervisor_finalize_mirrors_structured_outputs_to_legacy_fields() -> No
     state = {
         "run_id": "run_001",
         "topic_id": "topic_001",
+        "planner_output": {
+            "expanded_queries": ["ai agents funding", "enterprise automation launch"],
+        },
         "retrieval_output": {
             "candidate_pool": [{"candidate_id": "cand_001"}],
         },
@@ -367,10 +370,15 @@ def test_supervisor_finalize_mirrors_structured_outputs_to_legacy_fields() -> No
 
     result = supervisor_finalize_node(state)
 
+    assert result["expanded_queries"] == result["planner_output"]["expanded_queries"]
     assert result["candidate_items"] == result["retrieval_output"]["candidate_pool"]
     assert result["fetched_contents"] == result["extraction_output"]["fetched_contents"]
     assert result["extracted_items"] == result["extraction_output"]["evidence_items"]
+    assert result["deduped_items"] == result["evaluation_output"]["deduped_items"]
+    assert result["scored_items"] == result["evaluation_output"]["scored_items"]
     assert result["final_decisions"] == result["evaluation_output"]["final_decisions"]
+    assert result["decision_reasons"] == result["evaluation_output"]["decision_reasons"]
+    assert result["push_records"] == result["evaluation_output"]["push_records"]
     assert result["eval_result"] == result["evaluation_output"]["eval_result"]
 
 
@@ -3190,6 +3198,40 @@ def test_run_detail_returns_completed_state() -> None:
     assert payload["integration_runtime"]["browser"]["configured_provider"] == "playwright_mcp"
     assert "fallback_used" in payload["integration_runtime"]["browser"]
     assert payload["errors"] == []
+
+
+def test_build_initial_state_exposes_stable_empty_structured_sections() -> None:
+    from app.agent.contracts import (
+        build_empty_business_memory,
+        build_empty_evaluation_output,
+        build_empty_extraction_output,
+        build_empty_planner_output,
+        build_empty_retrieval_output,
+    )
+    from app.api.monitor import _build_initial_state
+
+    topic = TopicRecord(
+        topic_id="topic_ai_agent",
+        name="AI Agent",
+        description="Track enterprise AI agent launches and deployment updates.",
+        seed_keywords=("OpenAI", "enterprise", "automation"),
+        trusted_sources=("AI Daily RSS", "AI Search"),
+        exclude_keywords=("rumor",),
+        push_threshold=0.72,
+        cooldown_hours=24,
+        enabled=True,
+        schedule_cron="0 */6 * * *",
+        created_at=datetime(2026, 6, 24, 9, 0, tzinfo=UTC),
+        updated_at=datetime(2026, 6, 24, 9, 0, tzinfo=UTC),
+    )
+
+    state = _build_initial_state(topic, "run_initial_001")
+
+    assert state["planner_output"] == build_empty_planner_output()
+    assert state["retrieval_output"] == build_empty_retrieval_output()
+    assert state["extraction_output"] == build_empty_extraction_output()
+    assert state["evaluation_output"] == build_empty_evaluation_output()
+    assert state["business_memory"] == build_empty_business_memory()
 
 
 def test_static_run_pages_describe_runtime_evidence_sections() -> None:
