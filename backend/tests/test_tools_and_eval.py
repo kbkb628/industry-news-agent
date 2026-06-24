@@ -3493,6 +3493,98 @@ def test_sqlalchemy_repository_lists_candidate_task_records_by_candidate(
         engine.dispose()
 
 
+def test_candidate_orchestrator_creates_fetch_tasks_from_candidate_pool() -> None:
+    from app.agent.candidate_orchestrator import CandidateTaskOrchestrator
+
+    orchestrator = CandidateTaskOrchestrator()
+    state = {
+        "run_id": "run_orchestrator",
+        "retrieval_output": {
+            "candidate_pool": [
+                {"candidate_id": "cand_001", "title": "AI Agent update"},
+                {"candidate_id": "cand_002", "title": "MCP tool launch"},
+            ]
+        },
+        "candidate_task_plan": [],
+        "candidate_task_runtime": {},
+        "candidate_task_summary": {},
+    }
+
+    result = orchestrator.build_initial_tasks(state)
+
+    assert [task["task_id"] for task in result] == [
+        "run_orchestrator:fetch:cand_001",
+        "run_orchestrator:fetch:cand_002",
+    ]
+    assert all(task["stage"] == "fetch" for task in result)
+    assert all(task["status"] == "ready" for task in result)
+
+
+def test_candidate_orchestrator_creates_extract_task_after_fetch_completion() -> None:
+    from app.agent.candidate_orchestrator import CandidateTaskOrchestrator
+
+    orchestrator = CandidateTaskOrchestrator()
+    task = {
+        "task_id": "run_orchestrator:fetch:cand_001",
+        "run_id": "run_orchestrator",
+        "candidate_id": "cand_001",
+        "stage": "fetch",
+        "status": "completed",
+        "attempt": 1,
+        "max_attempts": 2,
+        "depends_on_task_ids": [],
+        "input_ref": {"candidate_id": "cand_001"},
+        "output_ref": {"fetched_candidate_id": "cand_001"},
+    }
+
+    next_tasks = orchestrator.build_follow_up_tasks(task)
+
+    assert next_tasks == [
+        {
+            "task_id": "run_orchestrator:extract:cand_001",
+            "run_id": "run_orchestrator",
+            "candidate_id": "cand_001",
+            "stage": "extract",
+            "status": "ready",
+            "attempt": 1,
+            "max_attempts": 2,
+            "depends_on_task_ids": ["run_orchestrator:fetch:cand_001"],
+            "input_ref": {"candidate_id": "cand_001"},
+            "output_ref": {},
+            "error_code": None,
+            "error_message": None,
+            "started_at": None,
+            "finished_at": None,
+        }
+    ]
+
+
+def test_candidate_orchestrator_runtime_summary_counts_statuses() -> None:
+    from app.agent.candidate_orchestrator import CandidateTaskOrchestrator
+
+    orchestrator = CandidateTaskOrchestrator(
+        fetch_concurrency=2,
+        extract_concurrency=1,
+        evaluate_concurrency=1,
+    )
+    tasks = [
+        {"stage": "fetch", "status": "ready"},
+        {"stage": "fetch", "status": "in_progress"},
+        {"stage": "extract", "status": "completed"},
+        {"stage": "evaluate", "status": "failed"},
+    ]
+
+    runtime = orchestrator.build_runtime_view(tasks)
+    summary = orchestrator.build_summary(tasks)
+
+    assert runtime["ready_count"] == 1
+    assert runtime["in_progress_count"] == 1
+    assert runtime["stage_slots"]["fetch"] == {"limit": 2, "in_progress": 1}
+    assert summary["task_count"] == 4
+    assert summary["failed_count"] == 1
+    assert summary["extract_completed_count"] == 1
+
+
 def test_task6_fetch_preserves_candidate_identity_when_urls_canonicalize_equal(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
