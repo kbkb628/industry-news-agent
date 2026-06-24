@@ -261,6 +261,7 @@ def get_run_state(
         candidate_items=list(snapshot.get("candidate_items", [])),
         final_decisions=list(snapshot.get("final_decisions", [])),
         candidate_task_summary=dict(snapshot.get("candidate_task_summary", {})),
+        integration_runtime=dict(snapshot.get("integration_runtime", {})),
         errors=list(snapshot.get("errors", [])),
         started_at=run_record.started_at,
         finished_at=run_record.finished_at,

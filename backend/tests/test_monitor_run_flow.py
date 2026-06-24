@@ -374,6 +374,89 @@ def test_supervisor_finalize_mirrors_structured_outputs_to_legacy_fields() -> No
     assert result["eval_result"] == result["evaluation_output"]["eval_result"]
 
 
+def test_supervisor_finalize_adds_integration_runtime_summary_to_snapshot() -> None:
+    from app.agent.nodes import supervisor_finalize_node
+
+    settings = Settings(
+        database_url="postgresql+psycopg://user:pass@localhost:5432/news_agent",
+        redis_url="redis://localhost:6379/0",
+        mcp_gateway_provider="onesearch",
+        onesearch_base_url="http://localhost:8090",
+        browser_fetch_provider="playwright_mcp",
+        playwright_mcp_base_url="http://localhost:8931",
+        browser_allowed_domains=["example.com"],
+    )
+    state = {
+        "run_id": "run_runtime_001",
+        "topic_id": "topic_001",
+        "retrieval_output": {
+            "candidate_pool": [{"candidate_id": "cand_001"}],
+        },
+        "extraction_output": {
+            "fetched_contents": [
+                {
+                    "candidate_id": "cand_001",
+                    "fetch_method": "browser_fallback",
+                    "url": "https://example.com/runtime",
+                }
+            ],
+            "evidence_items": [{"extracted_id": "ext_001", "candidate_id": "cand_001"}],
+        },
+        "evaluation_output": {
+            "final_decisions": [{"candidate_id": "cand_001", "should_push": True}],
+            "eval_result": {"push_count": 1},
+        },
+        "tool_results": [
+            {
+                "tool_name": "search_news",
+                "metadata": {
+                    "provider": "onesearch_mcp",
+                    "used_fallback": True,
+                    "fallback_provider": "mock_search",
+                    "fallback_reason": "onesearch unavailable",
+                },
+            }
+        ],
+        "events": [],
+        "errors": [],
+        "status": "running",
+    }
+
+    result = supervisor_finalize_node(state, settings=settings)
+
+    assert result["integration_runtime"]["mcp"]["configured_provider"] == "onesearch"
+    assert result["integration_runtime"]["mcp"]["used_in_run"] is True
+    assert result["integration_runtime"]["mcp"]["fallback_used"] is True
+    assert result["integration_runtime"]["browser"]["fallback_used"] is True
+
+
+def test_supervisor_finalize_preserves_existing_integration_runtime_snapshot() -> None:
+    from app.agent.nodes import supervisor_finalize_node
+
+    state = {
+        "run_id": "run_runtime_existing",
+        "topic_id": "topic_001",
+        "retrieval_output": {},
+        "extraction_output": {},
+        "evaluation_output": {},
+        "integration_runtime": {
+            "mcp": {"configured_provider": "onesearch", "fallback_used": False},
+            "browser": {"fallback_used": False},
+        },
+        "tool_results": [],
+        "events": [],
+        "errors": [],
+        "status": "running",
+    }
+
+    result = supervisor_finalize_node(state)
+
+    assert result["integration_runtime"] == {
+        "mcp": {"configured_provider": "onesearch", "fallback_used": False},
+        "browser": {"fallback_used": False},
+    }
+
+
 def test_build_monitor_graph_uses_stage_level_multi_agent_nodes() -> None:
     from app.agent.graph import build_monitor_graph
 
@@ -3062,7 +3145,23 @@ def test_run_detail_returns_completed_state() -> None:
     topic_repository = InMemoryTopicRepository()
     run_repository = InMemoryMonitorRunRepository()
 
-    with _build_monitor_client(topic_repository, run_repository) as client:
+    settings = Settings(
+        database_url="postgresql+psycopg://user:pass@localhost:5432/news_agent",
+        redis_url="redis://localhost:6379/0",
+        mcp_gateway_provider="onesearch",
+        onesearch_base_url="http://localhost:8090",
+        browser_fetch_provider="playwright_mcp",
+        playwright_mcp_base_url="http://localhost:8931",
+        browser_allowed_domains=["example.com"],
+    )
+
+    graph = build_monitor_graph(
+        llm=MockLLM(),
+        run_repository=run_repository,
+        settings=settings,
+    )
+
+    with _build_monitor_client(topic_repository, run_repository, graph=graph) as client:
         topic = _create_monitor_topic(client)
         run_payload = client.post(f"/api/monitor/{topic['topic_id']}/run").json()
         _wait_until(
@@ -3079,7 +3178,25 @@ def test_run_detail_returns_completed_state() -> None:
     assert payload["expanded_queries"]
     assert len(payload["candidate_items"]) == 3
     assert len(payload["final_decisions"]) == 2
+    assert payload["integration_runtime"]["mcp"]["configured_provider"] == "onesearch"
+    assert "used_in_run" in payload["integration_runtime"]["mcp"]
+    assert payload["integration_runtime"]["browser"]["configured_provider"] == "playwright_mcp"
+    assert "fallback_used" in payload["integration_runtime"]["browser"]
     assert payload["errors"] == []
+
+
+def test_static_run_pages_describe_runtime_evidence_sections() -> None:
+    app = create_app()
+
+    with TestClient(app) as client:
+        run_detail_response = client.get("/runs/run_runtime_page")
+        resume_alignment_response = client.get("/resume-alignment")
+
+    assert run_detail_response.status_code == 200
+    assert "MCP runtime" in run_detail_response.text
+    assert "Browser fallback runtime" in run_detail_response.text
+    assert resume_alignment_response.status_code == 200
+    assert "per-run configuration/usage/degradation evidence" in resume_alignment_response.text
 
 
 def test_reporting_endpoints_return_persisted_monitor_artifacts() -> None:

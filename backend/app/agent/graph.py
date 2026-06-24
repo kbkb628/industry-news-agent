@@ -11,6 +11,7 @@ from app.agent.nodes import (
     supervisor_bootstrap_node,
     supervisor_finalize_node,
 )
+from app.integrations.runtime_summary import build_integration_runtime
 from app.agent.state import MonitorState
 from app.agent.planner_agent import PlannerAgent
 from app.agent.retrieval_agent import RetrievalAgent
@@ -167,6 +168,16 @@ def _run_supervisor_finalize_stage(
         state,
         run_repository=run_repository,
         gateway=gateway,
+    )
+    state["integration_runtime"] = build_integration_runtime(
+        settings=settings,
+        tool_results=list(state.get("tool_results", [])),
+        fetched_contents=list(
+            dict(state.get("extraction_output", {})).get(
+                "fetched_contents",
+                state.get("fetched_contents", []),
+            )
+        ),
     )
     state = supervisor_finalize_node(
         state,

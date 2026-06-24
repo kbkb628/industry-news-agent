@@ -31,4 +31,31 @@
     <li>Finish on push outcomes and quality metrics to tie engineering detail back to product value.</li>
   </ul>
 </section>
+
+<section class="section-card">
+  <h3>MCP runtime</h3>
+  <p>
+    When the monitor run is wired to an MCP-backed search adapter, the final run snapshot can
+    carry per-run configuration and usage evidence such as the selected provider path, whether the
+    adapter was actually used, and whether the run degraded to a local fallback.
+  </p>
+  <p>
+    Treat this section as runtime evidence, not a promise that a live MCP deployment always exists:
+    some environments intentionally stay on the local gateway path, and some runs may show no MCP
+    usage at all.
+  </p>
+</section>
+
+<section class="section-card">
+  <h3>Browser fallback runtime</h3>
+  <p>
+    Browser fallback runtime explains whether candidate fetching escalated beyond normal HTTP reads.
+    When Playwright-backed browser fetch is wired, the run can preserve evidence about allowed-domain
+    gating, actual fallback usage, fallback reason, and degraded browser attempts.
+  </p>
+  <p>
+    This remains optional by design. A truthful run may show pure HTTP fetching with no browser
+    escalation, or it may show fallback evidence only for the specific candidates that needed it.
+  </p>
+</section>
 {% endblock %}

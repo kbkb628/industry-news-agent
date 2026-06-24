@@ -20,6 +20,7 @@ from app.agent.retrieval_agent import RetrievalAgent
 from app.core.config import Settings
 from app.eval.judge import build_eval_judge
 from app.eval.rule_scorer import score_run
+from app.integrations.runtime_summary import build_integration_runtime
 from app.llm.base import BaseLLMClient
 from app.llm.mock_client import MockLLM
 from app.mcp.local_gateway import LocalToolGateway
@@ -973,6 +974,14 @@ def supervisor_finalize_node(
     state["eval_result"] = dict(
         evaluation_output.get("eval_result", state.get("eval_result", {}))
     )
+    integration_runtime = dict(state.get("integration_runtime", {}))
+    if not integration_runtime:
+        integration_runtime = build_integration_runtime(
+            settings=settings,
+            tool_results=list(state.get("tool_results", [])),
+            fetched_contents=list(state.get("fetched_contents", [])),
+        )
+    state["integration_runtime"] = integration_runtime
     state["status"] = "completed"
 
     if state.get("run_context"):

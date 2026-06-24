@@ -36,6 +36,7 @@ class MonitorRunStateResponse(BaseModel):
     candidate_items: list[dict[str, Any]] = Field(default_factory=list)
     final_decisions: list[dict[str, Any]] = Field(default_factory=list)
     candidate_task_summary: dict[str, Any] = Field(default_factory=dict)
+    integration_runtime: dict[str, Any] = Field(default_factory=dict)
     errors: list[dict[str, Any]] = Field(default_factory=list)
     started_at: datetime | None = None
     finished_at: datetime | None = None
