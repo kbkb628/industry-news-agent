@@ -62,7 +62,7 @@ def build_integration_runtime(
         "mcp": {
             "configured_provider": mcp_provider,
             "enabled": mcp_enabled,
-            "selected_tool_path": "onesearch_mcp" if mcp_enabled else "local_gateway",
+            "selected_tool_path": "search_news",
             "base_url_configured": mcp_base_url_configured,
             "used_in_run": bool(mcp_tool_results),
             "fallback_used": mcp_fallback_result is not None,
@@ -81,7 +81,7 @@ def build_integration_runtime(
         "browser": {
             "configured_provider": browser_provider,
             "enabled": browser_enabled,
-            "selected_tool_path": "playwright_mcp" if browser_enabled else "http",
+            "selected_tool_path": "fetch_article_content.browser_fallback",
             "base_url_configured": browser_base_url_configured,
             "allowed_domains": allowed_domains,
             "used_in_run": bool(browser_fetches),

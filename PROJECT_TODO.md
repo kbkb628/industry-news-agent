@@ -5,6 +5,8 @@
 ## in_progress
 
 ## completed
+- implement mcp and playwright runtime evidence slice
+- spec and planning for mcp and playwright runtime evidence
 - implement structured RAG grounding for planner and evaluation
 - implement structured RAG grounding plan
 - spec and planning for structured RAG grounding

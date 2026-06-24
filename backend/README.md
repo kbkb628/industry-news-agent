@@ -186,7 +186,10 @@ The OneSearch path currently applies only to `search_news`. All other tools
 remain local/in-process. If the OneSearch provider is unavailable, the runtime
 degrades visibly to deterministic local `mock_search` behavior and records the
 fallback in tool metadata, run events, and eval metrics. This is an integration
-boundary, not a claim of verified live MCP service deployment.
+boundary, not a claim of verified live MCP service deployment. When configured,
+the run snapshot now exposes `integration_runtime.mcp` so a reviewer can see
+whether the MCP-backed path was enabled, actually used, or degraded to
+fallback in that specific run.
 
 Optional search-provider variables:
 
@@ -223,7 +226,13 @@ Optional browser fallback variables:
 Browser fallback is intentionally last in the fetch chain: fixture/local content
 first, plain HTTP second, browser provider only after HTTP failure. Failed browser
 fallbacks remain visible as failed candidate fetches instead of being presented
-as complete article content.
+as complete article content. When configured, the run snapshot now exposes
+`integration_runtime.browser` so a reviewer can see whether the browser
+fallback path was enabled, actually used, and whether degraded browser-backed
+attempts occurred in that specific run.
+
+The `integration_runtime` section is runtime evidence, not a claim that every
+environment always wires live external MCP or Playwright-compatible services.
 
 Optional history-index variables:
 

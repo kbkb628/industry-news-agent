@@ -3225,7 +3225,7 @@ def test_build_integration_runtime_reports_enabled_mcp_and_browser_config() -> N
         "mcp": {
             "configured_provider": "onesearch",
             "enabled": True,
-            "selected_tool_path": "onesearch_mcp",
+            "selected_tool_path": "search_news",
             "base_url_configured": True,
             "used_in_run": False,
             "fallback_used": False,
@@ -3236,7 +3236,7 @@ def test_build_integration_runtime_reports_enabled_mcp_and_browser_config() -> N
         "browser": {
             "configured_provider": "playwright_mcp",
             "enabled": True,
-            "selected_tool_path": "playwright_mcp",
+            "selected_tool_path": "fetch_article_content.browser_fallback",
             "base_url_configured": True,
             "allowed_domains": ["example.com", "news.example.com"],
             "used_in_run": False,
@@ -3266,7 +3266,7 @@ def test_build_integration_runtime_disables_browser_when_required_config_is_miss
     assert runtime["browser"] == {
         "configured_provider": "playwright_mcp",
         "enabled": False,
-        "selected_tool_path": "http",
+        "selected_tool_path": "fetch_article_content.browser_fallback",
         "base_url_configured": False,
         "allowed_domains": ["example.com"],
         "used_in_run": False,
@@ -3338,7 +3338,7 @@ def test_build_integration_runtime_derives_usage_and_fallback_counts_from_run_ev
     assert runtime["mcp"] == {
         "configured_provider": "onesearch",
         "enabled": True,
-        "selected_tool_path": "onesearch_mcp",
+        "selected_tool_path": "search_news",
         "base_url_configured": True,
         "used_in_run": True,
         "fallback_used": True,
@@ -3349,7 +3349,7 @@ def test_build_integration_runtime_derives_usage_and_fallback_counts_from_run_ev
     assert runtime["browser"] == {
         "configured_provider": "playwright_mcp",
         "enabled": True,
-        "selected_tool_path": "playwright_mcp",
+        "selected_tool_path": "fetch_article_content.browser_fallback",
         "base_url_configured": True,
         "allowed_domains": ["example.com"],
         "used_in_run": True,
