@@ -32,6 +32,7 @@ from app.eval.judge import (
     MockEvalJudge,
 )
 from app.eval.rule_scorer import score_run
+from app.integrations.runtime_summary import build_integration_runtime
 from app.scheduler.worker import (
     InMemoryRunQueue,
     RedisStreamRunQueue,
@@ -3201,6 +3202,162 @@ def test_build_monitor_graph_degrades_to_local_gateway_when_onesearch_config_is_
     gateway = _build_default_gateway(MockLLM(), settings)
 
     assert isinstance(gateway, LocalToolGateway)
+
+
+def test_build_integration_runtime_reports_enabled_mcp_and_browser_config() -> None:
+    settings = Settings(
+        database_url="postgresql+psycopg://user:pass@localhost:5432/news_agent",
+        redis_url="redis://localhost:6379/0",
+        mcp_gateway_provider="onesearch",
+        onesearch_base_url="http://localhost:8090",
+        browser_fetch_provider="playwright_mcp",
+        playwright_mcp_base_url="http://localhost:8931",
+        browser_allowed_domains=["example.com", "news.example.com"],
+    )
+
+    runtime = build_integration_runtime(
+        settings=settings,
+        tool_results=[],
+        fetched_contents=[],
+    )
+
+    assert runtime == {
+        "mcp": {
+            "configured_provider": "onesearch",
+            "enabled": True,
+            "selected_tool_path": "onesearch_mcp",
+            "base_url_configured": True,
+            "used_in_run": False,
+            "fallback_used": False,
+            "fallback_provider": None,
+            "fallback_reason": None,
+            "tool_call_count": 0,
+        },
+        "browser": {
+            "configured_provider": "playwright_mcp",
+            "enabled": True,
+            "selected_tool_path": "playwright_mcp",
+            "base_url_configured": True,
+            "allowed_domains": ["example.com", "news.example.com"],
+            "used_in_run": False,
+            "fallback_used": False,
+            "fallback_reason": None,
+            "browser_fetch_count": 0,
+            "failed_browser_fetch_count": 0,
+        },
+    }
+
+
+def test_build_integration_runtime_disables_browser_when_required_config_is_missing() -> None:
+    settings = Settings(
+        database_url="postgresql+psycopg://user:pass@localhost:5432/news_agent",
+        redis_url="redis://localhost:6379/0",
+        browser_fetch_provider="playwright_mcp",
+        playwright_mcp_base_url=None,
+        browser_allowed_domains=["example.com"],
+    )
+
+    runtime = build_integration_runtime(
+        settings=settings,
+        tool_results=[],
+        fetched_contents=[],
+    )
+
+    assert runtime["browser"] == {
+        "configured_provider": "playwright_mcp",
+        "enabled": False,
+        "selected_tool_path": "http",
+        "base_url_configured": False,
+        "allowed_domains": ["example.com"],
+        "used_in_run": False,
+        "fallback_used": False,
+        "fallback_reason": None,
+        "browser_fetch_count": 0,
+        "failed_browser_fetch_count": 0,
+    }
+
+
+def test_build_integration_runtime_derives_usage_and_fallback_counts_from_run_evidence() -> None:
+    settings = Settings(
+        database_url="postgresql+psycopg://user:pass@localhost:5432/news_agent",
+        redis_url="redis://localhost:6379/0",
+        mcp_gateway_provider="onesearch",
+        onesearch_base_url="http://localhost:8090",
+        browser_fetch_provider="playwright_mcp",
+        playwright_mcp_base_url="http://localhost:8931",
+        browser_allowed_domains=["example.com"],
+    )
+
+    runtime = build_integration_runtime(
+        settings=settings,
+        tool_results=[
+            {
+                "tool_name": "search_news",
+                "metadata": {
+                    "provider": "onesearch_mcp",
+                    "used_fallback": True,
+                    "fallback_provider": "mock_search",
+                    "fallback_reason": "onesearch unavailable",
+                },
+            },
+            {
+                "tool_name": "search_news",
+                "metadata": {
+                    "provider": "onesearch_mcp",
+                    "used_fallback": False,
+                },
+            },
+            {
+                "tool_name": "rss_fetch",
+                "metadata": {
+                    "provider": "rss",
+                },
+            },
+        ],
+        fetched_contents=[
+            {
+                "candidate_id": "cand_browser_success",
+                "fetch_status": "fetched",
+                "fetch_method": "browser_fallback",
+                "fetch_fallback_reason": "http failed",
+            },
+            {
+                "candidate_id": "cand_browser_failed",
+                "fetch_status": "failed",
+                "fetch_error": "browser failed",
+                "fetch_fallback_reason": "http failed",
+            },
+            {
+                "candidate_id": "cand_http_success",
+                "fetch_status": "fetched",
+                "fetch_method": "http",
+            },
+        ],
+    )
+
+    assert runtime["mcp"] == {
+        "configured_provider": "onesearch",
+        "enabled": True,
+        "selected_tool_path": "onesearch_mcp",
+        "base_url_configured": True,
+        "used_in_run": True,
+        "fallback_used": True,
+        "fallback_provider": "mock_search",
+        "fallback_reason": "onesearch unavailable",
+        "tool_call_count": 2,
+    }
+    assert runtime["browser"] == {
+        "configured_provider": "playwright_mcp",
+        "enabled": True,
+        "selected_tool_path": "playwright_mcp",
+        "base_url_configured": True,
+        "allowed_domains": ["example.com"],
+        "used_in_run": True,
+        "fallback_used": True,
+        "fallback_reason": "http failed",
+        "browser_fetch_count": 1,
+        "failed_browser_fetch_count": 1,
+    }
 
 
 def test_task6_search_provider_falls_back_to_mock_when_real_provider_fails() -> None:
