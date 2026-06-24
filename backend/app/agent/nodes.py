@@ -948,9 +948,9 @@ def supervisor_finalize_node(
     extraction_output = dict(state.get("extraction_output", {}))
     evaluation_output = dict(state.get("evaluation_output", {}))
 
-    state["expanded_queries"] = list(
-        planner_output.get("expanded_queries", state.get("expanded_queries", []))
-    )
+    planner_expanded_queries = planner_output.get("expanded_queries")
+    if planner_expanded_queries:
+        state["expanded_queries"] = list(planner_expanded_queries)
     state["candidate_items"] = list(
         retrieval_output.get("candidate_pool", state.get("candidate_items", []))
     )

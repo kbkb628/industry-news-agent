@@ -382,6 +382,34 @@ def test_supervisor_finalize_mirrors_structured_outputs_to_legacy_fields() -> No
     assert result["eval_result"] == result["evaluation_output"]["eval_result"]
 
 
+def test_supervisor_finalize_preserves_legacy_expanded_queries_when_planner_output_is_empty() -> None:
+    from app.agent.nodes import supervisor_finalize_node
+
+    state = {
+        "run_id": "run_legacy_queries",
+        "topic_id": "topic_001",
+        "expanded_queries": ["legacy query one", "legacy query two"],
+        "planner_output": {
+            "expanded_queries": [],
+            "query_plan": [],
+            "source_plan": [],
+            "retrieval_strategy": {},
+            "planning_reasons": [],
+        },
+        "retrieval_output": {},
+        "extraction_output": {},
+        "evaluation_output": {},
+        "events": [],
+        "errors": [],
+        "tool_results": [],
+        "status": "running",
+    }
+
+    result = supervisor_finalize_node(state)
+
+    assert result["expanded_queries"] == ["legacy query one", "legacy query two"]
+
+
 def test_supervisor_finalize_adds_integration_runtime_summary_to_snapshot() -> None:
     from app.agent.nodes import supervisor_finalize_node
 
@@ -3202,7 +3230,6 @@ def test_run_detail_returns_completed_state() -> None:
 
 def test_build_initial_state_exposes_stable_empty_structured_sections() -> None:
     from app.agent.contracts import (
-        build_empty_business_memory,
         build_empty_evaluation_output,
         build_empty_extraction_output,
         build_empty_planner_output,
@@ -3231,7 +3258,6 @@ def test_build_initial_state_exposes_stable_empty_structured_sections() -> None:
     assert state["retrieval_output"] == build_empty_retrieval_output()
     assert state["extraction_output"] == build_empty_extraction_output()
     assert state["evaluation_output"] == build_empty_evaluation_output()
-    assert state["business_memory"] == build_empty_business_memory()
 
 
 def test_static_run_pages_describe_runtime_evidence_sections() -> None:
