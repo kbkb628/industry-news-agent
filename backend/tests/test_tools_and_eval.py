@@ -2523,6 +2523,14 @@ def test_score_candidates_tool_uses_semantic_memory_for_trusted_source_and_guida
                 "source_name": "OpenWebSearch",
                 "url": "https://www.openai.com/news/agents",
                 "keywords": ["AI Agent"],
+            },
+            {
+                "candidate_id": "cand_002",
+                "title": "OpenAI shares agent rollout details",
+                "summary": "Trusted source identified from source_name normalization",
+                "source_name": "www.openai.com",
+                "url": "https://example.com/not-trusted",
+                "keywords": ["AI Agent"],
             }
         ],
         business_context={
@@ -2543,11 +2551,18 @@ def test_score_candidates_tool_uses_semantic_memory_for_trusted_source_and_guida
     )
 
     assert response.data is not None
-    article = response.data["articles"][0]
-    assert "semantic trusted source +0.10" in article["score_breakdown"]
-    assert article["rag_guidance_hits"] == ["push_rules", "history_guidance"]
-    assert article["trusted_source_match"] is True
-    assert "guidance: push_rules, history_guidance" in article["score_breakdown"]
+    articles = {article["candidate_id"]: article for article in response.data["articles"]}
+
+    provider_label_article = articles["cand_001"]
+    assert "semantic trusted source +0.10" in provider_label_article["score_breakdown"]
+    assert provider_label_article["rag_guidance_hits"] == ["push_rules", "history_guidance"]
+    assert provider_label_article["trusted_source_match"] is True
+    assert "guidance: push_rules, history_guidance" in provider_label_article["score_breakdown"]
+
+    normalized_source_name_article = articles["cand_002"]
+    assert "trusted source +0.10" in normalized_source_name_article["score_breakdown"]
+    assert "semantic trusted source +0.10" in normalized_source_name_article["score_breakdown"]
+    assert normalized_source_name_article["trusted_source_match"] is True
 
 
 def test_task6_dedup_uses_content_fingerprint_in_addition_to_url_and_title() -> None:

@@ -88,7 +88,7 @@ class ScoreCandidatesTool(FixtureTool):
                     f"seed keyword overlap +{bonus:.2f} ({', '.join(seed_hits)})"
                 )
 
-            source_name = str(article["source_name"]).strip().lower()
+            source_name = _normalized_domain(article.get("source_name", ""))
             url_host = _normalized_domain(article.get("url", ""))
             trusted_match_targets = {target for target in (source_name, url_host) if target}
             if trusted_match_targets & trusted_sources:
