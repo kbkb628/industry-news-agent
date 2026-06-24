@@ -899,9 +899,9 @@ def test_evaluation_agent_produces_rag_guidance_metrics() -> None:
 
     result = agent.run(state)
 
-    assert result["eval_result"]["rag_guidance_applied_count"] >= 1
+    assert result["eval_result"]["rag_guidance_applied_count"] == 1
     assert result["eval_result"]["trusted_source_match_count"] == 1
-    assert result["eval_result"]["rule_guidance_hits"] >= 1
+    assert result["eval_result"]["rule_guidance_hits"] == 2
     assert "trusted source" in result["final_decisions"][0]["decision_reason"].lower()
 
 

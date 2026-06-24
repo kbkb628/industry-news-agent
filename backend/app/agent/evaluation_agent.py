@@ -73,13 +73,13 @@ def _call_tool(
 def _build_rag_guidance_metrics(scored_items: list[dict[str, Any]]) -> dict[str, int]:
     return {
         "rag_guidance_applied_count": sum(
-            1 for item in scored_items if int(item.get("rag_guidance_hits", 0)) > 0
+            1 for item in scored_items if item.get("rag_guidance_hits")
         ),
         "trusted_source_match_count": sum(
-            1 for item in scored_items if bool(item.get("trusted_source_match"))
+            1 for item in scored_items if item.get("trusted_source_match") is True
         ),
         "rule_guidance_hits": sum(
-            int(item.get("rule_guidance_hits", 0)) for item in scored_items
+            len(item.get("rag_guidance_hits", [])) for item in scored_items
         ),
     }
 

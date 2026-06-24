@@ -61,9 +61,7 @@ class ScoreCandidatesTool(FixtureTool):
 
             score = llm_score.score
             breakdown_parts = [f"base llm={llm_score.score:.2f}"]
-            trusted_source_match = False
-            rag_guidance_hits = 0
-            rule_guidance_hits = 0
+            rag_guidance_hits: list[str] = []
 
             seed_hits = [
                 keyword for keyword in seed_keywords if normalize_text(keyword) in search_text
@@ -78,12 +76,9 @@ class ScoreCandidatesTool(FixtureTool):
             source_name = str(article["source_name"]).lower()
             if source_name in trusted_sources:
                 score += 0.10
-                trusted_source_match = True
                 breakdown_parts.append("trusted source +0.10")
             if source_name in semantic_trusted_sources:
                 score += 0.10
-                trusted_source_match = True
-                rag_guidance_hits += 1
                 breakdown_parts.append("semantic trusted source +0.10")
 
             exclude_hits = [
@@ -98,11 +93,12 @@ class ScoreCandidatesTool(FixtureTool):
                     f"exclude keyword -{penalty:.2f} ({', '.join(exclude_hits)})"
                 )
 
-            applied_guidance = [*push_rules, *history_guidance]
-            if applied_guidance:
-                rag_guidance_hits += len(applied_guidance)
-                rule_guidance_hits = len(push_rules)
-                breakdown_parts.append(f"guidance: {' | '.join(applied_guidance)}")
+            if push_rules:
+                rag_guidance_hits.append("push_rules")
+            if history_guidance:
+                rag_guidance_hits.append("history_guidance")
+            if rag_guidance_hits:
+                breakdown_parts.append(f"guidance: {', '.join(rag_guidance_hits)}")
 
             score = max(0.0, min(round(score, 2), 1.0))
 
@@ -111,8 +107,8 @@ class ScoreCandidatesTool(FixtureTool):
             scored_article["score_rationale"] = llm_score.rationale
             scored_article["score_breakdown"] = "; ".join(breakdown_parts)
             scored_article["rag_guidance_hits"] = rag_guidance_hits
-            scored_article["trusted_source_match"] = trusted_source_match
-            scored_article["rule_guidance_hits"] = rule_guidance_hits
+            scored_article["trusted_source_match"] = source_name in semantic_trusted_sources
+            scored_article["rule_guidance_hits"] = len(rag_guidance_hits)
             scored_articles.append(scored_article)
 
         return self.success(
