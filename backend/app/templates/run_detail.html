@@ -39,6 +39,55 @@
 </section>
 
 <section class="section-card">
+  <h3>Structured stage read surface</h3>
+  <p>
+    This panel reads the live run APIs directly. It promotes `planner_output`, `retrieval_output`,
+    `extraction_output`, and `evaluation_output` into the primary read path so the demo matches the
+    real LangGraph contract surface instead of relying only on legacy mirrors.
+  </p>
+  <div id="structured-run-surface" class="grid two">
+    <article class="stat">
+      <strong>Planner output</strong>
+      <p id="planner-summary">Loading planner stage evidence.</p>
+      <pre id="planner-json"><code>Loading</code></pre>
+    </article>
+    <article class="stat">
+      <strong>Retrieval output</strong>
+      <p id="retrieval-summary">Loading retrieval stage evidence.</p>
+      <pre id="retrieval-json"><code>Loading</code></pre>
+    </article>
+    <article class="stat">
+      <strong>Extraction output</strong>
+      <p id="extraction-summary">Loading extraction stage evidence.</p>
+      <pre id="extraction-json"><code>Loading</code></pre>
+    </article>
+    <article class="stat">
+      <strong>Evaluation output</strong>
+      <p id="evaluation-summary">Loading evaluation stage evidence.</p>
+      <pre id="evaluation-json"><code>Loading</code></pre>
+    </article>
+  </div>
+</section>
+
+<section class="section-card">
+  <h3>Compatibility mirrors and task ledger</h3>
+  <div class="grid two">
+    <article class="stat">
+      <strong>Compatibility mirror check</strong>
+      <ul id="mirror-checks" class="checklist">
+        <li>Loading mirror checks.</li>
+      </ul>
+    </article>
+    <article class="stat">
+      <strong>Candidate task ledger</strong>
+      <ul id="candidate-task-ledger" class="timeline">
+        <li>Loading candidate task evidence.</li>
+      </ul>
+    </article>
+  </div>
+</section>
+
+<section class="section-card">
   <h3>MCP runtime</h3>
   <p>
     When the monitor run is wired to an MCP-backed search adapter, the final run snapshot can
@@ -64,4 +113,111 @@
     escalation, or it may show fallback evidence only for the specific candidates that needed it.
   </p>
 </section>
+
+<script>
+  const runId = {{ run_id|tojson }};
+  const runEndpoint = `/api/monitor/runs/${runId}`;
+  const candidateTaskEndpoint = `/api/monitor/runs/${runId}/candidate-tasks`;
+
+  const setCodeBlock = (elementId, value) => {
+    const element = document.getElementById(elementId);
+    element.textContent = JSON.stringify(value, null, 2);
+  };
+
+  const setSummary = (elementId, text) => {
+    document.getElementById(elementId).textContent = text;
+  };
+
+  const setMirrorChecks = (payload) => {
+    const checks = [
+      {
+        label: "Planner -> expanded_queries",
+        ok: JSON.stringify(payload.expanded_queries) === JSON.stringify(payload.planner_output?.expanded_queries ?? []),
+      },
+      {
+        label: "Retrieval -> candidate_items",
+        ok: JSON.stringify(payload.candidate_items) === JSON.stringify(payload.retrieval_output?.candidate_pool ?? []),
+      },
+      {
+        label: "Evaluation -> final_decisions",
+        ok: JSON.stringify(payload.final_decisions) === JSON.stringify(payload.evaluation_output?.final_decisions ?? []),
+      },
+    ];
+    document.getElementById("mirror-checks").innerHTML = checks
+      .map((item) => `<li>${item.label}: ${item.ok ? "consistent" : "drift detected"}</li>`)
+      .join("");
+  };
+
+  const setCandidateTaskLedger = (items) => {
+    const ledger = document.getElementById("candidate-task-ledger");
+    if (!items.length) {
+      ledger.innerHTML = "<li>No candidate task records yet.</li>";
+      return;
+    }
+    ledger.innerHTML = items
+      .slice(0, 8)
+      .map(
+        (item) =>
+          `<li><strong>${item.stage}</strong> · ${item.status} · <code>${item.candidate_id}</code> · attempt ${item.attempt}/${item.max_attempts}</li>`,
+      )
+      .join("");
+  };
+
+  fetch(runEndpoint)
+    .then((response) => {
+      if (!response.ok) {
+        throw new Error("run detail unavailable");
+      }
+      return response.json();
+    })
+    .then((payload) => {
+      setSummary(
+        "planner-summary",
+        `Expanded queries: ${(payload.planner_output?.expanded_queries ?? []).length}; source plan steps: ${(payload.planner_output?.source_plan ?? []).length}.`,
+      );
+      setSummary(
+        "retrieval-summary",
+        `Candidate pool: ${(payload.retrieval_output?.candidate_pool ?? []).length}; retrieval fallbacks: ${(payload.retrieval_output?.provider_fallbacks ?? []).length}.`,
+      );
+      setSummary(
+        "extraction-summary",
+        `Fetched contents: ${(payload.extraction_output?.fetched_contents ?? []).length}; evidence items: ${(payload.extraction_output?.evidence_items ?? []).length}.`,
+      );
+      setSummary(
+        "evaluation-summary",
+        `Final decisions: ${(payload.evaluation_output?.final_decisions ?? []).length}; push records: ${(payload.evaluation_output?.push_records ?? []).length}.`,
+      );
+      setCodeBlock("planner-json", payload.planner_output ?? {});
+      setCodeBlock("retrieval-json", payload.retrieval_output ?? {});
+      setCodeBlock("extraction-json", payload.extraction_output ?? {});
+      setCodeBlock("evaluation-json", payload.evaluation_output ?? {});
+      setMirrorChecks(payload);
+    })
+    .catch(() => {
+      setSummary("planner-summary", "Run detail API unavailable.");
+      setSummary("retrieval-summary", "Run detail API unavailable.");
+      setSummary("extraction-summary", "Run detail API unavailable.");
+      setSummary("evaluation-summary", "Run detail API unavailable.");
+      setCodeBlock("planner-json", { error: "run detail unavailable" });
+      setCodeBlock("retrieval-json", { error: "run detail unavailable" });
+      setCodeBlock("extraction-json", { error: "run detail unavailable" });
+      setCodeBlock("evaluation-json", { error: "run detail unavailable" });
+      document.getElementById("mirror-checks").innerHTML = "<li>Mirror checks unavailable.</li>";
+    });
+
+  fetch(candidateTaskEndpoint)
+    .then((response) => {
+      if (!response.ok) {
+        throw new Error("candidate tasks unavailable");
+      }
+      return response.json();
+    })
+    .then((payload) => {
+      setCandidateTaskLedger(payload.items ?? []);
+    })
+    .catch(() => {
+      document.getElementById("candidate-task-ledger").innerHTML =
+        "<li>Candidate task evidence unavailable.</li>";
+    });
+</script>
 {% endblock %}

@@ -3300,6 +3300,11 @@ def test_static_run_pages_describe_runtime_evidence_sections() -> None:
     assert "MCP runtime" in run_detail_response.text
     assert "Browser fallback runtime" in run_detail_response.text
     assert "structured stage evidence" in run_detail_response.text
+    assert 'id="structured-run-surface"' in run_detail_response.text
+    assert "const runEndpoint = `/api/monitor/runs/${runId}`;" in run_detail_response.text
+    assert "const candidateTaskEndpoint = `/api/monitor/runs/${runId}/candidate-tasks`;" in run_detail_response.text
+    assert '"run_runtime_page"' in run_detail_response.text
+    assert "Structured stage read surface" in run_detail_response.text
     assert resume_alignment_response.status_code == 200
     assert "per-run configuration/usage/degradation evidence" in resume_alignment_response.text
     assert "structured stage contracts" in resume_alignment_response.text
