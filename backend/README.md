@@ -87,6 +87,10 @@ These structured sections let the planner, retrieval, candidate-task fetch,
 candidate-task extraction, and candidate-task evaluation behaviors collaborate
 without depending on each other's internal implementation details.
 
+`GET /api/monitor/runs/{run_id}` now exposes those structured sections directly,
+so planner, retrieval, extraction, and evaluation outputs are first-class API
+readback instead of staying only as internal runtime state.
+
 ### Compatibility Strategy
 
 Current HTTP run endpoints still expose the legacy snapshot fields required by
@@ -100,6 +104,10 @@ the MVP contract, including:
 Those fields are mirrored from the structured multi-agent outputs during
 supervisor finalization so existing API responses, HTML pages, and dashboard
 screens continue to work while the internals use stronger contracts.
+
+The structured sections are the authoritative runtime contracts. The legacy
+snapshot fields remain compatibility mirrors for concise readback and older
+demo surfaces.
 
 Candidate-level orchestration now runs inside the LangGraph monitor flow after
 retrieval. Fetch, extract, and evaluate still remain real specialist
@@ -397,8 +405,8 @@ configuration.
 - `POST /api/eval/run`
 - `GET /api/eval/summary`
 
-`GET /api/monitor/runs/{run_id}` currently returns the compatibility snapshot,
-not the full structured multi-agent contract surface.
+`GET /api/monitor/runs/{run_id}` returns both the structured multi-agent stage
+sections and the legacy compatibility snapshot mirrors.
 
 ## Minimal HTML Pages
 

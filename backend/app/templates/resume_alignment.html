@@ -18,13 +18,14 @@
       <ul class="checklist">
         <li>Built a FastAPI-based monitor loop that turns topic context into actionable push decisions.</li>
         <li>Used LangGraph for top-level supervision, with candidate-level fetch, extract, and evaluate task orchestration inside the run.</li>
-        <li>Exposed planning, candidate task evidence, trace events, push records, evaluation signals, and optional adapter runtime evidence through APIs and readable pages.</li>
+        <li>Exposed structured stage contracts, candidate task evidence, trace events, push records, evaluation signals, and optional adapter runtime evidence through APIs and readable pages.</li>
       </ul>
     </article>
     <article class="stat">
       <strong>Suggested resume framing</strong>
       <ul class="checklist">
         <li>Emphasize supervisor-driven multi-agent orchestration plus candidate-level task scheduling.</li>
+        <li>Use structured stage contracts as the primary explanation of how planner, retrieval, extraction, and evaluation outputs move through the run.</li>
         <li>Describe fallbacks, task ledger evidence, per-run configuration/usage/degradation evidence, and quality metrics as signs of resilience-minded engineering.</li>
         <li>Use this page as a bridge between runtime truth, interview wording, and demo order.</li>
       </ul>
@@ -38,6 +39,7 @@
       <strong>Truth boundary</strong>
       <ul class="checklist">
         <li>The top-level graph is `Supervisor -> Planner -> Retrieval -> CandidateTaskOrchestrator -> Finalize`.</li>
+        <li>LangGraph uses structured stage contracts for `planner_output`, `retrieval_output`, `extraction_output`, and `evaluation_output`, while legacy mirrors stay available for compatibility.</li>
         <li>Fetch, extract, and evaluate still exist as real specialist behaviors, but they run under the candidate task orchestrator instead of as top-level graph nodes.</li>
         <li>Optional MCP and browser adapters can produce real per-run configuration/usage/degradation evidence when the target runtime wires them, but they remain optional and are not guaranteed always-live deployments.</li>
         <li>Judge and history-index adapters still remain runtime boundaries unless the environment explicitly enables them.</li>
@@ -47,7 +49,7 @@
       <strong>Suggested demo order</strong>
       <ul class="checklist">
         <li>Open the dashboard or topic page to establish monitoring scope.</li>
-        <li>Show run detail and candidate task readback to explain bounded same-stage orchestration.</li>
+        <li>Show run detail and candidate task readback to explain structured stage contracts plus bounded same-stage orchestration.</li>
         <li>Finish with trace events, pushes, and quality metrics to show reliability and evaluation evidence.</li>
       </ul>
     </article>

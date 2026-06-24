@@ -410,6 +410,34 @@ def test_supervisor_finalize_preserves_legacy_expanded_queries_when_planner_outp
     assert result["expanded_queries"] == ["legacy query one", "legacy query two"]
 
 
+def test_supervisor_finalize_clears_legacy_expanded_queries_when_planner_output_is_authoritative() -> None:
+    from app.agent.nodes import supervisor_finalize_node
+
+    state = {
+        "run_id": "run_authoritative_empty_queries",
+        "topic_id": "topic_001",
+        "expanded_queries": ["stale legacy query"],
+        "planner_output": {
+            "expanded_queries": [],
+            "query_plan": [{"query": "ai agents"}],
+            "source_plan": [{"tool_name": "search_news", "priority": 1}],
+            "retrieval_strategy": {"mode": "candidate_first"},
+            "planning_reasons": ["Use search-first retrieval for this topic."],
+        },
+        "retrieval_output": {},
+        "extraction_output": {},
+        "evaluation_output": {},
+        "events": [],
+        "errors": [],
+        "tool_results": [],
+        "status": "running",
+    }
+
+    result = supervisor_finalize_node(state)
+
+    assert result["expanded_queries"] == []
+
+
 def test_supervisor_finalize_adds_integration_runtime_summary_to_snapshot() -> None:
     from app.agent.nodes import supervisor_finalize_node
 
@@ -3258,6 +3286,7 @@ def test_build_initial_state_exposes_stable_empty_structured_sections() -> None:
     assert state["retrieval_output"] == build_empty_retrieval_output()
     assert state["extraction_output"] == build_empty_extraction_output()
     assert state["evaluation_output"] == build_empty_evaluation_output()
+    assert "business_memory" not in state
 
 
 def test_static_run_pages_describe_runtime_evidence_sections() -> None:
@@ -3270,8 +3299,10 @@ def test_static_run_pages_describe_runtime_evidence_sections() -> None:
     assert run_detail_response.status_code == 200
     assert "MCP runtime" in run_detail_response.text
     assert "Browser fallback runtime" in run_detail_response.text
+    assert "structured stage evidence" in run_detail_response.text
     assert resume_alignment_response.status_code == 200
     assert "per-run configuration/usage/degradation evidence" in resume_alignment_response.text
+    assert "structured stage contracts" in resume_alignment_response.text
 
 
 def test_reporting_endpoints_return_persisted_monitor_artifacts() -> None:

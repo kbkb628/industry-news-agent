@@ -5,6 +5,8 @@
 ## in_progress
 
 ## completed
+- implement langgraph contract tightening slice
+- spec and planning for langgraph contract tightening
 - implement mcp and playwright runtime evidence slice
 - spec and planning for mcp and playwright runtime evidence
 - implement structured RAG grounding for planner and evaluation

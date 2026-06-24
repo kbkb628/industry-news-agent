@@ -949,7 +949,14 @@ def supervisor_finalize_node(
     evaluation_output = dict(state.get("evaluation_output", {}))
 
     planner_expanded_queries = planner_output.get("expanded_queries")
-    if planner_expanded_queries:
+    planner_is_authoritative = bool(
+        planner_output.get("query_plan")
+        or planner_output.get("source_plan")
+        or planner_output.get("retrieval_strategy")
+        or planner_output.get("planning_reasons")
+        or planner_expanded_queries
+    )
+    if planner_is_authoritative and planner_expanded_queries is not None:
         state["expanded_queries"] = list(planner_expanded_queries)
     state["candidate_items"] = list(
         retrieval_output.get("candidate_pool", state.get("candidate_items", []))

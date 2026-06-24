@@ -7,6 +7,11 @@
     This page is tuned for showcase readability: it explains what a single execution represents,
     which decisions matter, and how a reviewer should interpret the run at a glance.
   </p>
+  <p>
+    The run API also exposes structured stage evidence for planner, retrieval, extraction,
+    and evaluation outputs directly. Compatibility mirrors remain available for concise readback,
+    but the structured sections are now the primary runtime contract.
+  </p>
   <div class="grid three">
     <article class="stat">
       <strong>Planning layer</strong>
@@ -27,7 +32,8 @@
   <h3>Reviewer script</h3>
   <ul class="timeline">
     <li>Start with the run identifier to anchor the discussion in a specific execution.</li>
-    <li>Move to the event stream to show intermediate steps, degradations, and retries.</li>
+    <li>Move through planner, retrieval, candidate orchestration, and evaluation sections to show structured stage evidence.</li>
+    <li>Then inspect the event stream to show intermediate steps, degradations, and retries.</li>
     <li>Finish on push outcomes and quality metrics to tie engineering detail back to product value.</li>
   </ul>
 </section>
