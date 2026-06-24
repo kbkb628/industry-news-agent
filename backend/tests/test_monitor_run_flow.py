@@ -852,6 +852,9 @@ def test_monitor_graph_planner_agent_merges_semantic_memory_into_planner_output(
         for reason in planning_reasons
     )
     assert any("knowledge base matched trusted-source guidance" in reason for reason in planning_reasons)
+    assert "rag_guidance_applied_count" in result["eval_result"]
+    assert "trusted_source_match_count" in result["eval_result"]
+    assert "rule_guidance_hits" in result["eval_result"]
 
 
 def test_evaluation_agent_produces_rag_guidance_metrics() -> None:

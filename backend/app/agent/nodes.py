@@ -872,10 +872,18 @@ def candidate_task_orchestrator_node(
     orchestration_output["runtime"] = dict(state["candidate_task_runtime"])
     orchestration_output["summary"] = dict(state["candidate_task_summary"])
     state["candidate_task_output"] = orchestration_output
-    state["eval_result"] = score_run(state)
-    state["eval_result"].update(build_eval_judge(settings=settings).judge(state["eval_result"]))
+    existing_evaluation_output = dict(state.get("evaluation_output", {}))
+    existing_eval_result = dict(existing_evaluation_output.get("eval_result", {}))
+    if existing_eval_result:
+        state["eval_result"] = dict(existing_eval_result)
+    else:
+        state["eval_result"] = score_run(state)
+        state["eval_result"].update(
+            build_eval_judge(settings=settings).judge(state["eval_result"])
+        )
     state["evaluation_output"] = {
         **build_empty_evaluation_output(),
+        **existing_evaluation_output,
         "deduped_items": list(state.get("deduped_items", [])),
         "scored_items": list(state.get("scored_items", [])),
         "final_decisions": list(state.get("final_decisions", [])),
