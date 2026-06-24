@@ -64,6 +64,7 @@ def retrieve_hybrid_context(
         merged.values(),
         key=lambda item: (-float(item["rerank_score"]), item["document"].doc_id),
     )[:top_k]
+    ranked_documents = [item["document"] for item in ranked_hits]
 
     documents_payload = [
         {
@@ -85,5 +86,5 @@ def retrieve_hybrid_context(
         "retrieval_mode": RETRIEVAL_MODE,
         "retrievers": list(RETRIEVERS),
         "documents": documents_payload,
-        "semantic_memory": build_semantic_memory(documents_payload),
+        "semantic_memory": build_semantic_memory(ranked_documents),
     }

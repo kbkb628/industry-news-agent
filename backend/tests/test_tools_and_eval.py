@@ -21,6 +21,7 @@ from app.rag.knowledge_loader import (
 from app.rag.bm25_retriever import BM25Retriever
 from app.rag.hybrid_retriever import retrieve_hybrid_context
 from app.rag.local_vector_retriever import LocalVectorRetriever
+from app.rag.semantic_memory import build_empty_semantic_memory, build_semantic_memory
 from app.tools.responses import ToolResponse
 
 from app.core.config import Settings, get_settings
@@ -2063,7 +2064,57 @@ def test_hybrid_retriever_returns_reranked_multi_route_context() -> None:
     assert "embedding_like" in context["documents"][0]["scores"]
 
 
-def test_retrieve_hybrid_context_returns_semantic_memory() -> None:
+def test_build_semantic_memory_deduplicates_case_folded_metadata_and_titles() -> None:
+    documents = [
+        KnowledgeDocument(
+            doc_id="kb_trusted_sources_a",
+            title="Trusted Sources Improve Push Quality",
+            content="Prefer trusted source domains.",
+            keywords=["trusted", "source"],
+            metadata={
+                "trusted_source_hints": ["OpenAI.com", "github.com"],
+                "topic_keywords": ["AI Agent", "MCP"],
+                "source_preferences": ["rss_first"],
+                "push_rules": ["Prefer trusted domains when scores are close"],
+                "history_guidance": ["Avoid repeating already-pushed angles"],
+            },
+        ),
+        KnowledgeDocument(
+            doc_id="kb_trusted_sources_b",
+            title="trusted sources improve push quality",
+            content="Reinforce trusted-domain ranking guidance.",
+            keywords=["ranking"],
+            metadata={
+                "trusted_source_hints": ["openai.COM", "GitHub.com"],
+                "topic_keywords": ["ai agent", "mcp"],
+                "source_preferences": ["RSS_FIRST"],
+                "push_rules": ["prefer trusted domains when scores are close"],
+                "history_guidance": ["avoid repeating already-pushed angles"],
+            },
+        ),
+    ]
+
+    semantic_memory = build_semantic_memory(documents)
+
+    assert semantic_memory["topic_keywords"] == ["AI Agent", "MCP"]
+    assert semantic_memory["trusted_source_hints"] == ["OpenAI.com", "github.com"]
+    assert semantic_memory["source_preferences"] == ["rss_first"]
+    assert semantic_memory["push_rules"] == [
+        "Prefer trusted domains when scores are close"
+    ]
+    assert semantic_memory["history_guidance"] == [
+        "Avoid repeating already-pushed angles"
+    ]
+    assert semantic_memory["evidence_summary"] == [
+        "knowledge base matched Trusted Sources Improve Push Quality"
+    ]
+
+
+def test_build_semantic_memory_returns_stable_empty_shape() -> None:
+    assert build_semantic_memory([]) == build_empty_semantic_memory()
+
+
+def test_retrieve_hybrid_context_merges_semantic_memory_across_documents() -> None:
     documents = [
         KnowledgeDocument(
             doc_id="kb_trusted_sources",
@@ -2085,31 +2136,63 @@ def test_retrieve_hybrid_context_returns_semantic_memory() -> None:
                     "avoid repeating already-pushed angles within cooldown"
                 ],
             },
-        )
+        ),
+        KnowledgeDocument(
+            doc_id="kb_history_rules",
+            title="History-aware push rules",
+            content=(
+                "Use push history to avoid duplicate angles and preserve source "
+                "diversity when selecting industry news."
+            ),
+            keywords=["history", "push", "source", "diversity"],
+            metadata={
+                "section": "guidance",
+                "trusted_source_hints": ["TechCrunch.com"],
+                "topic_keywords": ["Funding"],
+                "source_preferences": ["diversify_sources"],
+                "push_rules": ["escalate major funding rounds even when similar"],
+                "history_guidance": [
+                    "consider source diversity before repeating a company update"
+                ],
+            },
+        ),
     ]
 
     context = retrieve_hybrid_context(documents, "trusted source quality", top_k=3)
 
-    assert context["documents"][0]["metadata"]["trusted_source_hints"] == [
-        "openai.com",
-        "github.com",
+    assert len(context["documents"]) == 2
+    assert context["documents"][0]["metadata"]
+    assert context["documents"][1]["metadata"]
+    assert context["semantic_memory"]["topic_keywords"] == [
+        "AI Agent",
+        "MCP",
+        "Funding",
     ]
-    assert context["semantic_memory"]["topic_keywords"] == ["AI Agent", "MCP"]
     assert context["semantic_memory"]["trusted_source_hints"] == [
         "openai.com",
         "github.com",
+        "TechCrunch.com",
     ]
     assert context["semantic_memory"]["source_preferences"] == [
         "rss_first",
         "trusted_domain_priority",
+        "diversify_sources",
     ]
     assert context["semantic_memory"]["push_rules"] == [
-        "prefer trusted source domains when scores are close"
+        "prefer trusted source domains when scores are close",
+        "escalate major funding rounds even when similar",
     ]
     assert context["semantic_memory"]["history_guidance"] == [
-        "avoid repeating already-pushed angles within cooldown"
+        "avoid repeating already-pushed angles within cooldown",
+        "consider source diversity before repeating a company update",
     ]
-    assert context["semantic_memory"]["evidence_summary"]
+    assert len(context["semantic_memory"]["evidence_summary"]) == 2
+    assert "knowledge base matched Trusted sources improve push quality" in (
+        context["semantic_memory"]["evidence_summary"]
+    )
+    assert "knowledge base matched History-aware push rules" in (
+        context["semantic_memory"]["evidence_summary"]
+    )
 
 
 def test_retrieve_hybrid_context_returns_empty_semantic_memory_when_no_documents_match(
