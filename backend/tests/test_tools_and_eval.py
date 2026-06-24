@@ -22,6 +22,7 @@ from app.rag.bm25_retriever import BM25Retriever
 from app.rag.hybrid_retriever import retrieve_hybrid_context
 from app.rag.local_vector_retriever import LocalVectorRetriever
 from app.rag.semantic_memory import build_empty_semantic_memory, build_semantic_memory
+from app.tools.scoring_tool import ScoreCandidatesTool
 from app.tools.responses import ToolResponse
 
 from app.core.config import Settings, get_settings
@@ -2502,6 +2503,48 @@ def test_task6_pipeline_supports_fixture_retrieval_extract_dedup_score_and_push(
     assert push_by_candidate_id["cand_rss_openai"]["should_push"] is True
     assert push_by_candidate_id["cand_search_rumor"]["should_push"] is False
     assert "below threshold" in push_by_candidate_id["cand_search_rumor"]["decision_reason"]
+
+
+def test_score_candidates_tool_uses_semantic_memory_for_trusted_source_and_guidance_breakdown() -> None:
+    tool = ScoreCandidatesTool(llm=MockLLM())
+
+    response = tool(
+        topic={
+            "name": "AI Agent",
+            "seed_keywords": ["OpenAI"],
+            "trusted_sources": ["tech.example.com"],
+            "exclude_keywords": [],
+        },
+        articles=[
+            {
+                "candidate_id": "cand_001",
+                "title": "OpenAI ships enterprise agent workflow",
+                "summary": "Trusted-source launch details",
+                "source_name": "openai.com",
+                "keywords": ["AI Agent"],
+            }
+        ],
+        business_context={
+            "semantic_memory": {
+                "topic_keywords": ["MCP"],
+                "trusted_source_hints": ["openai.com"],
+                "source_preferences": [],
+                "push_rules": [
+                    "prefer trusted source domains when scores are close",
+                    "penalize weak evidence or noisy summaries",
+                ],
+                "history_guidance": [
+                    "avoid repeating already-pushed angles within cooldown"
+                ],
+                "evidence_summary": [],
+            }
+        },
+    )
+
+    assert response.data is not None
+    article = response.data["articles"][0]
+    assert "semantic trusted source +0.10" in article["score_breakdown"]
+    assert "guidance:" in article["score_breakdown"]
 
 
 def test_task6_dedup_uses_content_fingerprint_in_addition_to_url_and_title() -> None:

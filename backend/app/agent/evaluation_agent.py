@@ -70,6 +70,20 @@ def _call_tool(
     return response
 
 
+def _build_rag_guidance_metrics(scored_items: list[dict[str, Any]]) -> dict[str, int]:
+    return {
+        "rag_guidance_applied_count": sum(
+            1 for item in scored_items if int(item.get("rag_guidance_hits", 0)) > 0
+        ),
+        "trusted_source_match_count": sum(
+            1 for item in scored_items if bool(item.get("trusted_source_match"))
+        ),
+        "rule_guidance_hits": sum(
+            int(item.get("rule_guidance_hits", 0)) for item in scored_items
+        ),
+    }
+
+
 class EvaluationAgent:
     def __init__(
         self,
@@ -100,6 +114,13 @@ class EvaluationAgent:
                 state.get("push_history", []),
             )
         )
+        business_context = dict(
+            state.get("business_memory", {}).get(
+                "business_context",
+                state.get("business_context", {}),
+            )
+            or {}
+        )
 
         evaluation_output = build_empty_evaluation_output()
 
@@ -128,6 +149,7 @@ class EvaluationAgent:
             "score_candidate",
             topic=topic,
             articles=deduped_items,
+            **({"business_context": business_context} if business_context else {}),
         )
         scored_items = list(dict(score_response.data or {}).get("articles", []))
         append_event(
@@ -172,6 +194,7 @@ class EvaluationAgent:
         state["push_records"] = push_records
 
         eval_result = score_run(state)
+        eval_result.update(_build_rag_guidance_metrics(scored_items))
         eval_result.update(build_eval_judge(settings=self.settings).judge(eval_result))
         append_event(
             state,
@@ -301,6 +324,7 @@ class EvaluationAgent:
         state["events"] = list(result_state.get("events", state.get("events", [])))
 
         eval_result = score_run(state)
+        eval_result.update(_build_rag_guidance_metrics(list(state["scored_items"])))
         eval_result.update(build_eval_judge(settings=self.settings).judge(eval_result))
 
         evaluation_output = build_empty_evaluation_output()

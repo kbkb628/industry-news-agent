@@ -11,6 +11,7 @@ from fastapi.testclient import TestClient
 
 from app.api.monitor import get_monitor_graph, get_monitor_run_repository
 from app.api.topics import get_topic_repository
+from app.agent.evaluation_agent import EvaluationAgent
 from app.agent.graph import build_monitor_graph
 from app.agent.nodes import (
     candidate_task_orchestrator_node,
@@ -37,6 +38,7 @@ from app.storage.repository import (
     TopicCreateData,
     TopicRecord,
 )
+from app.tools.registry import build_default_tool_registry
 from app.tools.responses import ToolResponse
 
 
@@ -839,6 +841,68 @@ def test_monitor_graph_planner_agent_merges_semantic_memory_into_planner_output(
     assert "github.com" in source_plan[0]["trusted_sources"]
     assert any("rss_first" in reason for reason in planning_reasons)
     assert any("knowledge base matched trusted-source guidance" in reason for reason in planning_reasons)
+
+
+def test_evaluation_agent_produces_rag_guidance_metrics() -> None:
+    gateway = LocalToolGateway()
+    build_default_tool_registry(llm=MockLLM()).register_into(gateway)
+    agent = EvaluationAgent(gateway=gateway, settings=None)
+    state = {
+        "run_id": "run_rag_eval",
+        "topic_id": "topic_ai",
+        "topic": {
+            "topic_id": "topic_ai",
+            "name": "AI Agent",
+            "push_threshold": 0.7,
+            "cooldown_hours": 24,
+            "trusted_sources": ["openai.com"],
+            "exclude_keywords": [],
+            "seed_keywords": ["OpenAI"],
+        },
+        "business_memory": {
+            "push_history": [],
+            "business_context": {
+                "documents": [],
+                "semantic_memory": {
+                    "topic_keywords": ["MCP"],
+                    "trusted_source_hints": ["openai.com"],
+                    "source_preferences": [],
+                    "push_rules": [
+                        "prefer trusted source domains when scores are close"
+                    ],
+                    "history_guidance": [
+                        "avoid repeating already-pushed angles within cooldown"
+                    ],
+                    "evidence_summary": [
+                        "knowledge base matched trusted-source guidance"
+                    ],
+                },
+            },
+        },
+        "extraction_output": {
+            "evidence_items": [
+                {
+                    "candidate_id": "cand_001",
+                    "title": "OpenAI ships enterprise agent workflow",
+                    "summary": "Strong evidence for enterprise launch",
+                    "source_type": "search",
+                    "source_name": "openai.com",
+                    "url": "https://openai.com/news/agents",
+                }
+            ]
+        },
+        "evaluation_output": {},
+        "tool_results": [],
+        "errors": [],
+        "events": [],
+    }
+
+    result = agent.run(state)
+
+    assert result["eval_result"]["rag_guidance_applied_count"] >= 1
+    assert result["eval_result"]["trusted_source_match_count"] == 1
+    assert result["eval_result"]["rule_guidance_hits"] >= 1
+    assert "trusted source" in result["final_decisions"][0]["decision_reason"].lower()
 
 
 def test_monitor_graph_records_provider_and_browser_fallback_events() -> None:
