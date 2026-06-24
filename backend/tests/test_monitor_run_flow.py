@@ -3175,9 +3175,16 @@ def test_run_detail_returns_completed_state() -> None:
     payload = response.json()
     assert payload["status"] == "completed"
     assert payload["trigger"] == "manual"
+    assert "planner_output" in payload
+    assert "retrieval_output" in payload
+    assert "extraction_output" in payload
+    assert "evaluation_output" in payload
     assert payload["expanded_queries"]
+    assert payload["expanded_queries"] == payload["planner_output"]["expanded_queries"]
     assert len(payload["candidate_items"]) == 3
+    assert payload["candidate_items"] == payload["retrieval_output"]["candidate_pool"]
     assert len(payload["final_decisions"]) == 2
+    assert payload["final_decisions"] == payload["evaluation_output"]["final_decisions"]
     assert payload["integration_runtime"]["mcp"]["configured_provider"] == "onesearch"
     assert "used_in_run" in payload["integration_runtime"]["mcp"]
     assert payload["integration_runtime"]["browser"]["configured_provider"] == "playwright_mcp"

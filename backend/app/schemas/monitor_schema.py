@@ -32,6 +32,12 @@ class MonitorRunStateResponse(BaseModel):
     topic_id: str
     trigger: str
     status: MonitorRunStatus
+    run_context: dict[str, Any] = Field(default_factory=dict)
+    business_memory: dict[str, Any] = Field(default_factory=dict)
+    planner_output: dict[str, Any] = Field(default_factory=dict)
+    retrieval_output: dict[str, Any] = Field(default_factory=dict)
+    extraction_output: dict[str, Any] = Field(default_factory=dict)
+    evaluation_output: dict[str, Any] = Field(default_factory=dict)
     expanded_queries: list[str] = Field(default_factory=list)
     candidate_items: list[dict[str, Any]] = Field(default_factory=list)
     final_decisions: list[dict[str, Any]] = Field(default_factory=list)
