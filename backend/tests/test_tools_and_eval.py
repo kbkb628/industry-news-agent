@@ -2161,8 +2161,29 @@ def test_retrieve_hybrid_context_merges_semantic_memory_across_documents() -> No
     context = retrieve_hybrid_context(documents, "trusted source quality", top_k=3)
 
     assert len(context["documents"]) == 2
-    assert context["documents"][0]["metadata"]
-    assert context["documents"][1]["metadata"]
+    documents_by_id = {item["doc_id"]: item for item in context["documents"]}
+    assert documents_by_id["kb_trusted_sources"]["metadata"] == {
+        "section": "guidance",
+        "trusted_source_hints": ["openai.com", "github.com"],
+        "topic_keywords": ["AI Agent", "MCP"],
+        "source_preferences": ["rss_first", "trusted_domain_priority"],
+        "push_rules": [
+            "prefer trusted source domains when scores are close"
+        ],
+        "history_guidance": [
+            "avoid repeating already-pushed angles within cooldown"
+        ],
+    }
+    assert documents_by_id["kb_history_rules"]["metadata"] == {
+        "section": "guidance",
+        "trusted_source_hints": ["TechCrunch.com"],
+        "topic_keywords": ["Funding"],
+        "source_preferences": ["diversify_sources"],
+        "push_rules": ["escalate major funding rounds even when similar"],
+        "history_guidance": [
+            "consider source diversity before repeating a company update"
+        ],
+    }
     assert context["semantic_memory"]["topic_keywords"] == [
         "AI Agent",
         "MCP",
