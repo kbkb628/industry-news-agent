@@ -886,8 +886,8 @@ def test_evaluation_agent_produces_rag_guidance_metrics() -> None:
                     "title": "OpenAI ships enterprise agent workflow",
                     "summary": "Strong evidence for enterprise launch",
                     "source_type": "search",
-                    "source_name": "openai.com",
-                    "url": "https://openai.com/news/agents",
+                    "source_name": "OpenWebSearch",
+                    "url": "https://www.openai.com/news/agents",
                 }
             ]
         },

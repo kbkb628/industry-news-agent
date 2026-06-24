@@ -2520,7 +2520,8 @@ def test_score_candidates_tool_uses_semantic_memory_for_trusted_source_and_guida
                 "candidate_id": "cand_001",
                 "title": "OpenAI ships enterprise agent workflow",
                 "summary": "Trusted-source launch details",
-                "source_name": "openai.com",
+                "source_name": "OpenWebSearch",
+                "url": "https://www.openai.com/news/agents",
                 "keywords": ["AI Agent"],
             }
         ],

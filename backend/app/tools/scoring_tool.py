@@ -1,9 +1,24 @@
 from __future__ import annotations
 
 from typing import Any
+from urllib.parse import urlparse
 
 from app.llm.base import BaseLLMClient
 from app.tools.base import FixtureTool, normalize_text
+
+
+def _normalized_domain(value: object) -> str:
+    text = str(value).strip().lower()
+    if not text:
+        return ""
+    host = urlparse(text).netloc if "://" in text else text
+    if "@" in host:
+        host = host.rsplit("@", 1)[-1]
+    if ":" in host:
+        host = host.split(":", 1)[0]
+    if host.startswith("www."):
+        host = host[4:]
+    return host
 
 
 class ScoreCandidatesTool(FixtureTool):
@@ -21,11 +36,11 @@ class ScoreCandidatesTool(FixtureTool):
         topic_name = str(topic["name"])
         seed_keywords = [str(keyword).lower() for keyword in topic.get("seed_keywords", [])]
         trusted_sources = {
-            str(source).lower() for source in topic.get("trusted_sources", [])
+            _normalized_domain(source) for source in topic.get("trusted_sources", [])
         }
         semantic_memory = dict((business_context or {}).get("semantic_memory", {}) or {})
         semantic_trusted_sources = {
-            str(source).lower()
+            _normalized_domain(source)
             for source in semantic_memory.get("trusted_source_hints", [])
         }
         push_rules = [
@@ -73,11 +88,16 @@ class ScoreCandidatesTool(FixtureTool):
                     f"seed keyword overlap +{bonus:.2f} ({', '.join(seed_hits)})"
                 )
 
-            source_name = str(article["source_name"]).lower()
-            if source_name in trusted_sources:
+            source_name = str(article["source_name"]).strip().lower()
+            url_host = _normalized_domain(article.get("url", ""))
+            trusted_match_targets = {target for target in (source_name, url_host) if target}
+            if trusted_match_targets & trusted_sources:
                 score += 0.10
                 breakdown_parts.append("trusted source +0.10")
-            if source_name in semantic_trusted_sources:
+            semantic_trusted_source_match = bool(
+                trusted_match_targets & semantic_trusted_sources
+            )
+            if semantic_trusted_source_match:
                 score += 0.10
                 breakdown_parts.append("semantic trusted source +0.10")
 
@@ -107,8 +127,7 @@ class ScoreCandidatesTool(FixtureTool):
             scored_article["score_rationale"] = llm_score.rationale
             scored_article["score_breakdown"] = "; ".join(breakdown_parts)
             scored_article["rag_guidance_hits"] = rag_guidance_hits
-            scored_article["trusted_source_match"] = source_name in semantic_trusted_sources
-            scored_article["rule_guidance_hits"] = len(rag_guidance_hits)
+            scored_article["trusted_source_match"] = semantic_trusted_source_match
             scored_articles.append(scored_article)
 
         return self.success(
