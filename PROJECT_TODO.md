@@ -1,10 +1,10 @@
 # Project TODO
 
 ## pending
-- none
+- implement structured RAG grounding for planner and evaluation
 
 ## in_progress
-- none
+- spec and planning for structured RAG grounding
 
 ## completed
 - truthful MVP closed loop
