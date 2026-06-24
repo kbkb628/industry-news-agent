@@ -1,14 +1,14 @@
 # Project TODO
 
 ## pending
-- implement structured RAG grounding for planner and evaluation
-- implement structured RAG grounding plan
 
 ## in_progress
-- spec and planning for structured RAG grounding
-- implementation planning for structured RAG grounding
 
 ## completed
+- implement structured RAG grounding for planner and evaluation
+- implement structured RAG grounding plan
+- spec and planning for structured RAG grounding
+- implementation planning for structured RAG grounding
 - truthful MVP closed loop
 - PostgreSQL and Redis backed runtime
 - scheduler and worker governance flow

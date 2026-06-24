@@ -834,12 +834,23 @@ def test_monitor_graph_planner_agent_merges_semantic_memory_into_planner_output(
     planning_reasons = result["planner_output"]["planning_reasons"]
     source_plan = result["planner_output"]["source_plan"]
 
+    assert "semantic_memory" in result["business_context"]
+    assert isinstance(
+        result["business_context"]["semantic_memory"]["topic_keywords"],
+        list,
+    )
     assert expanded_queries[:2] == ["openai", "enterprise"]
     assert "mcp" in [query.lower() for query in expanded_queries]
     assert "langgraph" in [query.lower() for query in expanded_queries]
     assert source_plan[0]["tool_name"] == "rss_fetch"
     assert "github.com" in source_plan[0]["trusted_sources"]
+    assert planning_reasons
     assert any("rss_first" in reason for reason in planning_reasons)
+    assert any(
+        "Semantic memory contributed" in reason
+        or "knowledge base matched trusted-source guidance" in reason
+        for reason in planning_reasons
+    )
     assert any("knowledge base matched trusted-source guidance" in reason for reason in planning_reasons)
 
 
