@@ -2063,6 +2063,80 @@ def test_hybrid_retriever_returns_reranked_multi_route_context() -> None:
     assert "embedding_like" in context["documents"][0]["scores"]
 
 
+def test_retrieve_hybrid_context_returns_semantic_memory() -> None:
+    documents = [
+        KnowledgeDocument(
+            doc_id="kb_trusted_sources",
+            title="Trusted sources improve push quality",
+            content=(
+                "Prefer trusted source domains when ranking industry news "
+                "candidates because source quality reduces noisy pushes."
+            ),
+            keywords=["trusted", "source", "quality", "ranking"],
+            metadata={
+                "section": "guidance",
+                "trusted_sources": ["openai.com", "github.com"],
+                "topic_keywords": ["AI Agent", "MCP"],
+                "source_preferences": ["rss_first", "trusted_domain_priority"],
+                "push_rules": [
+                    "prefer trusted source domains when scores are close"
+                ],
+                "history_guidance": [
+                    "avoid repeating already-pushed angles within cooldown"
+                ],
+            },
+        )
+    ]
+
+    context = retrieve_hybrid_context(documents, "AI Agent MCP", top_k=3)
+
+    assert context["documents"][0]["metadata"]["trusted_sources"] == [
+        "openai.com",
+        "github.com",
+    ]
+    assert context["semantic_memory"]["topic_keywords"] == ["AI Agent", "MCP"]
+    assert context["semantic_memory"]["trusted_source_hints"] == [
+        "openai.com",
+        "github.com",
+    ]
+    assert context["semantic_memory"]["source_preferences"] == [
+        "rss_first",
+        "trusted_domain_priority",
+    ]
+    assert context["semantic_memory"]["push_rules"] == [
+        "prefer trusted source domains when scores are close"
+    ]
+    assert context["semantic_memory"]["history_guidance"] == [
+        "avoid repeating already-pushed angles within cooldown"
+    ]
+    assert context["semantic_memory"]["evidence_summary"]
+
+
+def test_retrieve_hybrid_context_returns_empty_semantic_memory_when_no_documents_match(
+    ) -> None:
+    documents = [
+        KnowledgeDocument(
+            doc_id="kb_other_topic",
+            title="Browser fallback should stay last",
+            content="Use browser fallback only after RSS and HTTP fail.",
+            keywords=["browser", "fallback"],
+            metadata={"section": "guidance"},
+        )
+    ]
+
+    context = retrieve_hybrid_context(documents, "pharma policy", top_k=3)
+
+    assert context["documents"] == []
+    assert context["semantic_memory"] == {
+        "topic_keywords": [],
+        "trusted_source_hints": [],
+        "source_preferences": [],
+        "push_rules": [],
+        "history_guidance": [],
+        "evidence_summary": [],
+    }
+
+
 def test_local_tool_gateway_registers_and_calls_local_tools() -> None:
     gateway = LocalToolGateway()
 
