@@ -11,6 +11,7 @@ from langgraph.graph.state import CompiledStateGraph
 from pydantic import ValidationError
 from sqlalchemy.orm import Session
 
+from app.agent.contracts import build_empty_candidate_task_output
 from app.agent.graph import build_monitor_graph
 from app.core.config import Settings
 from app.core.config import get_settings
@@ -72,6 +73,7 @@ def _topic_to_graph_payload(topic: TopicRecord) -> dict[str, Any]:
 
 
 def _build_initial_state(topic: TopicRecord, run_id: str) -> dict[str, Any]:
+    orchestration = build_empty_candidate_task_output()
     return {
         "run_id": run_id,
         "topic_id": topic.topic_id,
@@ -88,6 +90,9 @@ def _build_initial_state(topic: TopicRecord, run_id: str) -> dict[str, Any]:
         "scored_items": [],
         "final_decisions": [],
         "decision_reasons": [],
+        "candidate_task_plan": list(orchestration["tasks"]),
+        "candidate_task_runtime": dict(orchestration["runtime"]),
+        "candidate_task_summary": dict(orchestration["summary"]),
         "push_records": [],
         "push_history": [],
         "tool_results": [],

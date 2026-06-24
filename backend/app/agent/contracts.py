@@ -53,6 +53,42 @@ class EvaluationOutput(TypedDict, total=False):
     eval_result: dict[str, Any]
 
 
+class CandidateTaskRecord(TypedDict, total=False):
+    task_id: str
+    run_id: str
+    candidate_id: str
+    stage: str
+    status: str
+    attempt: int
+    max_attempts: int
+    depends_on_task_ids: list[str]
+    input_ref: dict[str, Any]
+    output_ref: dict[str, Any]
+    error_code: str | None
+    error_message: str | None
+    started_at: str | None
+    finished_at: str | None
+
+
+class CandidateTaskRuntime(TypedDict, total=False):
+    ready_count: int
+    in_progress_count: int
+    completed_count: int
+    failed_count: int
+    skipped_count: int
+    stage_slots: dict[str, dict[str, int]]
+
+
+class CandidateTaskSummary(TypedDict, total=False):
+    task_count: int
+    completed_count: int
+    failed_count: int
+    skipped_count: int
+    fetch_completed_count: int
+    extract_completed_count: int
+    evaluate_completed_count: int
+
+
 def build_empty_run_context(*, run_id: str, topic_id: str) -> RunContext:
     return {
         "run_id": run_id,
@@ -111,4 +147,31 @@ def build_empty_evaluation_output() -> EvaluationOutput:
         "decision_reasons": [],
         "push_records": [],
         "eval_result": {},
+    }
+
+
+def build_empty_candidate_task_output() -> dict[str, Any]:
+    return {
+        "tasks": [],
+        "runtime": {
+            "ready_count": 0,
+            "in_progress_count": 0,
+            "completed_count": 0,
+            "failed_count": 0,
+            "skipped_count": 0,
+            "stage_slots": {
+                "fetch": {"limit": 0, "in_progress": 0},
+                "extract": {"limit": 0, "in_progress": 0},
+                "evaluate": {"limit": 0, "in_progress": 0},
+            },
+        },
+        "summary": {
+            "task_count": 0,
+            "completed_count": 0,
+            "failed_count": 0,
+            "skipped_count": 0,
+            "fetch_completed_count": 0,
+            "extract_completed_count": 0,
+            "evaluate_completed_count": 0,
+        },
     }

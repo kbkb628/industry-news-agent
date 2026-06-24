@@ -3330,6 +3330,52 @@ def test_build_history_index_returns_noop_without_complete_opensearch_settings()
     assert isinstance(build_history_index(settings=settings), NoopHistoryIndex)
 
 
+def test_build_empty_candidate_task_output_contract() -> None:
+    from app.agent.contracts import build_empty_candidate_task_output
+
+    output = build_empty_candidate_task_output()
+
+    assert output == {
+        "tasks": [],
+        "runtime": {
+            "ready_count": 0,
+            "in_progress_count": 0,
+            "completed_count": 0,
+            "failed_count": 0,
+            "skipped_count": 0,
+            "stage_slots": {
+                "fetch": {"limit": 0, "in_progress": 0},
+                "extract": {"limit": 0, "in_progress": 0},
+                "evaluate": {"limit": 0, "in_progress": 0},
+            },
+        },
+        "summary": {
+            "task_count": 0,
+            "completed_count": 0,
+            "failed_count": 0,
+            "skipped_count": 0,
+            "fetch_completed_count": 0,
+            "extract_completed_count": 0,
+            "evaluate_completed_count": 0,
+        },
+    }
+
+
+def test_monitor_state_can_hold_candidate_orchestration_fields() -> None:
+    from app.agent.contracts import build_empty_candidate_task_output
+
+    orchestration = build_empty_candidate_task_output()
+    state = {
+        "candidate_task_plan": orchestration["tasks"],
+        "candidate_task_runtime": orchestration["runtime"],
+        "candidate_task_summary": orchestration["summary"],
+    }
+
+    assert state["candidate_task_plan"] == []
+    assert state["candidate_task_runtime"]["stage_slots"]["fetch"]["limit"] == 0
+    assert state["candidate_task_summary"]["task_count"] == 0
+
+
 def test_task6_fetch_preserves_candidate_identity_when_urls_canonicalize_equal(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
