@@ -27,4 +27,71 @@
     </article>
   </div>
 </section>
+
+<section class="section-card">
+  <h3>Live push ledger</h3>
+  <p>
+    This page reads the persisted push API directly so accepted and suppressed candidates remain
+    visible as runtime evidence instead of static claims.
+  </p>
+  <div class="grid two">
+    <article class="stat">
+      <strong>Push summary</strong>
+      <p id="push-summary">Loading push summary.</p>
+      <pre id="push-summary-json"><code>Loading</code></pre>
+    </article>
+    <article class="stat">
+      <strong>Push records</strong>
+      <ul id="push-list" class="timeline">
+        <li>Loading push records.</li>
+      </ul>
+    </article>
+  </div>
+</section>
+
+<script>
+  const pushesEndpoint = "/api/pushes";
+
+  const setCodeBlock = (elementId, value) => {
+    document.getElementById(elementId).textContent = JSON.stringify(value, null, 2);
+  };
+
+  fetch(pushesEndpoint)
+    .then((response) => {
+      if (!response.ok) {
+        throw new Error("pushes unavailable");
+      }
+      return response.json();
+    })
+    .then((payload) => {
+      const pushes = Array.isArray(payload.pushes) ? payload.pushes : [];
+      const acceptedCount = pushes.filter((push) => push.should_push).length;
+      document.getElementById("push-summary").textContent =
+        `Loaded ${pushes.length} push decisions with ${acceptedCount} accepted alerts.`;
+      setCodeBlock("push-summary-json", {
+        push_count: pushes.length,
+        accepted_count: acceptedCount,
+        rejected_count: pushes.length - acceptedCount,
+        run_ids: [...new Set(pushes.map((push) => push.run_id))],
+      });
+
+      const pushList = document.getElementById("push-list");
+      if (!pushes.length) {
+        pushList.innerHTML = "<li>No persisted push records found.</li>";
+        return;
+      }
+      pushList.innerHTML = pushes
+        .slice(0, 8)
+        .map(
+          (push) =>
+            `<li><strong>${push.candidate_id}</strong> | score ${push.score} | push ${push.should_push ? "yes" : "no"} | run ${push.run_id}</li>`,
+        )
+        .join("");
+    })
+    .catch(() => {
+      document.getElementById("push-summary").textContent = "Push ledger unavailable.";
+      setCodeBlock("push-summary-json", { error: "pushes unavailable" });
+      document.getElementById("push-list").innerHTML = "<li>Push ledger unavailable.</li>";
+    });
+</script>
 {% endblock %}

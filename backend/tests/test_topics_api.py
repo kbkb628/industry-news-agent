@@ -249,6 +249,9 @@ def test_topics_html_page_renders() -> None:
     assert "Agent workflow highlights" in response.text
     assert 'href="/quality"' in response.text
     assert "Quality Signals" in response.text
+    assert "Live topic registry" in response.text
+    assert 'id="topic-list"' in response.text
+    assert "const topicsEndpoint = \"/api/topics\";" in response.text
 
 
 def test_admin_html_pages_render() -> None:
@@ -262,6 +265,9 @@ def test_admin_html_pages_render() -> None:
 
     assert pushes_response.status_code == 200
     assert "Push outcome review" in pushes_response.text
+    assert "Live push ledger" in pushes_response.text
+    assert 'id="push-list"' in pushes_response.text
+    assert "const pushesEndpoint = \"/api/pushes\";" in pushes_response.text
     assert run_detail_response.status_code == 200
     assert "Run detail for" in run_detail_response.text
     assert "run_demo_001" in run_detail_response.text
@@ -273,6 +279,8 @@ def test_admin_html_pages_render() -> None:
     assert "const eventsEndpoint = `/api/monitor/runs/${runId}/events`;" in events_response.text
     assert quality_response.status_code == 200
     assert "Quality summary and reliability story" in quality_response.text
+    assert "Latest evaluation contract" in quality_response.text
+    assert 'id="latest-eval-json"' in quality_response.text
 
 
 @pytest.mark.parametrize("failing_method", ["commit", "refresh"])

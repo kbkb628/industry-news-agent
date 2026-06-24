@@ -49,8 +49,29 @@
     </div>
   </dl>
 </section>
+
+<section class="section-card">
+  <h3>Latest evaluation contract</h3>
+  <p>
+    The latest persisted eval result is shown directly so reviewers can inspect the current judge
+    mode, suggestions, and summary metrics without leaving the showcase page.
+  </p>
+  <div class="grid two">
+    <article class="stat">
+      <strong>Latest evaluation summary</strong>
+      <p id="latest-eval-summary">Loading latest evaluation summary.</p>
+    </article>
+    <article class="stat">
+      <strong>Latest evaluation payload</strong>
+      <pre id="latest-eval-json"><code>Loading</code></pre>
+    </article>
+  </div>
+</section>
+
 <script>
-  fetch("/api/eval/summary")
+  const summaryEndpoint = "/api/eval/summary";
+
+  fetch(summaryEndpoint)
     .then((response) => {
       if (!response.ok) {
         throw new Error("summary unavailable");
@@ -65,12 +86,25 @@
         summary.total_raw_summary_count +
         summary.total_browser_fallback_count +
         summary.total_provider_fallback_count;
+      document.getElementById("latest-eval-summary").textContent =
+        `Latest run ${summary.latest_eval.run_id} | judge ${summary.latest_eval.judge_mode} | suggestions ${(summary.latest_eval.suggestions ?? []).length}.`;
+      document.getElementById("latest-eval-json").textContent = JSON.stringify(
+        summary.latest_eval,
+        null,
+        2,
+      );
     })
     .catch(() => {
       document.getElementById("run-count").textContent = "No evaluation summary yet";
       document.getElementById("tool-success-rate").textContent = "-";
       document.getElementById("fetch-success-rate").textContent = "-";
       document.getElementById("fallback-total").textContent = "-";
+      document.getElementById("latest-eval-summary").textContent = "Latest evaluation unavailable.";
+      document.getElementById("latest-eval-json").textContent = JSON.stringify(
+        { error: "summary unavailable" },
+        null,
+        2,
+      );
     });
 </script>
 {% endblock %}

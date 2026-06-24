@@ -50,10 +50,79 @@
 </section>
 
 <section class="section-card">
+  <h3>Live topic registry</h3>
+  <p>
+    This section reads the persisted topics API directly so the showcase narrative stays grounded in
+    the actual configured monitoring scope.
+  </p>
+  <div class="grid two">
+    <article class="stat">
+      <strong>Topic summary</strong>
+      <p id="topic-summary">Loading topic summary.</p>
+      <pre id="topic-summary-json"><code>Loading</code></pre>
+    </article>
+    <article class="stat">
+      <strong>Configured topics</strong>
+      <ul id="topic-list" class="timeline">
+        <li>Loading topics.</li>
+      </ul>
+    </article>
+  </div>
+</section>
+
+<section class="section-card">
   <div class="callout">
     <strong>Operator note</strong>
     Once topics are created, use the run, events, pushes, and quality pages to walk interviewers
     through how the system makes decisions and how reliability is measured.
   </div>
 </section>
+
+<script>
+  const topicsEndpoint = "/api/topics";
+
+  const setCodeBlock = (elementId, value) => {
+    document.getElementById(elementId).textContent = JSON.stringify(value, null, 2);
+  };
+
+  fetch(topicsEndpoint)
+    .then((response) => {
+      if (!response.ok) {
+        throw new Error("topics unavailable");
+      }
+      return response.json();
+    })
+    .then((topics) => {
+      const items = Array.isArray(topics) ? topics : [];
+      const enabledCount = items.filter((topic) => topic.enabled).length;
+      document.getElementById("topic-summary").textContent =
+        `Loaded ${items.length} topics with ${enabledCount} enabled schedules.`;
+      setCodeBlock("topic-summary-json", {
+        topic_count: items.length,
+        enabled_count: enabledCount,
+        trusted_source_counts: items.map((topic) => ({
+          topic_id: topic.topic_id,
+          trusted_sources: Array.isArray(topic.trusted_sources) ? topic.trusted_sources.length : 0,
+        })),
+      });
+
+      const topicList = document.getElementById("topic-list");
+      if (!items.length) {
+        topicList.innerHTML = "<li>No configured topics found.</li>";
+        return;
+      }
+      topicList.innerHTML = items
+        .slice(0, 8)
+        .map(
+          (topic) =>
+            `<li><strong>${topic.name}</strong> | threshold ${topic.push_threshold} | enabled ${topic.enabled ? "yes" : "no"} | trusted ${(topic.trusted_sources ?? []).length}</li>`,
+        )
+        .join("");
+    })
+    .catch(() => {
+      document.getElementById("topic-summary").textContent = "Topic registry unavailable.";
+      setCodeBlock("topic-summary-json", { error: "topics unavailable" });
+      document.getElementById("topic-list").innerHTML = "<li>Topic registry unavailable.</li>";
+    });
+</script>
 {% endblock %}

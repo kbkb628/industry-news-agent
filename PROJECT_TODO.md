@@ -25,5 +25,6 @@
 - html run detail page extended to show runtime context, business memory, and integration evidence
 - react dashboard extended to show run context, business memory, and task runtime evidence
 - html events page extended to show persisted live event timeline evidence
+- html topics, pushes, and quality pages extended to show live persisted contract data
 - final repository presentation verification completed
 - final showcase verification milestone committed in branch history
