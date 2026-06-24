@@ -3245,6 +3245,21 @@ def test_build_integration_runtime_reports_enabled_mcp_and_browser_config() -> N
             "browser_fetch_count": 0,
             "failed_browser_fetch_count": 0,
         },
+        "notification": {
+            "configured_provider": "none",
+            "enabled": False,
+            "selected_tool_path": "notification_send",
+            "used_in_run": False,
+            "delivery_attempted": False,
+            "delivery_succeeded": False,
+            "fallback_used": False,
+            "failure_code": None,
+        },
+        "tool_access": {
+            "search": "mcp_gateway",
+            "browser": "tool_gateway",
+            "notification": "tool_gateway",
+        },
     }
 
 
@@ -3286,6 +3301,8 @@ def test_build_integration_runtime_derives_usage_and_fallback_counts_from_run_ev
         browser_fetch_provider="playwright_mcp",
         playwright_mcp_base_url="http://localhost:8931",
         browser_allowed_domains=["example.com"],
+        notification_provider="webhook",
+        notification_webhook_url="https://hooks.example.com/news",
     )
 
     runtime = build_integration_runtime(
@@ -3311,6 +3328,13 @@ def test_build_integration_runtime_derives_usage_and_fallback_counts_from_run_ev
                 "tool_name": "rss_fetch",
                 "metadata": {
                     "provider": "rss",
+                },
+            },
+            {
+                "tool_name": "notification_send",
+                "success": True,
+                "metadata": {
+                    "notification_provider": "webhook",
                 },
             },
         ],
@@ -3357,6 +3381,21 @@ def test_build_integration_runtime_derives_usage_and_fallback_counts_from_run_ev
         "fallback_reason": "http failed",
         "browser_fetch_count": 1,
         "failed_browser_fetch_count": 1,
+    }
+    assert runtime["notification"] == {
+        "configured_provider": "webhook",
+        "enabled": True,
+        "selected_tool_path": "notification_send",
+        "used_in_run": True,
+        "delivery_attempted": True,
+        "delivery_succeeded": True,
+        "fallback_used": False,
+        "failure_code": None,
+    }
+    assert runtime["tool_access"] == {
+        "search": "mcp_gateway",
+        "browser": "tool_gateway",
+        "notification": "tool_gateway",
     }
 
 

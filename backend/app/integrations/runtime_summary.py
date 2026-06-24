@@ -5,6 +5,21 @@ from typing import Any
 from app.core.config import Settings
 
 
+def _build_tool_access_summary(settings: Settings | None) -> dict[str, str]:
+    search_access = "tool_gateway"
+    if (
+        settings is not None
+        and settings.mcp_gateway_provider == "onesearch"
+        and settings.onesearch_base_url
+    ):
+        search_access = "mcp_gateway"
+    return {
+        "search": search_access,
+        "browser": "tool_gateway",
+        "notification": "tool_gateway",
+    }
+
+
 def build_integration_runtime(
     *,
     settings: Settings | None,
@@ -58,6 +73,37 @@ def build_integration_runtime(
     elif failed_browser_fetches:
         browser_fallback_reason = failed_browser_fetches[0].get("fetch_fallback_reason")
 
+    notification_provider = "none" if settings is None else settings.notification_provider
+    notification_enabled = False
+    if settings is not None and settings.notification_provider == "webhook":
+        notification_enabled = bool(settings.notification_webhook_url)
+    notification_results = [
+        item for item in tool_results if item.get("tool_name") == "notification_send"
+    ]
+    notification_failure = next(
+        (
+            item
+            for item in notification_results
+            if item.get("success") is False
+        ),
+        None,
+    )
+    notification_success = next(
+        (
+            item
+            for item in notification_results
+            if item.get("success") is True
+        ),
+        None,
+    )
+    notification_failure_code = None
+    if notification_failure is not None:
+        error = notification_failure.get("error")
+        if isinstance(error, dict):
+            notification_failure_code = error.get("code")
+    if notification_failure_code is None and notification_failure is not None:
+        notification_failure_code = notification_failure.get("error_code")
+
     return {
         "mcp": {
             "configured_provider": mcp_provider,
@@ -90,4 +136,15 @@ def build_integration_runtime(
             "browser_fetch_count": len(browser_fetches),
             "failed_browser_fetch_count": len(failed_browser_fetches),
         },
+        "notification": {
+            "configured_provider": notification_provider,
+            "enabled": notification_enabled,
+            "selected_tool_path": "notification_send",
+            "used_in_run": bool(notification_results),
+            "delivery_attempted": bool(notification_results),
+            "delivery_succeeded": notification_success is not None,
+            "fallback_used": False,
+            "failure_code": notification_failure_code,
+        },
+        "tool_access": _build_tool_access_summary(settings),
     }

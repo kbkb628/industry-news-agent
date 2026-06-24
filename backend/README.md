@@ -239,6 +239,13 @@ as complete article content. When configured, the run snapshot now exposes
 fallback path was enabled, actually used, and whether degraded browser-backed
 attempts occurred in that specific run.
 
+Webhook notification delivery is also summarized in
+`integration_runtime.notification`, including whether delivery was enabled,
+attempted in that run, and whether it succeeded. The snapshot additionally
+exposes `integration_runtime.tool_access` so a reviewer can see which
+capability currently runs through the MCP gateway boundary and which ones still
+run through the local tool gateway.
+
 The `integration_runtime` section is runtime evidence, not a claim that every
 environment always wires live external MCP or Playwright-compatible services.
 
@@ -282,8 +289,10 @@ Optional notification variables:
 - `NOTIFICATION_TIMEOUT_SECONDS` defaults to `10.0`.
 
 Webhook notification failures are recorded in run errors/events and do not roll
-back persisted push records. The current implementation does not provide a
-production notification retry queue.
+back persisted push records. When configured, notification delivery now also
+appears in the run snapshot under `integration_runtime.notification` instead of
+remaining a side-path visible only in events. The current implementation does
+not provide a production notification retry queue.
 
 Example `.env`:
 

@@ -449,6 +449,8 @@ def test_supervisor_finalize_adds_integration_runtime_summary_to_snapshot() -> N
         browser_fetch_provider="playwright_mcp",
         playwright_mcp_base_url="http://localhost:8931",
         browser_allowed_domains=["example.com"],
+        notification_provider="webhook",
+        notification_webhook_url="https://hooks.example.com/news",
     )
     state = {
         "run_id": "run_runtime_001",
@@ -479,6 +481,13 @@ def test_supervisor_finalize_adds_integration_runtime_summary_to_snapshot() -> N
                     "fallback_provider": "mock_search",
                     "fallback_reason": "onesearch unavailable",
                 },
+            },
+            {
+                "tool_name": "notification_send",
+                "success": True,
+                "metadata": {
+                    "notification_provider": "webhook",
+                },
             }
         ],
         "events": [],
@@ -492,6 +501,13 @@ def test_supervisor_finalize_adds_integration_runtime_summary_to_snapshot() -> N
     assert result["integration_runtime"]["mcp"]["used_in_run"] is True
     assert result["integration_runtime"]["mcp"]["fallback_used"] is True
     assert result["integration_runtime"]["browser"]["fallback_used"] is True
+    assert result["integration_runtime"]["notification"]["configured_provider"] == "webhook"
+    assert result["integration_runtime"]["notification"]["used_in_run"] is True
+    assert result["integration_runtime"]["tool_access"] == {
+        "search": "mcp_gateway",
+        "browser": "tool_gateway",
+        "notification": "tool_gateway",
+    }
 
 
 def test_supervisor_finalize_preserves_existing_integration_runtime_snapshot() -> None:
