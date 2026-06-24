@@ -16,8 +16,7 @@ The core runtime is now a real in-process multi-agent monitor architecture:
 supervisor_bootstrap
   -> planner_agent
   -> retrieval_agent
-  -> extraction_agent
-  -> evaluation_agent
+  -> candidate_task_orchestrator
   -> supervisor_finalize
 ```
 
@@ -102,6 +101,11 @@ the MVP contract, including:
 Those fields are mirrored from the structured multi-agent outputs during
 supervisor finalization so existing API responses, HTML pages, and dashboard
 screens continue to work while the internals use stronger contracts.
+
+Candidate-level orchestration now runs inside the LangGraph monitor flow after
+retrieval. Redis/runtime state owns short-lived candidate task coordination,
+while PostgreSQL persists candidate task ledger facts for historical readback.
+`GET /api/monitor/runs/{run_id}/candidate-tasks` exposes durable task evidence.
 
 ### Queue And Worker Flow
 

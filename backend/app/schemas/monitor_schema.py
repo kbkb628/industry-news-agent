@@ -35,6 +35,33 @@ class MonitorRunStateResponse(BaseModel):
     expanded_queries: list[str] = Field(default_factory=list)
     candidate_items: list[dict[str, Any]] = Field(default_factory=list)
     final_decisions: list[dict[str, Any]] = Field(default_factory=list)
+    candidate_task_summary: dict[str, Any] = Field(default_factory=dict)
     errors: list[dict[str, Any]] = Field(default_factory=list)
     started_at: datetime | None = None
     finished_at: datetime | None = None
+
+
+class CandidateTaskRecordResponse(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    task_id: str
+    run_id: str
+    candidate_id: str
+    stage: str
+    status: str
+    attempt: int
+    max_attempts: int
+    depends_on_task_ids: list[str] = Field(default_factory=list)
+    input_ref: dict[str, Any] = Field(default_factory=dict)
+    output_ref: dict[str, Any] = Field(default_factory=dict)
+    error_code: str | None = None
+    error_message: str | None = None
+    started_at: datetime | None = None
+    finished_at: datetime | None = None
+    created_at: datetime | None = None
+
+
+class CandidateTaskRecordListResponse(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    items: list[CandidateTaskRecordResponse] = Field(default_factory=list)

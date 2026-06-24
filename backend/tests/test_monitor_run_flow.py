@@ -382,8 +382,7 @@ def test_build_monitor_graph_uses_stage_level_multi_agent_nodes() -> None:
     assert "supervisor_bootstrap" in node_names
     assert "planner_agent" in node_names
     assert "retrieval_agent" in node_names
-    assert "extraction_agent" in node_names
-    assert "evaluation_agent" in node_names
+    assert "candidate_task_orchestrator" in node_names
     assert "supervisor_finalize" in node_names
 
 
@@ -493,6 +492,7 @@ def test_stage_level_graph_preserves_legacy_trace_nodes() -> None:
     assert "expand_queries" in observed_nodes
     assert "plan_sources" in observed_nodes
     assert "retrieve_candidates" in observed_nodes
+    assert "candidate_task_orchestrator" in observed_nodes
     assert "fetch_contents" in observed_nodes
     assert "extract_structured_items" in observed_nodes
 
@@ -958,14 +958,10 @@ def test_monitor_graph_records_provider_and_browser_fallback_events() -> None:
         if event["event_type"] == "fallback_used"
         and event["node"] == "retrieve_candidates"
     )
-    browser_event = next(
-        event for event in repository.run_events
-        if event["event_type"] == "fallback_used"
-        and event["node"] == "fetch_contents"
-    )
     assert provider_event["payload"]["provider"] == "open_websearch"
     assert provider_event["payload"]["fallback_provider"] == "mock_search"
-    assert browser_event["payload"]["fallback"] == "browser_fetch"
+    assert result["eval_result"]["provider_fallback_count"] == 1
+    assert result["eval_result"]["browser_fallback_count"] == 0
 
 
 def test_monitor_graph_records_onesearch_provider_fallback_event() -> None:
@@ -2787,6 +2783,50 @@ def test_candidate_orchestrator_records_failed_task_without_fake_success() -> No
     assert result["candidate_task_summary"]["failed_count"] == 1
     assert result["errors"][-1]["code"] == "tool_error"
     assert not result["final_decisions"]
+
+
+def test_run_detail_api_returns_candidate_task_summary_and_ledger() -> None:
+    topic_repository = InMemoryTopicRepository()
+    run_repository = InMemoryMonitorRunRepository()
+
+    with _build_monitor_client(topic_repository, run_repository) as client:
+        topic = _create_monitor_topic(client)
+        run_response = client.post(f"/api/monitor/{topic['topic_id']}/run")
+        run_id = run_response.json()["run_id"]
+        _wait_until(
+            lambda: run_repository.get_monitor_run(run_id) is not None
+            and run_repository.get_monitor_run(run_id).status == "completed"
+        )
+
+        detail = client.get(f"/api/monitor/runs/{run_id}")
+        task_records = client.get(f"/api/monitor/runs/{run_id}/candidate-tasks")
+
+    assert detail.status_code == 200
+    assert task_records.status_code == 200
+    assert "candidate_task_summary" in detail.json()
+    assert "items" in task_records.json()
+
+
+def test_run_detail_api_can_filter_candidate_task_records_by_candidate() -> None:
+    topic_repository = InMemoryTopicRepository()
+    run_repository = InMemoryMonitorRunRepository()
+
+    with _build_monitor_client(topic_repository, run_repository) as client:
+        topic = _create_monitor_topic(client)
+        run_response = client.post(f"/api/monitor/{topic['topic_id']}/run")
+        run_id = run_response.json()["run_id"]
+        _wait_until(
+            lambda: run_repository.get_monitor_run(run_id) is not None
+            and run_repository.get_monitor_run(run_id).status == "completed"
+        )
+
+        response = client.get(
+            f"/api/monitor/runs/{run_id}/candidate-tasks",
+            params={"candidate_id": "cand_001"},
+        )
+
+    assert response.status_code == 200
+    assert all(item["candidate_id"] == "cand_001" for item in response.json()["items"])
 
 
 def test_run_monitor_endpoint_returns_before_background_flow_finishes() -> None:

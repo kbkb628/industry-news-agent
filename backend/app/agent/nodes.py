@@ -18,8 +18,8 @@ from app.agent.evaluation_agent import EvaluationAgent
 from app.agent.planner_agent import PlannerAgent
 from app.agent.retrieval_agent import RetrievalAgent
 from app.core.config import Settings
-from app.eval.rule_scorer import score_run
 from app.eval.judge import build_eval_judge
+from app.eval.rule_scorer import score_run
 from app.llm.base import BaseLLMClient
 from app.llm.mock_client import MockLLM
 from app.mcp.local_gateway import LocalToolGateway
@@ -782,12 +782,40 @@ def candidate_task_orchestrator_node(
                 state["candidate_items"] = list(
                     state.get("retrieval_output", {}).get("candidate_pool", [])
                 )
+                append_event(
+                    state,
+                    "fetch_contents",
+                    "Fetched candidate content for candidate task.",
+                    payload={"candidate_id": str(result["candidate_id"])},
+                )
                 output_ref = {"fetched_candidate_id": str(result["candidate_id"])}
             elif task["stage"] == "extract":
                 result = extraction_agent.run_extract_task(task, state)
+                append_event(
+                    state,
+                    "extract_structured_items",
+                    "Extracted structured item for candidate task.",
+                    payload={"candidate_id": str(result["candidate_id"])},
+                )
                 output_ref = {"extracted_candidate_id": str(result["candidate_id"])}
             else:
                 result = evaluation_agent.run_evaluate_task(task, state)
+                if result.get("task_status") == "skipped":
+                    candidate_id = str(
+                        result.get("candidate_id", task["candidate_id"])
+                    )
+                    skipped = dict(task)
+                    skipped["status"] = "skipped"
+                    skipped["output_ref"] = {
+                        "skipped_candidate_id": candidate_id
+                    }
+                    skipped["error_code"] = None
+                    skipped["error_message"] = None
+                    skipped["finished_at"] = datetime.now(UTC).isoformat().replace(
+                        "+00:00", "Z"
+                    )
+                    completed_tasks.append(skipped)
+                    continue
                 output_ref = {"decision_candidate_id": str(result["candidate_id"])}
 
             completed = orchestrator.mark_task_completed(task, output_ref=output_ref)
@@ -815,6 +843,28 @@ def candidate_task_orchestrator_node(
             state["errors"] = errors
 
     all_tasks = completed_tasks + failed_tasks
+    if state.get("extracted_items"):
+        scoped_eval_state = {
+            **state,
+            "evaluation_output": {},
+            "scored_items": [],
+            "final_decisions": [],
+            "decision_reasons": [],
+            "push_records": [],
+            "eval_result": {},
+        }
+        evaluation_agent.run(scoped_eval_state)
+        state["deduped_items"] = list(scoped_eval_state.get("deduped_items", []))
+        state["scored_items"] = list(scoped_eval_state.get("scored_items", []))
+        state["final_decisions"] = list(scoped_eval_state.get("final_decisions", []))
+        state["decision_reasons"] = list(
+            scoped_eval_state.get("decision_reasons", [])
+        )
+        state["push_records"] = list(scoped_eval_state.get("push_records", []))
+        state["tool_results"] = list(scoped_eval_state.get("tool_results", state.get("tool_results", [])))
+        state["errors"] = list(scoped_eval_state.get("errors", state.get("errors", [])))
+        state["events"] = list(scoped_eval_state.get("events", state.get("events", [])))
+
     state["candidate_task_plan"] = list(all_tasks)
     state["candidate_task_runtime"] = orchestrator.build_runtime_view(all_tasks)
     state["candidate_task_summary"] = orchestrator.build_summary(all_tasks)
@@ -822,8 +872,23 @@ def candidate_task_orchestrator_node(
     orchestration_output["runtime"] = dict(state["candidate_task_runtime"])
     orchestration_output["summary"] = dict(state["candidate_task_summary"])
     state["candidate_task_output"] = orchestration_output
+    state["eval_result"] = score_run(state)
+    state["eval_result"].update(build_eval_judge(settings=settings).judge(state["eval_result"]))
+    state["evaluation_output"] = {
+        **build_empty_evaluation_output(),
+        "deduped_items": list(state.get("deduped_items", [])),
+        "scored_items": list(state.get("scored_items", [])),
+        "final_decisions": list(state.get("final_decisions", [])),
+        "decision_reasons": list(state.get("decision_reasons", [])),
+        "push_records": list(state.get("push_records", [])),
+        "eval_result": dict(state["eval_result"]),
+    }
 
-    if run_repository is not None and all_tasks:
+    if (
+        run_repository is not None
+        and all_tasks
+        and hasattr(run_repository, "create_candidate_task_records")
+    ):
         run_repository.create_candidate_task_records(
             tuple(
                 CandidateTaskRecordCreateData(

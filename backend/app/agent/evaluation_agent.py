@@ -219,6 +219,22 @@ class EvaluationAgent:
     ) -> dict[str, Any]:
         candidate_id = str(task["candidate_id"])
         extracted_items = list(state.get("extracted_items", []))
+        deduplicate_response = _call_tool(
+            state,
+            self.gateway,
+            "deduplicate_items",
+            articles=extracted_items,
+        )
+        deduped_existing = list(dict(deduplicate_response.data or {}).get("articles", []))
+        if deduped_existing and not any(
+            str(item.get("candidate_id")) == candidate_id for item in deduped_existing
+        ):
+            return {
+                "candidate_id": candidate_id,
+                "task_status": "skipped",
+                "skip_reason": "candidate_deduplicated_before_evaluation",
+            }
+
         matched = [
             dict(item)
             for item in extracted_items
@@ -231,21 +247,40 @@ class EvaluationAgent:
             **state,
             "extracted_items": matched,
             "deduped_items": list(matched),
-            "evaluation_output": dict(state.get("evaluation_output", {})),
-            "scored_items": list(state.get("scored_items", [])),
-            "final_decisions": list(state.get("final_decisions", [])),
-            "decision_reasons": list(state.get("decision_reasons", [])),
-            "push_records": list(state.get("push_records", [])),
+            "evaluation_output": {},
+            "scored_items": [],
+            "final_decisions": [],
+            "decision_reasons": [],
+            "push_records": [],
+            "eval_result": {},
         }
         result_state = self.run(scoped_state)
         scored_items = list(result_state.get("scored_items", []))
         decisions = list(result_state.get("final_decisions", []))
         result = next(
-            item for item in decisions if str(item.get("candidate_id")) == candidate_id
+            (
+                item
+                for item in decisions
+                if str(item.get("candidate_id")) == candidate_id
+            ),
+            None,
         )
+        if result is None:
+            raise RuntimeError(
+                f"decision not produced for evaluate task: {candidate_id}"
+            )
         scored_result = next(
-            item for item in scored_items if str(item.get("candidate_id")) == candidate_id
+            (
+                item
+                for item in scored_items
+                if str(item.get("candidate_id")) == candidate_id
+            ),
+            None,
         )
+        if scored_result is None:
+            raise RuntimeError(
+                f"score not produced for evaluate task: {candidate_id}"
+            )
 
         state["scored_items"] = self._merge_candidate_item(
             list(state.get("scored_items", [])),
@@ -265,6 +300,9 @@ class EvaluationAgent:
         state["errors"] = list(result_state.get("errors", state.get("errors", [])))
         state["events"] = list(result_state.get("events", state.get("events", [])))
 
+        eval_result = score_run(state)
+        eval_result.update(build_eval_judge(settings=self.settings).judge(eval_result))
+
         evaluation_output = build_empty_evaluation_output()
         evaluation_output.update(
             {
@@ -273,9 +311,9 @@ class EvaluationAgent:
                 "final_decisions": list(state["final_decisions"]),
                 "decision_reasons": list(state["decision_reasons"]),
                 "push_records": list(state["push_records"]),
-                "eval_result": dict(result_state.get("eval_result", state.get("eval_result", {}))),
+                "eval_result": dict(eval_result),
             }
         )
         state["evaluation_output"] = evaluation_output
-        state["eval_result"] = dict(result_state.get("eval_result", state.get("eval_result", {})))
+        state["eval_result"] = dict(eval_result)
         return dict(result)

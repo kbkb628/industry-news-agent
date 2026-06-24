@@ -27,6 +27,7 @@ class MonitorNodeName(StrEnum):
     EXPAND_QUERIES = "expand_queries"
     PLAN_SOURCES = "plan_sources"
     RETRIEVE_CANDIDATES = "retrieve_candidates"
+    CANDIDATE_TASK_ORCHESTRATOR = "candidate_task_orchestrator"
     FETCH_CONTENTS = "fetch_contents"
     EXTRACT_STRUCTURED_ITEMS = "extract_structured_items"
     DEDUPLICATE_ITEMS = "deduplicate_items"

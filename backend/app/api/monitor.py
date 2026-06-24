@@ -16,7 +16,11 @@ from app.agent.graph import build_monitor_graph
 from app.core.config import Settings
 from app.core.config import get_settings
 from app.llm.mock_client import MockLLM
-from app.schemas.monitor_schema import MonitorRunStateResponse, MonitorRunSummary
+from app.schemas.monitor_schema import (
+    CandidateTaskRecordListResponse,
+    MonitorRunStateResponse,
+    MonitorRunSummary,
+)
 from app.storage.database import get_db, get_session_factory
 from app.storage.repository import (
     MonitorRunUpsertData,
@@ -256,7 +260,34 @@ def get_run_state(
         expanded_queries=list(snapshot.get("expanded_queries", [])),
         candidate_items=list(snapshot.get("candidate_items", [])),
         final_decisions=list(snapshot.get("final_decisions", [])),
+        candidate_task_summary=dict(snapshot.get("candidate_task_summary", {})),
         errors=list(snapshot.get("errors", [])),
         started_at=run_record.started_at,
         finished_at=run_record.finished_at,
     )
+
+
+@router.get(
+    "/runs/{run_id}/candidate-tasks",
+    response_model=CandidateTaskRecordListResponse,
+)
+def list_run_candidate_tasks(
+    run_id: str,
+    candidate_id: str | None = None,
+    repository: Annotated[
+        MonitorRunRepositoryProtocol,
+        Depends(get_monitor_run_repository),
+    ] = None,
+) -> CandidateTaskRecordListResponse:
+    run_record = repository.get_monitor_run(run_id)
+    if run_record is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Monitor run not found",
+        )
+
+    items = repository.list_candidate_task_records(
+        run_id,
+        candidate_id=candidate_id,
+    )
+    return CandidateTaskRecordListResponse(items=items)
