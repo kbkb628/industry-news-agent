@@ -536,6 +536,18 @@ def _build_history_index_search_evidence(search_result: dict[str, Any]) -> dict[
     }
 
 
+def _build_history_index_exclusions(state: dict[str, Any]) -> dict[str, Any]:
+    candidate_ids = [
+        str(item["candidate_id"])
+        for item in state.get("candidate_records", [])
+        if item.get("candidate_id") is not None
+    ]
+    return {
+        "exclude_run_id": str(state.get("run_id", "")).strip() or None,
+        "exclude_candidate_ids": candidate_ids or None,
+    }
+
+
 def _build_candidate_payloads(state: dict[str, Any]) -> tuple[CandidateRecordUpsertData, ...]:
     fetched_by_id = _index_by_candidate_id(list(state.get("fetched_contents", [])))
     extracted_by_id = _index_by_candidate_id(list(state.get("extracted_items", [])))
@@ -786,8 +798,14 @@ def supervisor_finalize_node(
             if state["history_index_result"].get("provider") != "none":
                 query = _build_history_index_query(state)
                 if query:
+                    exclusions = _build_history_index_exclusions(state)
                     try:
-                        search_result = history_index.search_candidates(query, top_k=3)
+                        search_result = history_index.search_candidates(
+                            query,
+                            top_k=3,
+                            exclude_run_id=exclusions["exclude_run_id"],
+                            exclude_candidate_ids=exclusions["exclude_candidate_ids"],
+                        )
                         state["history_index_result"]["search"] = (
                             _build_history_index_search_evidence(search_result)
                         )
@@ -807,6 +825,19 @@ def supervisor_finalize_node(
                             }
                         )
                         state["errors"] = errors
+                        append_event(
+                            state,
+                            "index_history",
+                            "Failed to search candidate history projection.",
+                            event_type="node_failed",
+                            payload={
+                                "provider": state["history_index_result"].get(
+                                    "provider"
+                                ),
+                                "query": query,
+                                "error_message": str(exc),
+                            },
+                        )
                 append_event(
                     state,
                     "index_history",

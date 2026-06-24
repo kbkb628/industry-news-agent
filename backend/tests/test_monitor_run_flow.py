@@ -1173,16 +1173,27 @@ def test_monitor_graph_records_onesearch_provider_fallback_event() -> None:
 
 def test_supervisor_finalize_indexes_candidate_history_when_opensearch_enabled() -> None:
     class FakeResponse:
+        def __init__(self, payload: dict[str, object] | None = None) -> None:
+            self.payload = payload or {}
+
         def raise_for_status(self) -> None:
             return None
 
+        def json(self) -> dict[str, object]:
+            return self.payload
+
     class FakeIndexClient:
         def __init__(self) -> None:
-            self.requests: list[dict[str, object]] = []
+            self.put_requests: list[dict[str, object]] = []
+            self.post_requests: list[dict[str, object]] = []
 
         def put(self, url: str, **kwargs: object) -> FakeResponse:
-            self.requests.append({"url": url, **kwargs})
+            self.put_requests.append({"url": url, **kwargs})
             return FakeResponse()
+
+        def post(self, url: str, **kwargs: object) -> FakeResponse:
+            self.post_requests.append({"url": url, **kwargs})
+            return FakeResponse({"hits": {"hits": []}})
 
     class RecordingRepository:
         def __init__(self) -> None:
@@ -1370,13 +1381,25 @@ def test_supervisor_finalize_indexes_candidate_history_when_opensearch_enabled()
     assert result["history_index_result"] == {
         "indexed_count": 1,
         "provider": "opensearch",
+        "search": {
+            "provider": "opensearch",
+            "query": "OpenAI ships agent workflow Above threshold",
+            "item_count": 0,
+            "items": [],
+        },
     }
     assert len(repository.candidate_records) == 1
-    assert index_client.requests[0]["url"] == (
+    assert index_client.put_requests[0]["url"] == (
         "http://localhost:9200/industry-news-candidates/_doc/run_index_history-cand_001"
     )
+    assert index_client.post_requests[0]["json"]["query"]["bool"]["must_not"] == [
+        {"term": {"run_id": "run_index_history"}},
+        {"terms": {"candidate_id": ["cand_001"]}},
+    ]
     index_event = next(
-        event for event in result["events"] if event["node"] == "index_history"
+        event
+        for event in result["events"]
+        if event["node"] == "index_history" and event["event_type"] == "node_completed"
     )
     assert index_event["event_type"] == "node_completed"
     assert index_event["payload"]["indexed_count"] == 1
@@ -1591,8 +1614,18 @@ def test_supervisor_finalize_indexes_history_projection_only(
             self,
             query: str,
             top_k: int = 5,
+            *,
+            exclude_run_id: str | None = None,
+            exclude_candidate_ids: list[str] | None = None,
         ) -> dict[str, object]:
-            self.search_calls.append({"query": query, "top_k": top_k})
+            self.search_calls.append(
+                {
+                    "query": query,
+                    "top_k": top_k,
+                    "exclude_run_id": exclude_run_id,
+                    "exclude_candidate_ids": exclude_candidate_ids,
+                }
+            )
             return {
                 "provider": "opensearch",
                 "query": query,
@@ -1799,7 +1832,12 @@ def test_supervisor_finalize_indexes_history_projection_only(
     assert index_event["payload"]["indexed_count"] == 1
     assert recording_index.index_calls == [repository.candidate_records]
     assert recording_index.search_calls == [
-        {"query": "AI Agent OpenAI agent update Above threshold", "top_k": 3}
+        {
+            "query": "AI Agent OpenAI agent update Above threshold",
+            "top_k": 3,
+            "exclude_run_id": "run_index_search",
+            "exclude_candidate_ids": ["cand_001"],
+        }
     ]
 
 
@@ -1822,8 +1860,18 @@ def test_supervisor_finalize_records_history_index_search_failure_without_new_ap
             self,
             query: str,
             top_k: int = 5,
+            *,
+            exclude_run_id: str | None = None,
+            exclude_candidate_ids: list[str] | None = None,
         ) -> dict[str, object]:
-            self.search_calls.append({"query": query, "top_k": top_k})
+            self.search_calls.append(
+                {
+                    "query": query,
+                    "top_k": top_k,
+                    "exclude_run_id": exclude_run_id,
+                    "exclude_candidate_ids": exclude_candidate_ids,
+                }
+            )
             raise RuntimeError("search unavailable")
 
     class RecordingRepository:
@@ -2013,8 +2061,24 @@ def test_supervisor_finalize_records_history_index_search_failure_without_new_ap
     }
     assert "history_index_search_result" not in result
     assert all(event["node"] != "search_history_index" for event in result["events"])
+    failed_event = next(
+        event
+        for event in result["events"]
+        if event["node"] == "index_history" and event["event_type"] == "node_failed"
+    )
+    assert failed_event["message"] == "Failed to search candidate history projection."
+    assert failed_event["payload"] == {
+        "provider": "opensearch",
+        "query": "AI Agent OpenAI agent update Above threshold",
+        "error_message": "search unavailable",
+    }
     assert recording_index.search_calls == [
-        {"query": "AI Agent OpenAI agent update Above threshold", "top_k": 3}
+        {
+            "query": "AI Agent OpenAI agent update Above threshold",
+            "top_k": 3,
+            "exclude_run_id": "run_index_search_failure",
+            "exclude_candidate_ids": ["cand_001"],
+        }
     ]
 
 

@@ -14,15 +14,31 @@ from app.core.config import Settings
 
 class HistoryIndexProtocol(Protocol):
     def index_candidates(self, candidates: list[dict[str, Any]]) -> dict[str, Any]: ...
-    def search_candidates(self, query: str, top_k: int = 5) -> dict[str, Any]: ...
+    def search_candidates(
+        self,
+        query: str,
+        top_k: int = 5,
+        *,
+        exclude_run_id: str | None = None,
+        exclude_candidate_ids: list[str] | None = None,
+    ) -> dict[str, Any]: ...
 
 
 class NoopHistoryIndex:
     def index_candidates(self, candidates: list[dict[str, Any]]) -> dict[str, Any]:
         return {"indexed_count": 0, "provider": "none"}
 
-    def search_candidates(self, query: str, top_k: int = 5) -> dict[str, Any]:
+    def search_candidates(
+        self,
+        query: str,
+        top_k: int = 5,
+        *,
+        exclude_run_id: str | None = None,
+        exclude_candidate_ids: list[str] | None = None,
+    ) -> dict[str, Any]:
         _ = top_k
+        _ = exclude_run_id
+        _ = exclude_candidate_ids
         return {"provider": "none", "query": query, "items": []}
 
 
@@ -61,23 +77,51 @@ class OpenSearchHistoryIndex:
 
         return {"indexed_count": indexed_count, "provider": "opensearch"}
 
-    def search_candidates(self, query: str, top_k: int = 5) -> dict[str, Any]:
+    def search_candidates(
+        self,
+        query: str,
+        top_k: int = 5,
+        *,
+        exclude_run_id: str | None = None,
+        exclude_candidate_ids: list[str] | None = None,
+    ) -> dict[str, Any]:
         client = self.http_client
         if client is None:
             if httpx is None:
                 raise RuntimeError("httpx is unavailable for OpenSearch search.")
             client = httpx
 
+        must_not: list[dict[str, Any]] = []
+        if exclude_run_id:
+            must_not.append({"term": {"run_id": exclude_run_id}})
+        if exclude_candidate_ids:
+            must_not.append({"terms": {"candidate_id": list(exclude_candidate_ids)}})
+
+        query_body: dict[str, Any] = {
+            "bool": {
+                "must": [
+                    {
+                        "multi_match": {
+                            "query": query,
+                            "fields": [
+                                "title^3",
+                                "raw_summary^2",
+                                "content",
+                                "decision_reason",
+                            ],
+                        }
+                    }
+                ]
+            }
+        }
+        if must_not:
+            query_body["bool"]["must_not"] = must_not
+
         response = client.post(
             f"{self.base_url}/{self.index_name}/_search",
             json={
                 "size": top_k,
-                "query": {
-                    "multi_match": {
-                        "query": query,
-                        "fields": ["title^3", "raw_summary^2", "content", "decision_reason"],
-                    }
-                },
+                "query": query_body,
             },
             timeout=self.timeout_seconds,
         )

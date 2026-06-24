@@ -3233,9 +3233,87 @@ def test_opensearch_history_index_can_search_candidate_documents() -> None:
     assert client.post_requests[0]["json"] == {
         "size": 3,
         "query": {
-            "multi_match": {
-                "query": "OpenAI agent",
-                "fields": ["title^3", "raw_summary^2", "content", "decision_reason"],
+            "bool": {
+                "must": [
+                    {
+                        "multi_match": {
+                            "query": "OpenAI agent",
+                            "fields": [
+                                "title^3",
+                                "raw_summary^2",
+                                "content",
+                                "decision_reason",
+                            ],
+                        }
+                    }
+                ]
+            }
+        },
+    }
+
+
+def test_opensearch_history_index_search_excludes_current_run_documents() -> None:
+    from app.search.history_index import OpenSearchHistoryIndex
+
+    class FakeResponse:
+        def __init__(self, payload: dict[str, object]) -> None:
+            self.payload = payload
+
+        def raise_for_status(self) -> None:
+            return None
+
+        def json(self) -> dict[str, object]:
+            return self.payload
+
+    class FakeClient:
+        def __init__(self) -> None:
+            self.post_requests: list[dict[str, object]] = []
+
+        def post(self, url: str, **kwargs: object) -> FakeResponse:
+            self.post_requests.append({"url": url, **kwargs})
+            return FakeResponse({"hits": {"hits": []}})
+
+    client = FakeClient()
+    index = OpenSearchHistoryIndex(
+        base_url="http://localhost:9200",
+        index_name="industry-news-candidates",
+        http_client=client,
+        timeout_seconds=3.0,
+    )
+
+    search_result = index.search_candidates(
+        "OpenAI agent",
+        top_k=3,
+        exclude_run_id="run_001",
+        exclude_candidate_ids=["cand_001", "cand_002"],
+    )
+
+    assert search_result == {
+        "provider": "opensearch",
+        "query": "OpenAI agent",
+        "items": [],
+    }
+    assert client.post_requests[0]["json"] == {
+        "size": 3,
+        "query": {
+            "bool": {
+                "must": [
+                    {
+                        "multi_match": {
+                            "query": "OpenAI agent",
+                            "fields": [
+                                "title^3",
+                                "raw_summary^2",
+                                "content",
+                                "decision_reason",
+                            ],
+                        }
+                    }
+                ],
+                "must_not": [
+                    {"term": {"run_id": "run_001"}},
+                    {"terms": {"candidate_id": ["cand_001", "cand_002"]}},
+                ],
             }
         },
     }
