@@ -2,9 +2,11 @@
 
 ## pending
 - implement structured RAG grounding for planner and evaluation
+- implement structured RAG grounding plan
 
 ## in_progress
 - spec and planning for structured RAG grounding
+- implementation planning for structured RAG grounding
 
 ## completed
 - truthful MVP closed loop
