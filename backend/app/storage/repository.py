@@ -541,7 +541,41 @@ class SqlAlchemyMonitorRunRepository:
         monitor_run = self.session.get(MonitorRun, run_id)
         if monitor_run is None:
             return None
-        return _to_monitor_run_record(monitor_run)
+        record = _to_monitor_run_record(monitor_run)
+        snapshot = dict(record.state_snapshot)
+
+        candidate_records = self.list_candidate_records(run_id)
+        if candidate_records:
+            snapshot["candidate_items"] = [
+                {
+                    "candidate_id": candidate["candidate_id"],
+                    "title": candidate["title"],
+                    "url": candidate["url"],
+                }
+                for candidate in candidate_records
+            ]
+
+        decision_records = self.list_decision_records(run_id)
+        if decision_records:
+            snapshot["final_decisions"] = [
+                {
+                    "candidate_id": decision["candidate_id"],
+                    "should_push": decision["should_push"],
+                    "decision_reason": decision["decision_reason"],
+                }
+                for decision in decision_records
+            ]
+
+        return MonitorRunRecord(
+            run_id=record.run_id,
+            topic_id=record.topic_id,
+            status=record.status,
+            state_snapshot=snapshot,
+            error_summary=record.error_summary,
+            started_at=record.started_at,
+            finished_at=record.finished_at,
+            created_at=record.created_at,
+        )
 
     def get_active_run_for_topic(self, topic_id: str) -> MonitorRunRecord | None:
         monitor_run = self.session.scalars(

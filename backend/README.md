@@ -29,13 +29,13 @@ Durable storage contract:
 - PostgreSQL is the runtime durable source of truth for topics, monitor runs,
   candidates, extracted items, decisions, push records, run events, and eval
   results.
+- Redis and Redis Stream do not replace PostgreSQL business facts.
 - Redis owns short-lived coordination only: queue transport, active-run
-  protection, and transient worker execution state. Redis and Redis Stream do
-  not replace PostgreSQL business facts.
+  protection, and transient worker execution state.
 - If Redis is unavailable, runtime coordination may degrade to in-memory
   execution, but PostgreSQL business facts remain durable and authoritative.
-- OpenSearch/Elasticsearch is a derived retrieval projection of persisted
-  records, not an authoritative store.
+- OpenSearch/Elasticsearch is a derived retrieval projection only, not an
+  authoritative store.
 
 Included in the current codebase:
 

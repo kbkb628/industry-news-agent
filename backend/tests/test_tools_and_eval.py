@@ -58,6 +58,7 @@ from app.storage.repository import (
     DecisionRecordUpsertData,
     EvalResultCreateData,
     ExtractedItemRecordUpsertData,
+    MonitorRunUpsertData,
     SqlAlchemyMonitorRunRepository,
     build_monitor_run_repository,
     build_topic_repository,
@@ -1078,6 +1079,54 @@ def test_monitor_detail_endpoints_read_persisted_phase_a_entities(
     assert summary_response.json()["run_count"] == 1
     assert summary_response.json()["latest_eval"]["run_id"] == seeded_phase_a_sqlalchemy.run_id
     assert summary_response.json()["latest_eval"]["push_count"] == 1
+
+
+def test_monitor_detail_endpoint_prefers_persisted_phase_a_entities_over_snapshot_mirrors(
+    seeded_phase_a_sqlalchemy,
+    sqlalchemy_client_factory,
+) -> None:
+    with seeded_phase_a_sqlalchemy.session_factory() as session:
+        repository = build_monitor_run_repository(session)
+        repository.upsert_monitor_run(
+            MonitorRunUpsertData(
+                run_id=seeded_phase_a_sqlalchemy.run_id,
+                topic_id=seeded_phase_a_sqlalchemy.topic_id,
+                status="completed",
+                state_snapshot={
+                    "run_id": seeded_phase_a_sqlalchemy.run_id,
+                    "topic_id": seeded_phase_a_sqlalchemy.topic_id,
+                    "trigger": "scheduler",
+                    "status": "completed",
+                    "candidate_items": [],
+                    "final_decisions": [],
+                    "errors": [],
+                },
+                error_summary=None,
+                started_at=datetime(2026, 6, 24, 8, 0, tzinfo=UTC),
+                finished_at=datetime(2026, 6, 24, 8, 1, tzinfo=UTC),
+            )
+        )
+
+    with sqlalchemy_client_factory(seeded_phase_a_sqlalchemy.session_factory) as client:
+        run_response = client.get(
+            f"/api/monitor/runs/{seeded_phase_a_sqlalchemy.run_id}"
+        )
+
+    assert run_response.status_code == 200
+    assert run_response.json()["candidate_items"] == [
+        {
+            "candidate_id": "cand_001",
+            "title": "OpenAI agent update",
+            "url": "https://example.com/agent-update",
+        }
+    ]
+    assert run_response.json()["final_decisions"] == [
+        {
+            "candidate_id": "cand_001",
+            "should_push": True,
+            "decision_reason": "Above threshold",
+        }
+    ]
 
 
 def test_score_run_reports_phase2_quality_fallback_metrics() -> None:
