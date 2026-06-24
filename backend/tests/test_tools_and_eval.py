@@ -3376,6 +3376,123 @@ def test_monitor_state_can_hold_candidate_orchestration_fields() -> None:
     assert state["candidate_task_summary"]["task_count"] == 0
 
 
+def test_sqlalchemy_repository_persists_candidate_task_ledger(tmp_path) -> None:
+    from app.storage.repository import (
+        CandidateTaskRecordCreateData,
+        SqlAlchemyMonitorRunRepository,
+    )
+
+    database_url = f"sqlite+pysqlite:///{tmp_path / 'candidate_task_ledger.db'}"
+    settings = Settings(
+        database_url=database_url,
+        redis_url="redis://localhost:6379/0",
+    )
+    engine = build_engine(settings)
+    Base.metadata.create_all(engine)
+    session = build_session_factory(engine)()
+    try:
+        repository = SqlAlchemyMonitorRunRepository(session=session)
+
+        created = repository.create_candidate_task_records(
+            (
+                CandidateTaskRecordCreateData(
+                    task_id="task_fetch_cand_001",
+                    run_id="run_candidate_tasks",
+                    candidate_id="cand_001",
+                    stage="fetch",
+                    status="completed",
+                    attempt=1,
+                    max_attempts=2,
+                    depends_on_task_ids=(),
+                    input_ref={"candidate_id": "cand_001"},
+                    output_ref={"fetched_candidate_id": "cand_001"},
+                    error_code=None,
+                    error_message=None,
+                    started_at=datetime(2026, 6, 24, 11, 0, tzinfo=UTC),
+                    finished_at=datetime(2026, 6, 24, 11, 1, tzinfo=UTC),
+                ),
+            )
+        )
+
+        assert created[0]["task_id"] == "task_fetch_cand_001"
+        assert created[0]["stage"] == "fetch"
+        assert created[0]["status"] == "completed"
+        assert created[0]["output_ref"]["fetched_candidate_id"] == "cand_001"
+        listed = repository.list_candidate_task_records("run_candidate_tasks")
+        assert listed[0]["task_id"] == "task_fetch_cand_001"
+    finally:
+        session.close()
+        engine.dispose()
+
+
+def test_sqlalchemy_repository_lists_candidate_task_records_by_candidate(
+    tmp_path,
+) -> None:
+    from app.storage.repository import (
+        CandidateTaskRecordCreateData,
+        SqlAlchemyMonitorRunRepository,
+    )
+
+    database_url = f"sqlite+pysqlite:///{tmp_path / 'candidate_task_lookup.db'}"
+    settings = Settings(
+        database_url=database_url,
+        redis_url="redis://localhost:6379/0",
+    )
+    engine = build_engine(settings)
+    Base.metadata.create_all(engine)
+    session = build_session_factory(engine)()
+    try:
+        repository = SqlAlchemyMonitorRunRepository(session=session)
+        repository.create_candidate_task_records(
+            (
+                CandidateTaskRecordCreateData(
+                    task_id="task_fetch_cand_001",
+                    run_id="run_candidate_tasks",
+                    candidate_id="cand_001",
+                    stage="fetch",
+                    status="completed",
+                    attempt=1,
+                    max_attempts=2,
+                    depends_on_task_ids=(),
+                    input_ref={"candidate_id": "cand_001"},
+                    output_ref={},
+                    error_code=None,
+                    error_message=None,
+                    started_at=None,
+                    finished_at=None,
+                ),
+                CandidateTaskRecordCreateData(
+                    task_id="task_extract_cand_002",
+                    run_id="run_candidate_tasks",
+                    candidate_id="cand_002",
+                    stage="extract",
+                    status="failed",
+                    attempt=2,
+                    max_attempts=2,
+                    depends_on_task_ids=("task_fetch_cand_002",),
+                    input_ref={"candidate_id": "cand_002"},
+                    output_ref={},
+                    error_code="content_error",
+                    error_message="empty content",
+                    started_at=None,
+                    finished_at=None,
+                ),
+            )
+        )
+
+        filtered = repository.list_candidate_task_records(
+            "run_candidate_tasks",
+            candidate_id="cand_002",
+        )
+
+        assert len(filtered) == 1
+        assert filtered[0]["task_id"] == "task_extract_cand_002"
+        assert filtered[0]["error_code"] == "content_error"
+    finally:
+        session.close()
+        engine.dispose()
+
+
 def test_task6_fetch_preserves_candidate_identity_when_urls_canonicalize_equal(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:

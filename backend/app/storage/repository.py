@@ -10,6 +10,7 @@ from sqlalchemy.orm import Session
 
 from app.storage.models import (
     CandidateRecord,
+    CandidateTaskRecord,
     DecisionRecord,
     EvalResult,
     ExtractedItemRecord,
@@ -187,6 +188,24 @@ class EvalResultCreateData:
     suggestions: tuple[str, ...] = ()
 
 
+@dataclass(frozen=True, slots=True)
+class CandidateTaskRecordCreateData:
+    task_id: str
+    run_id: str
+    candidate_id: str
+    stage: str
+    status: str
+    attempt: int
+    max_attempts: int
+    depends_on_task_ids: tuple[str, ...]
+    input_ref: dict[str, Any]
+    output_ref: dict[str, Any]
+    error_code: str | None
+    error_message: str | None
+    started_at: datetime | None
+    finished_at: datetime | None
+
+
 class MonitorRunRepositoryProtocol(Protocol):
     def upsert_monitor_run(self, payload: MonitorRunUpsertData) -> MonitorRunRecord: ...
 
@@ -234,6 +253,18 @@ class MonitorRunRepositoryProtocol(Protocol):
     def create_run_events(
         self,
         payloads: tuple[RunEventCreateData, ...],
+    ) -> list[dict[str, Any]]: ...
+
+    def create_candidate_task_records(
+        self,
+        payloads: tuple[CandidateTaskRecordCreateData, ...],
+    ) -> list[dict[str, Any]]: ...
+
+    def list_candidate_task_records(
+        self,
+        run_id: str,
+        *,
+        candidate_id: str | None = None,
     ) -> list[dict[str, Any]]: ...
 
     def get_eval_result(self, run_id: str | None = None) -> dict[str, Any] | None: ...
@@ -429,6 +460,24 @@ class UnimplementedMonitorRunRepository:
     ) -> list[dict[str, Any]]:
         raise NotImplementedError(
             "Event persistence is deferred until a database session is provided."
+        )
+
+    def create_candidate_task_records(
+        self,
+        payloads: tuple[CandidateTaskRecordCreateData, ...],
+    ) -> list[dict[str, Any]]:
+        raise NotImplementedError(
+            "Candidate task persistence is deferred until a database session is provided."
+        )
+
+    def list_candidate_task_records(
+        self,
+        run_id: str,
+        *,
+        candidate_id: str | None = None,
+    ) -> list[dict[str, Any]]:
+        raise NotImplementedError(
+            "Candidate task queries are deferred until a database session is provided."
         )
 
     def get_eval_result(self, run_id: str | None = None) -> dict[str, Any] | None:
@@ -820,6 +869,77 @@ class SqlAlchemyMonitorRunRepository:
         for model in models:
             self.session.refresh(model)
         return [self._serialize_run_event(model) for model in models]
+
+    def create_candidate_task_records(
+        self,
+        payloads: tuple[CandidateTaskRecordCreateData, ...],
+    ) -> list[dict[str, Any]]:
+        models: list[CandidateTaskRecord] = []
+        for payload in payloads:
+            model = CandidateTaskRecord(
+                task_id=payload.task_id,
+                run_id=payload.run_id,
+                candidate_id=payload.candidate_id,
+                stage=payload.stage,
+                status=payload.status,
+                attempt=payload.attempt,
+                max_attempts=payload.max_attempts,
+                depends_on_task_ids=list(payload.depends_on_task_ids),
+                input_ref=dict(payload.input_ref),
+                output_ref=dict(payload.output_ref),
+                error_code=payload.error_code,
+                error_message=payload.error_message,
+                started_at=payload.started_at,
+                finished_at=payload.finished_at,
+            )
+            self.session.add(model)
+            models.append(model)
+
+        self._commit()
+        for model in models:
+            self.session.refresh(model)
+        return [self._serialize_candidate_task_record(model) for model in models]
+
+    def list_candidate_task_records(
+        self,
+        run_id: str,
+        *,
+        candidate_id: str | None = None,
+    ) -> list[dict[str, Any]]:
+        statement = select(CandidateTaskRecord).where(
+            CandidateTaskRecord.run_id == run_id
+        )
+        if candidate_id is not None:
+            statement = statement.where(CandidateTaskRecord.candidate_id == candidate_id)
+        models = self.session.scalars(
+            statement.order_by(
+                CandidateTaskRecord.created_at.asc(),
+                CandidateTaskRecord.task_id.asc(),
+            )
+        ).all()
+        return [self._serialize_candidate_task_record(model) for model in models]
+
+    def _serialize_candidate_task_record(
+        self,
+        record: CandidateTaskRecord,
+    ) -> dict[str, Any]:
+        return {
+            "task_id": record.task_id,
+            "run_id": record.run_id,
+            "candidate_id": record.candidate_id,
+            "stage": record.stage,
+            "status": record.status,
+            "attempt": record.attempt,
+            "max_attempts": record.max_attempts,
+            "depends_on_task_ids": list(record.depends_on_task_ids),
+            "input_ref": dict(record.input_ref),
+            "output_ref": dict(record.output_ref),
+            "error_code": record.error_code,
+            "error_message": record.error_message,
+            "started_at": record.started_at,
+            "finished_at": record.finished_at,
+            "created_at": record.created_at,
+        }
 
     def _serialize_run_event(self, event: RunEvent) -> dict[str, Any]:
         return {
