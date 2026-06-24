@@ -23,5 +23,6 @@
 - dashboard wording tightened around multi-agent orchestration and governance
 - frontend candidate task ledger exposed from durable monitor contract
 - html run detail page extended to show runtime context, business memory, and integration evidence
+- react dashboard extended to show run context, business memory, and task runtime evidence
 - final repository presentation verification completed
 - final showcase verification milestone committed in branch history

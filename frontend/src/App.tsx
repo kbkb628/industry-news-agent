@@ -112,6 +112,16 @@ export default function App() {
       : 0;
   const candidateTaskItems =
     candidateTasks?.status === "ready" ? candidateTasks.data.items ?? [] : [];
+  const runContext =
+    run?.status === "ready" ? run.data.run_context ?? {} : {};
+  const businessMemory =
+    run?.status === "ready" ? run.data.business_memory ?? {} : {};
+  const pushHistoryCount = Array.isArray(businessMemory.push_history)
+    ? businessMemory.push_history.length
+    : 0;
+  const memoryDocumentCount = Array.isArray(businessMemory.documents)
+    ? businessMemory.documents.length
+    : 0;
 
   return (
     <main className="shell">
@@ -404,6 +414,29 @@ export default function App() {
                   <pre>{compactJson(run.data.evaluation_output ?? {})}</pre>
                 </article>
               </div>
+              <article className="row-card">
+                <h3>Run context and business memory</h3>
+                <p>
+                  These fields expose request-level runtime framing and the
+                  durable business grounding that planner and evaluation can
+                  read during the monitor loop.
+                </p>
+              </article>
+              <div className="structured-grid">
+                <article className="row-card">
+                  <h3>Run context</h3>
+                  <p>Run context keys {Object.keys(runContext).length}</p>
+                  <pre>{compactJson(runContext)}</pre>
+                </article>
+                <article className="row-card">
+                  <h3>Business memory</h3>
+                  <p>
+                    Push history {pushHistoryCount} | documents{" "}
+                    {memoryDocumentCount}
+                  </p>
+                  <pre>{compactJson(businessMemory)}</pre>
+                </article>
+              </div>
               <div className="structured-grid">
                 <article className="row-card">
                   <h3>MCP runtime</h3>
@@ -465,7 +498,16 @@ export default function App() {
                 {candidateTasks?.status === "ready" &&
                   candidateTaskItems.map((task) => (
                     <article className="ledger-item" key={task.task_id}>
-                      <p>{task.stage} | {task.status} | candidate {task.candidate_id}</p>
+                      <p>
+                        {task.stage} | {task.status} | candidate {task.candidate_id}
+                      </p>
+                      <p>
+                        attempt {task.attempt ?? 0}/{task.max_attempts ?? 0}
+                        {task.depends_on_task_ids &&
+                        task.depends_on_task_ids.length > 0
+                          ? ` | depends on ${task.depends_on_task_ids.join(", ")}`
+                          : ""}
+                      </p>
                       <pre>{compactJson(task.output_ref ?? {})}</pre>
                     </article>
                   ))}

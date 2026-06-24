@@ -76,6 +76,14 @@ describe("App", () => {
           topic_id: "topic_001",
           trigger: "manual",
           status: "completed",
+          run_context: {
+            trigger_source: "dashboard",
+            requested_by: "demo_operator",
+          },
+          business_memory: {
+            push_history: [{ title: "Prior agent funding alert" }],
+            documents: [{ doc_id: "kb_001", title: "Trusted sources improve push quality" }],
+          },
           expanded_queries: ["AI Agent funding"],
           candidate_items: [{ title: "Agent launch" }],
           final_decisions: [{ title: "Agent launch", should_push: true }],
@@ -153,6 +161,8 @@ describe("App", () => {
               stage: "fetch",
               status: "completed",
               candidate_id: "cand_001",
+              attempt: 1,
+              max_attempts: 2,
               output_ref: { extracted_id: "ext_001" },
             },
             {
@@ -161,6 +171,9 @@ describe("App", () => {
               stage: "extract",
               status: "completed",
               candidate_id: "cand_001",
+              attempt: 1,
+              max_attempts: 2,
+              depends_on_task_ids: ["task_fetch_001"],
               output_ref: { extracted_id: "ext_001" },
             },
             {
@@ -169,6 +182,9 @@ describe("App", () => {
               stage: "evaluate",
               status: "completed",
               candidate_id: "cand_001",
+              attempt: 2,
+              max_attempts: 2,
+              depends_on_task_ids: ["task_extract_001"],
               output_ref: { decision_id: "dec_001" },
             },
           ],
@@ -229,6 +245,9 @@ describe("App", () => {
     expect(screen.getByText(/Retrieval output/i)).toBeInTheDocument();
     expect(screen.getByText(/Extraction output/i)).toBeInTheDocument();
     expect(screen.getByText(/Evaluation output/i)).toBeInTheDocument();
+    expect(screen.getByText(/Run context and business memory/i)).toBeInTheDocument();
+    expect(screen.getByText(/Run context keys 2/i)).toBeInTheDocument();
+    expect(screen.getByText(/Push history 1 \| documents 1/i)).toBeInTheDocument();
     expect(screen.getByText(/MCP runtime/i)).toBeInTheDocument();
     expect(screen.getByText(/Browser fallback runtime/i)).toBeInTheDocument();
     expect(
@@ -246,5 +265,7 @@ describe("App", () => {
     expect(
       screen.getByText(/evaluate \| completed \| candidate cand_001/i),
     ).toBeInTheDocument();
+    expect(screen.getByText(/depends on task_fetch_001/i)).toBeInTheDocument();
+    expect(screen.getByText(/attempt 2\/2/i)).toBeInTheDocument();
   });
 });

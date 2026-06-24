@@ -35,6 +35,12 @@ export type MonitorRun = {
   topic_id: string;
   trigger: string;
   status: "pending" | "running" | "completed" | "failed";
+  run_context?: Record<string, unknown>;
+  business_memory?: {
+    push_history?: Record<string, unknown>[];
+    documents?: Record<string, unknown>[];
+    [key: string]: unknown;
+  };
   expanded_queries?: string[];
   candidate_items?: Record<string, unknown>[];
   final_decisions?: Record<string, unknown>[];
