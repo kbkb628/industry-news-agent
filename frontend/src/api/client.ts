@@ -1,4 +1,5 @@
 import type {
+  CandidateTaskListResponse,
   EvalSummary,
   EventListResponse,
   MonitorRun,
@@ -29,6 +30,14 @@ export function fetchMonitorRun(runId: string): Promise<MonitorRun> {
 export function fetchEvents(runId: string): Promise<EventListResponse> {
   return getJson<EventListResponse>(
     `/api/monitor/runs/${encodeURIComponent(runId)}/events`,
+  );
+}
+
+export function fetchCandidateTasks(
+  runId: string,
+): Promise<CandidateTaskListResponse> {
+  return getJson<CandidateTaskListResponse>(
+    `/api/monitor/runs/${encodeURIComponent(runId)}/candidate-tasks`,
   );
 }
 

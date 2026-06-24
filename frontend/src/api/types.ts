@@ -101,6 +101,28 @@ export type EventListResponse = {
   events: RunEvent[];
 };
 
+export type CandidateTaskRecord = {
+  task_id: string;
+  run_id: string;
+  candidate_id: string;
+  stage: string;
+  status: string;
+  attempt?: number;
+  max_attempts?: number;
+  depends_on_task_ids?: string[];
+  input_ref?: Record<string, unknown>;
+  output_ref?: Record<string, unknown>;
+  error_code?: string | null;
+  error_message?: string | null;
+  started_at?: string | null;
+  finished_at?: string | null;
+  created_at?: string | null;
+};
+
+export type CandidateTaskListResponse = {
+  items: CandidateTaskRecord[];
+};
+
 export type EvalResult = {
   eval_id: string;
   run_id: string;

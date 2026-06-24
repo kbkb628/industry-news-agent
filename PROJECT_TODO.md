@@ -21,5 +21,6 @@
 - resume-alignment assets frozen
 - showcase pages polished for resume-aligned demo flow
 - dashboard wording tightened around multi-agent orchestration and governance
+- frontend candidate task ledger exposed from durable monitor contract
 - final repository presentation verification completed
 - final showcase verification milestone committed in branch history

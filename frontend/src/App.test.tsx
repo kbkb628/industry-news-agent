@@ -144,6 +144,36 @@ describe("App", () => {
           ],
         });
       }
+      if (path === "/api/monitor/runs/run_001/candidate-tasks") {
+        return respond({
+          items: [
+            {
+              task_id: "task_fetch_001",
+              run_id: "run_001",
+              stage: "fetch",
+              status: "completed",
+              candidate_id: "cand_001",
+              output_ref: { extracted_id: "ext_001" },
+            },
+            {
+              task_id: "task_extract_001",
+              run_id: "run_001",
+              stage: "extract",
+              status: "completed",
+              candidate_id: "cand_001",
+              output_ref: { extracted_id: "ext_001" },
+            },
+            {
+              task_id: "task_evaluate_001",
+              run_id: "run_001",
+              stage: "evaluate",
+              status: "completed",
+              candidate_id: "cand_001",
+              output_ref: { decision_id: "dec_001" },
+            },
+          ],
+        });
+      }
       return respond({ detail: "not found" }, false);
     });
   });
@@ -208,6 +238,13 @@ describe("App", () => {
     expect(screen.getByText(/Configured provider onesearch/i)).toBeInTheDocument();
     expect(
       screen.getByText(/Configured provider playwright_mcp/i),
+    ).toBeInTheDocument();
+    expect(screen.getByText(/Candidate task ledger/i)).toBeInTheDocument();
+    expect(
+      screen.getByText(/fetch \| completed \| candidate cand_001/i),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByText(/evaluate \| completed \| candidate cand_001/i),
     ).toBeInTheDocument();
   });
 });

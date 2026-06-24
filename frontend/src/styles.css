@@ -186,6 +186,12 @@ button {
   background: rgba(255, 252, 242, 0.66);
 }
 
+.ledger-item {
+  margin-top: 10px;
+  padding-top: 10px;
+  border-top: 1px solid var(--line);
+}
+
 .structured-grid {
   display: grid;
   gap: 12px;

@@ -1,5 +1,6 @@
 import { FormEvent, useEffect, useState } from "react";
 import {
+  fetchCandidateTasks,
   fetchEvalSummary,
   fetchEvents,
   fetchMonitorRun,
@@ -7,6 +8,7 @@ import {
   fetchTopics,
 } from "./api/client";
 import type {
+  CandidateTaskListResponse,
   EvalSummary,
   EventListResponse,
   MonitorRun,
@@ -47,6 +49,8 @@ export default function App() {
   const [events, setEvents] = useState<Loadable<EventListResponse> | null>(
     null,
   );
+  const [candidateTasks, setCandidateTasks] =
+    useState<Loadable<CandidateTaskListResponse> | null>(null);
 
   useEffect(() => {
     fetchTopics()
@@ -70,8 +74,11 @@ export default function App() {
     event.preventDefault();
     const trimmed = runId.trim();
     if (!trimmed) return;
+
     setRun({ status: "loading" });
     setEvents({ status: "loading" });
+    setCandidateTasks({ status: "loading" });
+
     fetchMonitorRun(trimmed)
       .then((data) => setRun({ status: "ready", data }))
       .catch((error: Error) =>
@@ -81,6 +88,11 @@ export default function App() {
       .then((data) => setEvents({ status: "ready", data }))
       .catch((error: Error) =>
         setEvents({ status: "error", message: error.message }),
+      );
+    fetchCandidateTasks(trimmed)
+      .then((data) => setCandidateTasks({ status: "ready", data }))
+      .catch((error: Error) =>
+        setCandidateTasks({ status: "error", message: error.message }),
       );
   };
 
@@ -98,6 +110,8 @@ export default function App() {
         summary.data.total_browser_fallback_count +
         summary.data.total_provider_fallback_count
       : 0;
+  const candidateTaskItems =
+    candidateTasks?.status === "ready" ? candidateTasks.data.items ?? [] : [];
 
   return (
     <main className="shell">
@@ -190,13 +204,14 @@ export default function App() {
             This panel summarizes the operational story that supports the resume
             claim around scheduled monitoring and queued worker execution.
           </p>
-            <article className="row-card">
-              <h3>Execution path</h3>
-              <p>
-                Manual trigger or APScheduler enqueue {"->"} worker dequeue {"->"} monitor graph invocation.
-              </p>
-              <p>Redis Stream is used when available, with in-memory queue fallback.</p>
-            </article>
+          <article className="row-card">
+            <h3>Execution path</h3>
+            <p>
+              Manual trigger or APScheduler enqueue {"->"} worker dequeue {"->"}{" "}
+              monitor graph invocation.
+            </p>
+            <p>Redis Stream is used when available, with in-memory queue fallback.</p>
+          </article>
           <article className="row-card">
             <h3>Failure handling</h3>
             <p>Workers emit retry, timeout, and active-run-guard governance events.</p>
@@ -257,8 +272,7 @@ export default function App() {
                 <p>Trusted: {topic.trusted_sources.join(", ") || "-"}</p>
                 <p>
                   Threshold {topic.push_threshold} | Enabled{" "}
-                  {topic.enabled ? "yes" : "no"} | Cron{" "}
-                  {topic.schedule_cron ?? "-"}
+                  {topic.enabled ? "yes" : "no"} | Cron {topic.schedule_cron ?? "-"}
                 </p>
               </article>
             ))}
@@ -267,7 +281,8 @@ export default function App() {
         <section className="panel">
           <h2>Pushes</h2>
           <p className="panel-copy">
-            Push records are the persisted outcome of evaluation, not transient UI state.
+            Push records are the persisted outcome of evaluation, not transient UI
+            state.
           </p>
           {pushes.status === "loading" && <p>Loading pushes...</p>}
           {pushes.status === "error" && <p className="error">{pushes.message}</p>}
@@ -295,8 +310,8 @@ export default function App() {
           <h2>Run Detail</h2>
           <p className="panel-copy">
             This view promotes the structured stage contracts into the primary
-            read surface while keeping compatibility mirrors visible for
-            concise readback.
+            read surface while keeping compatibility mirrors visible for concise
+            readback.
           </p>
           {run === null && <p>Enter a run id to inspect monitor state.</p>}
           {run?.status === "loading" && <p>Loading run...</p>}
@@ -322,15 +337,17 @@ export default function App() {
                 <>
                   <p>
                     Candidate task orchestration:{" "}
-                    {run.data.candidate_task_summary.task_count ?? 0} tasks |{" "}
-                    completed {run.data.candidate_task_summary.completed_count ?? 0} |{" "}
-                    skipped {run.data.candidate_task_summary.skipped_count ?? 0} |{" "}
-                    failed {run.data.candidate_task_summary.failed_count ?? 0}
+                    {run.data.candidate_task_summary.task_count ?? 0} tasks | completed{" "}
+                    {run.data.candidate_task_summary.completed_count ?? 0} | skipped{" "}
+                    {run.data.candidate_task_summary.skipped_count ?? 0} | failed{" "}
+                    {run.data.candidate_task_summary.failed_count ?? 0}
                   </p>
                   <p>
                     Stage evidence: fetch{" "}
-                    {run.data.candidate_task_summary.fetch_completed_count ?? 0} | extract{" "}
-                    {run.data.candidate_task_summary.extract_completed_count ?? 0} | evaluate{" "}
+                    {run.data.candidate_task_summary.fetch_completed_count ?? 0} |
+                    extract{" "}
+                    {run.data.candidate_task_summary.extract_completed_count ?? 0} |
+                    evaluate{" "}
                     {run.data.candidate_task_summary.evaluate_completed_count ?? 0}
                   </p>
                 </>
@@ -339,8 +356,8 @@ export default function App() {
                 <h3>Structured stage read surface</h3>
                 <p>
                   The dashboard reads the same structured planner, retrieval,
-                  extraction, and evaluation sections that the backend exposes
-                  on the run API.
+                  extraction, and evaluation sections that the backend exposes on
+                  the run API.
                 </p>
               </article>
               <div className="structured-grid">
@@ -348,14 +365,12 @@ export default function App() {
                   <h3>Planner output</h3>
                   <p>
                     Expanded queries{" "}
-                    {run.data.planner_output?.expanded_queries?.length ?? 0} |
-                    source plan steps{" "}
-                    {run.data.planner_output?.source_plan?.length ?? 0}
+                    {run.data.planner_output?.expanded_queries?.length ?? 0} | source
+                    plan steps {run.data.planner_output?.source_plan?.length ?? 0}
                   </p>
                   <p>
-                    {(run.data.planner_output?.planning_reasons ?? []).join(
-                      " ",
-                    ) || "No planning reasons recorded."}
+                    {(run.data.planner_output?.planning_reasons ?? []).join(" ") ||
+                      "No planning reasons recorded."}
                   </p>
                   <pre>{compactJson(run.data.planner_output ?? {})}</pre>
                 </article>
@@ -384,8 +399,7 @@ export default function App() {
                   <p>
                     Final decisions{" "}
                     {run.data.evaluation_output?.final_decisions?.length ?? 0} |
-                    push records{" "}
-                    {run.data.evaluation_output?.push_records?.length ?? 0}
+                    push records {run.data.evaluation_output?.push_records?.length ?? 0}
                   </p>
                   <pre>{compactJson(run.data.evaluation_output ?? {})}</pre>
                 </article>
@@ -395,34 +409,27 @@ export default function App() {
                   <h3>MCP runtime</h3>
                   <p>
                     Configured provider{" "}
-                    {run.data.integration_runtime?.mcp?.configured_provider ??
-                      "-"}
+                    {run.data.integration_runtime?.mcp?.configured_provider ?? "-"}
                   </p>
                   <p>
-                    Enabled {runtimeFlagLabel(run.data.integration_runtime?.mcp?.enabled)} |
+                    Enabled{" "}
+                    {runtimeFlagLabel(run.data.integration_runtime?.mcp?.enabled)} |
                     used in run{" "}
-                    {runtimeFlagLabel(
-                      run.data.integration_runtime?.mcp?.used_in_run,
-                    )}{" "}
-                    | fallback used{" "}
-                    {runtimeFlagLabel(
-                      run.data.integration_runtime?.mcp?.fallback_used,
-                    )}
+                    {runtimeFlagLabel(run.data.integration_runtime?.mcp?.used_in_run)} |
+                    fallback used{" "}
+                    {runtimeFlagLabel(run.data.integration_runtime?.mcp?.fallback_used)}
                   </p>
                 </article>
                 <article className="row-card">
                   <h3>Browser fallback runtime</h3>
                   <p>
                     Configured provider{" "}
-                    {run.data.integration_runtime?.browser
-                      ?.configured_provider ?? "-"}
+                    {run.data.integration_runtime?.browser?.configured_provider ?? "-"}
                   </p>
                   <p>
                     Enabled{" "}
-                    {runtimeFlagLabel(
-                      run.data.integration_runtime?.browser?.enabled,
-                    )}{" "}
-                    | used in run{" "}
+                    {runtimeFlagLabel(run.data.integration_runtime?.browser?.enabled)} |
+                    used in run{" "}
                     {runtimeFlagLabel(
                       run.data.integration_runtime?.browser?.used_in_run,
                     )}{" "}
@@ -433,12 +440,36 @@ export default function App() {
                   </p>
                   <p>
                     Allowed domains:{" "}
-                    {run.data.integration_runtime?.browser?.allowed_domains?.join(
-                      ", ",
-                    ) || "-"}
+                    {run.data.integration_runtime?.browser?.allowed_domains?.join(", ") ||
+                      "-"}
                   </p>
                 </article>
               </div>
+              <article className="row-card">
+                <h3>Candidate task ledger</h3>
+                <p>
+                  This ledger shows candidate-level fetch, extract, and evaluate
+                  execution as durable task evidence rather than only as run-level
+                  summary counts.
+                </p>
+                {candidateTasks?.status === "loading" && (
+                  <p>Loading candidate task ledger...</p>
+                )}
+                {candidateTasks?.status === "error" && (
+                  <p className="error">{candidateTasks.message}</p>
+                )}
+                {candidateTasks?.status === "ready" &&
+                  candidateTaskItems.length === 0 && (
+                    <p>No candidate task records found.</p>
+                  )}
+                {candidateTasks?.status === "ready" &&
+                  candidateTaskItems.map((task) => (
+                    <article className="ledger-item" key={task.task_id}>
+                      <p>{task.stage} | {task.status} | candidate {task.candidate_id}</p>
+                      <pre>{compactJson(task.output_ref ?? {})}</pre>
+                    </article>
+                  ))}
+              </article>
               <pre>{compactJson(run.data.errors ?? [])}</pre>
             </div>
           )}

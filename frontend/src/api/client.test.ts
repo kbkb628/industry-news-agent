@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
   fetchEvalSummary,
+  fetchCandidateTasks,
   fetchEvents,
   fetchMonitorRun,
   fetchPushes,
@@ -41,6 +42,9 @@ describe("api client", () => {
       if (path === "/api/monitor/runs/run_001/events") {
         return jsonResponse({ run_id: "run_001", events: [] });
       }
+      if (path === "/api/monitor/runs/run_001/candidate-tasks") {
+        return jsonResponse({ items: [] });
+      }
       if (path === "/api/eval/summary") {
         return jsonResponse({
           run_count: 1,
@@ -74,6 +78,7 @@ describe("api client", () => {
     await fetchPushes();
     await fetchMonitorRun("run_001");
     await fetchEvents("run_001");
+    await fetchCandidateTasks("run_001");
     await fetchEvalSummary();
 
     expect(fetchMock).toHaveBeenNthCalledWith(1, "/api/topics");
@@ -83,7 +88,11 @@ describe("api client", () => {
       4,
       "/api/monitor/runs/run_001/events",
     );
-    expect(fetchMock).toHaveBeenNthCalledWith(5, "/api/eval/summary");
+    expect(fetchMock).toHaveBeenNthCalledWith(
+      5,
+      "/api/monitor/runs/run_001/candidate-tasks",
+    );
+    expect(fetchMock).toHaveBeenNthCalledWith(6, "/api/eval/summary");
   });
 
   it("throws a readable error when a backend request fails", async () => {
