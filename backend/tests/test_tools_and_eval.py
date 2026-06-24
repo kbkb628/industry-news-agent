@@ -2075,7 +2075,7 @@ def test_retrieve_hybrid_context_returns_semantic_memory() -> None:
             keywords=["trusted", "source", "quality", "ranking"],
             metadata={
                 "section": "guidance",
-                "trusted_sources": ["openai.com", "github.com"],
+                "trusted_source_hints": ["openai.com", "github.com"],
                 "topic_keywords": ["AI Agent", "MCP"],
                 "source_preferences": ["rss_first", "trusted_domain_priority"],
                 "push_rules": [
@@ -2088,9 +2088,9 @@ def test_retrieve_hybrid_context_returns_semantic_memory() -> None:
         )
     ]
 
-    context = retrieve_hybrid_context(documents, "AI Agent MCP", top_k=3)
+    context = retrieve_hybrid_context(documents, "trusted source quality", top_k=3)
 
-    assert context["documents"][0]["metadata"]["trusted_sources"] == [
+    assert context["documents"][0]["metadata"]["trusted_source_hints"] == [
         "openai.com",
         "github.com",
     ]

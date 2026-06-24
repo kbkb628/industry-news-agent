@@ -43,7 +43,7 @@ def build_semantic_memory(documents: list[dict[str, Any]]) -> dict[str, list[str
         metadata = dict(document.get("metadata", {}))
         topic_keywords.extend(str(item) for item in metadata.get("topic_keywords", []))
         trusted_source_hints.extend(
-            str(item) for item in metadata.get("trusted_sources", [])
+            str(item) for item in metadata.get("trusted_source_hints", [])
         )
         source_preferences.extend(
             str(item) for item in metadata.get("source_preferences", [])
