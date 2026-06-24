@@ -766,6 +766,81 @@ def test_monitor_graph_runs_to_completion() -> None:
     assert len(repository.eval_results) == 1
 
 
+def test_monitor_graph_planner_agent_merges_semantic_memory_into_planner_output(
+    monkeypatch,
+) -> None:
+    def fake_retrieve_hybrid_context(*args, **kwargs) -> dict[str, object]:
+        return {
+            "documents": [{"doc_id": "kb_semantic"}],
+            "retrieval_mode": "hybrid_keyword_bm25_embedding_rerank",
+            "retrievers": ["keyword", "bm25", "embedding_like"],
+            "semantic_memory": {
+                "topic_keywords": ["MCP", "LangGraph"],
+                "trusted_source_hints": ["github.com"],
+                "source_preferences": ["rss_first", "trusted_domain_priority"],
+                "push_rules": [],
+                "history_guidance": [],
+                "evidence_summary": [
+                    "knowledge base matched trusted-source guidance"
+                ],
+            },
+        }
+
+    monkeypatch.setattr(
+        "app.agent.nodes.retrieve_hybrid_context",
+        fake_retrieve_hybrid_context,
+    )
+
+    graph = build_monitor_graph(llm=MockLLM())
+    result = graph.invoke(
+        {
+            "run_id": "run_semantic_planner",
+            "topic_id": "topic_ai_agent",
+            "topic": {
+                "topic_id": "topic_ai_agent",
+                "name": "AI Agent",
+                "description": "Track enterprise AI agent launches and deployment updates.",
+                "seed_keywords": ["OpenAI", "enterprise"],
+                "trusted_sources": ["openai.com"],
+                "exclude_keywords": [],
+                "push_threshold": 0.72,
+                "cooldown_hours": 24,
+                "enabled": True,
+            },
+            "seed_keywords": ["OpenAI", "enterprise"],
+            "expanded_queries": [],
+            "business_context": {},
+            "source_plan": [],
+            "candidate_items": [],
+            "fetched_contents": [],
+            "extracted_items": [],
+            "deduped_items": [],
+            "scored_items": [],
+            "final_decisions": [],
+            "decision_reasons": [],
+            "push_records": [],
+            "push_history": [],
+            "tool_results": [],
+            "eval_result": {},
+            "events": [],
+            "errors": [],
+            "status": "created",
+        }
+    )
+
+    expanded_queries = result["planner_output"]["expanded_queries"]
+    planning_reasons = result["planner_output"]["planning_reasons"]
+    source_plan = result["planner_output"]["source_plan"]
+
+    assert expanded_queries[:2] == ["openai", "enterprise"]
+    assert "mcp" in [query.lower() for query in expanded_queries]
+    assert "langgraph" in [query.lower() for query in expanded_queries]
+    assert source_plan[0]["tool_name"] == "rss_fetch"
+    assert "github.com" in source_plan[0]["trusted_sources"]
+    assert any("rss_first" in reason for reason in planning_reasons)
+    assert any("knowledge base matched trusted-source guidance" in reason for reason in planning_reasons)
+
+
 def test_monitor_graph_records_provider_and_browser_fallback_events() -> None:
     class RecordingMonitorRunRepository:
         def __init__(self) -> None:

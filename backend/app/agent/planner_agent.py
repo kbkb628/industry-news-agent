@@ -53,7 +53,7 @@ class PlannerAgent:
                 ),
             )
         expanded_queries = _dedupe_preserve_order(
-            [*semantic_topic_keywords, *expanded_queries]
+            [*expanded_queries, *semantic_topic_keywords]
         )
         query_plan = build_query_plan(expanded_queries)
         source_plan = build_structured_source_plan(

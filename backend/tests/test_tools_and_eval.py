@@ -1854,8 +1854,11 @@ def test_planner_agent_merges_semantic_memory_topic_keywords_into_expanded_queri
 
     result = planner.run(state)
 
-    assert "MCP" in result["planner_output"]["expanded_queries"]
-    assert "LangGraph" in result["planner_output"]["expanded_queries"]
+    expanded_queries = result["planner_output"]["expanded_queries"]
+
+    assert expanded_queries[:2] == ["openai", "enterprise"]
+    assert "mcp" in [query.lower() for query in expanded_queries]
+    assert "langgraph" in [query.lower() for query in expanded_queries]
 
 
 def test_legacy_build_source_plan_keeps_tool_name_list_contract() -> None:
