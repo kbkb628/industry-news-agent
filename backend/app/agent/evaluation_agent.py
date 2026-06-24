@@ -193,3 +193,89 @@ class EvaluationAgent:
         state["eval_result"] = eval_result
 
         return state
+
+    @staticmethod
+    def _merge_candidate_item(
+        items: list[dict[str, Any]],
+        candidate: dict[str, Any],
+    ) -> list[dict[str, Any]]:
+        candidate_id = str(candidate.get("candidate_id", ""))
+        merged: list[dict[str, Any]] = []
+        replaced = False
+        for item in items:
+            if str(item.get("candidate_id", "")) == candidate_id:
+                merged.append(dict(candidate))
+                replaced = True
+            else:
+                merged.append(dict(item))
+        if not replaced:
+            merged.append(dict(candidate))
+        return merged
+
+    def run_evaluate_task(
+        self,
+        task: dict[str, Any],
+        state: dict[str, Any],
+    ) -> dict[str, Any]:
+        candidate_id = str(task["candidate_id"])
+        extracted_items = list(state.get("extracted_items", []))
+        matched = [
+            dict(item)
+            for item in extracted_items
+            if str(item.get("candidate_id")) == candidate_id
+        ]
+        if not matched:
+            raise RuntimeError(f"candidate not found for evaluate task: {candidate_id}")
+
+        scoped_state = {
+            **state,
+            "extracted_items": matched,
+            "deduped_items": list(matched),
+            "evaluation_output": dict(state.get("evaluation_output", {})),
+            "scored_items": list(state.get("scored_items", [])),
+            "final_decisions": list(state.get("final_decisions", [])),
+            "decision_reasons": list(state.get("decision_reasons", [])),
+            "push_records": list(state.get("push_records", [])),
+        }
+        result_state = self.run(scoped_state)
+        scored_items = list(result_state.get("scored_items", []))
+        decisions = list(result_state.get("final_decisions", []))
+        result = next(
+            item for item in decisions if str(item.get("candidate_id")) == candidate_id
+        )
+        scored_result = next(
+            item for item in scored_items if str(item.get("candidate_id")) == candidate_id
+        )
+
+        state["scored_items"] = self._merge_candidate_item(
+            list(state.get("scored_items", [])),
+            dict(scored_result),
+        )
+        state["final_decisions"] = self._merge_candidate_item(
+            list(state.get("final_decisions", [])),
+            dict(result),
+        )
+        state["decision_reasons"] = [
+            str(item.get("decision_reason", "")) for item in state["final_decisions"]
+        ]
+        state["push_records"] = [
+            dict(item) for item in state["final_decisions"] if item.get("should_push")
+        ]
+        state["tool_results"] = list(result_state.get("tool_results", state.get("tool_results", [])))
+        state["errors"] = list(result_state.get("errors", state.get("errors", [])))
+        state["events"] = list(result_state.get("events", state.get("events", [])))
+
+        evaluation_output = build_empty_evaluation_output()
+        evaluation_output.update(
+            {
+                "deduped_items": list(state.get("deduped_items", [])),
+                "scored_items": list(state["scored_items"]),
+                "final_decisions": list(state["final_decisions"]),
+                "decision_reasons": list(state["decision_reasons"]),
+                "push_records": list(state["push_records"]),
+                "eval_result": dict(result_state.get("eval_result", state.get("eval_result", {}))),
+            }
+        )
+        state["evaluation_output"] = evaluation_output
+        state["eval_result"] = dict(result_state.get("eval_result", state.get("eval_result", {})))
+        return dict(result)

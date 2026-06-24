@@ -72,6 +72,24 @@ class ExtractionAgent:
     def __init__(self, *, gateway: ToolGateway) -> None:
         self.gateway = gateway
 
+    @staticmethod
+    def _merge_candidate_item(
+        items: list[dict[str, Any]],
+        candidate: dict[str, Any],
+    ) -> list[dict[str, Any]]:
+        candidate_id = str(candidate.get("candidate_id", ""))
+        merged: list[dict[str, Any]] = []
+        replaced = False
+        for item in items:
+            if str(item.get("candidate_id", "")) == candidate_id:
+                merged.append(dict(candidate))
+                replaced = True
+            else:
+                merged.append(dict(item))
+        if not replaced:
+            merged.append(dict(candidate))
+        return merged
+
     def fetch_contents(self, state: dict[str, Any]) -> dict[str, Any]:
         retrieval_output = dict(state.get("retrieval_output", {}))
         candidate_pool = list(
@@ -182,3 +200,91 @@ class ExtractionAgent:
 
         state["extraction_output"] = extraction_output
         return state
+
+    def run_fetch_task(
+        self,
+        task: dict[str, Any],
+        state: dict[str, Any],
+    ) -> dict[str, Any]:
+        candidate_id = str(task["candidate_id"])
+        candidate_pool = list(state.get("retrieval_output", {}).get("candidate_pool", []))
+        matched = [
+            dict(candidate)
+            for candidate in candidate_pool
+            if str(candidate.get("candidate_id")) == candidate_id
+        ]
+        if not matched:
+            raise RuntimeError(f"candidate not found for fetch task: {candidate_id}")
+
+        scoped_state = {
+            **state,
+            "candidate_items": matched,
+            "fetched_contents": list(state.get("fetched_contents", [])),
+            "extraction_output": dict(state.get("extraction_output", {})),
+        }
+        self.fetch_contents(scoped_state)
+        fetched_items = list(scoped_state.get("fetched_contents", []))
+        result = next(
+            item for item in fetched_items if str(item.get("candidate_id")) == candidate_id
+        )
+
+        state["fetched_contents"] = self._merge_candidate_item(
+            list(state.get("fetched_contents", [])),
+            dict(result),
+        )
+        extraction_output = dict(state.get("extraction_output", {}))
+        extraction_output["fetched_contents"] = list(state["fetched_contents"])
+        extraction_output["content_fallbacks"] = list(
+            scoped_state.get("extraction_output", {}).get("content_fallbacks", [])
+        )
+        state["extraction_output"] = extraction_output
+        state["tool_results"] = list(scoped_state.get("tool_results", state.get("tool_results", [])))
+        state["errors"] = list(scoped_state.get("errors", state.get("errors", [])))
+        state["events"] = list(scoped_state.get("events", state.get("events", [])))
+        return dict(result)
+
+    def run_extract_task(
+        self,
+        task: dict[str, Any],
+        state: dict[str, Any],
+    ) -> dict[str, Any]:
+        candidate_id = str(task["candidate_id"])
+        fetched_contents = list(state.get("fetched_contents", []))
+        matched = [
+            dict(candidate)
+            for candidate in fetched_contents
+            if str(candidate.get("candidate_id")) == candidate_id
+        ]
+        if not matched:
+            raise RuntimeError(f"candidate not found for extract task: {candidate_id}")
+
+        scoped_state = {
+            **state,
+            "fetched_contents": matched,
+            "extracted_items": list(state.get("extracted_items", [])),
+            "extraction_output": dict(state.get("extraction_output", {})),
+        }
+        self.extract_evidence(scoped_state)
+        extracted_items = list(scoped_state.get("extracted_items", []))
+        result = next(
+            item for item in extracted_items if str(item.get("candidate_id")) == candidate_id
+        )
+
+        state["extracted_items"] = self._merge_candidate_item(
+            list(state.get("extracted_items", [])),
+            dict(result),
+        )
+        extraction_output = dict(state.get("extraction_output", {}))
+        extraction_output["fetched_contents"] = list(state.get("fetched_contents", []))
+        extraction_output["evidence_items"] = list(state["extracted_items"])
+        extraction_output["extraction_failures"] = list(
+            scoped_state.get("extraction_output", {}).get("extraction_failures", [])
+        )
+        extraction_output["content_fallbacks"] = list(
+            scoped_state.get("extraction_output", {}).get("content_fallbacks", [])
+        )
+        state["extraction_output"] = extraction_output
+        state["tool_results"] = list(scoped_state.get("tool_results", state.get("tool_results", [])))
+        state["errors"] = list(scoped_state.get("errors", state.get("errors", [])))
+        state["events"] = list(scoped_state.get("events", state.get("events", [])))
+        return dict(result)

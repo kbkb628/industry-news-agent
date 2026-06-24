@@ -3585,6 +3585,107 @@ def test_candidate_orchestrator_runtime_summary_counts_statuses() -> None:
     assert summary["extract_completed_count"] == 1
 
 
+def test_extraction_agent_can_run_fetch_task() -> None:
+    from app.agent.extraction_agent import ExtractionAgent
+
+    gateway = LocalToolGateway()
+    gateway.register(
+        "fetch_article_content",
+        lambda candidates: ToolResponse.success(
+            tool_name="fetch_article_content",
+            summary="Fetched candidate content.",
+            data={
+                "candidates": [
+                    {
+                        "candidate_id": "cand_001",
+                        "title": "AI Agent funding update",
+                        "content": "full content",
+                        "fetch_status": "fetched",
+                    }
+                ]
+            },
+        ),
+    )
+    agent = ExtractionAgent(gateway=gateway)
+    state = {
+        "retrieval_output": {
+            "candidate_pool": [
+                {"candidate_id": "cand_001", "title": "AI Agent funding update"}
+            ]
+        },
+        "fetched_contents": [],
+        "tool_results": [],
+        "errors": [],
+        "events": [],
+    }
+    task = {
+        "task_id": "run_x:fetch:cand_001",
+        "candidate_id": "cand_001",
+        "stage": "fetch",
+    }
+
+    result = agent.run_fetch_task(task, state)
+
+    assert result["candidate_id"] == "cand_001"
+    assert result["fetch_status"] == "fetched"
+    assert state["fetched_contents"][0]["candidate_id"] == "cand_001"
+
+
+def test_evaluation_agent_can_run_candidate_evaluate_task() -> None:
+    from app.agent.evaluation_agent import EvaluationAgent
+    from app.tools.registry import build_default_tool_registry
+
+    gateway = LocalToolGateway()
+    build_default_tool_registry(llm=MockLLM()).register_into(gateway)
+    agent = EvaluationAgent(gateway=gateway, settings=None)
+    state = {
+        "run_id": "run_x",
+        "topic_id": "topic_ai",
+        "topic": {
+            "topic_id": "topic_ai",
+            "name": "AI Agent",
+            "push_threshold": 0.7,
+            "cooldown_hours": 24,
+        },
+        "evaluation_output": {
+            "scored_items": [],
+            "final_decisions": [],
+            "decision_reasons": [],
+        },
+        "extracted_items": [
+            {
+                "candidate_id": "cand_001",
+                "title": "AI Agent funding update",
+                "summary": "Strong launch signal",
+                "source_type": "search",
+                "source_name": "Mock Search",
+                "url": "https://example.com/funding",
+            }
+        ],
+        "business_memory": {"push_history": []},
+        "tool_results": [],
+        "errors": [],
+        "events": [],
+        "scored_items": [],
+        "final_decisions": [],
+        "decision_reasons": [],
+        "push_records": [],
+        "eval_result": {},
+    }
+    task = {
+        "task_id": "run_x:evaluate:cand_001",
+        "candidate_id": "cand_001",
+        "stage": "evaluate",
+    }
+
+    result = agent.run_evaluate_task(task, state)
+
+    assert result["candidate_id"] == "cand_001"
+    assert "score" in result
+    assert "should_push" in result
+    assert state["final_decisions"][0]["candidate_id"] == "cand_001"
+
+
 def test_task6_fetch_preserves_candidate_identity_when_urls_canonicalize_equal(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
