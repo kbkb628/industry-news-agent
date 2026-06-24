@@ -545,26 +545,24 @@ class SqlAlchemyMonitorRunRepository:
         snapshot = dict(record.state_snapshot)
 
         candidate_records = self.list_candidate_records(run_id)
-        if candidate_records:
-            snapshot["candidate_items"] = [
-                {
-                    "candidate_id": candidate["candidate_id"],
-                    "title": candidate["title"],
-                    "url": candidate["url"],
-                }
-                for candidate in candidate_records
-            ]
+        snapshot["candidate_items"] = [
+            {
+                "candidate_id": candidate["candidate_id"],
+                "title": candidate["title"],
+                "url": candidate["url"],
+            }
+            for candidate in candidate_records
+        ]
 
         decision_records = self.list_decision_records(run_id)
-        if decision_records:
-            snapshot["final_decisions"] = [
-                {
-                    "candidate_id": decision["candidate_id"],
-                    "should_push": decision["should_push"],
-                    "decision_reason": decision["decision_reason"],
-                }
-                for decision in decision_records
-            ]
+        snapshot["final_decisions"] = [
+            {
+                "candidate_id": decision["candidate_id"],
+                "should_push": decision["should_push"],
+                "decision_reason": decision["decision_reason"],
+            }
+            for decision in decision_records
+        ]
 
         return MonitorRunRecord(
             run_id=record.run_id,

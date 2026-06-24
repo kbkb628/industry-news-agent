@@ -1129,6 +1129,61 @@ def test_monitor_detail_endpoint_prefers_persisted_phase_a_entities_over_snapsho
     ]
 
 
+def test_monitor_detail_endpoint_clears_stale_snapshot_mirrors_when_persisted_phase_a_entities_are_absent(
+    seeded_phase_a_sqlalchemy,
+    sqlalchemy_client_factory,
+) -> None:
+    with seeded_phase_a_sqlalchemy.session_factory() as session:
+        repository = build_monitor_run_repository(session)
+        session.query(CandidateRecord).filter_by(
+            run_id=seeded_phase_a_sqlalchemy.run_id
+        ).delete()
+        session.query(DecisionRecord).filter_by(
+            run_id=seeded_phase_a_sqlalchemy.run_id
+        ).delete()
+        session.commit()
+        repository.upsert_monitor_run(
+            MonitorRunUpsertData(
+                run_id=seeded_phase_a_sqlalchemy.run_id,
+                topic_id=seeded_phase_a_sqlalchemy.topic_id,
+                status="completed",
+                state_snapshot={
+                    "run_id": seeded_phase_a_sqlalchemy.run_id,
+                    "topic_id": seeded_phase_a_sqlalchemy.topic_id,
+                    "trigger": "scheduler",
+                    "status": "completed",
+                    "candidate_items": [
+                        {
+                            "candidate_id": "cand_stale_001",
+                            "title": "Stale snapshot candidate",
+                            "url": "https://example.com/stale-candidate",
+                        }
+                    ],
+                    "final_decisions": [
+                        {
+                            "candidate_id": "cand_stale_001",
+                            "should_push": True,
+                            "decision_reason": "Stale snapshot decision",
+                        }
+                    ],
+                    "errors": [],
+                },
+                error_summary=None,
+                started_at=datetime(2026, 6, 24, 8, 0, tzinfo=UTC),
+                finished_at=datetime(2026, 6, 24, 8, 1, tzinfo=UTC),
+            )
+        )
+
+    with sqlalchemy_client_factory(seeded_phase_a_sqlalchemy.session_factory) as client:
+        run_response = client.get(
+            f"/api/monitor/runs/{seeded_phase_a_sqlalchemy.run_id}"
+        )
+
+    assert run_response.status_code == 200
+    assert run_response.json()["candidate_items"] == []
+    assert run_response.json()["final_decisions"] == []
+
+
 def test_score_run_reports_phase2_quality_fallback_metrics() -> None:
     result = score_run(
         {
