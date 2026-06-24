@@ -70,6 +70,27 @@
 </section>
 
 <section class="section-card">
+  <h3>Run context and business memory</h3>
+  <p>
+    These sections show the non-stage context carried by the monitor run: request-level runtime
+    framing in <code>run_context</code> and durable planning/evaluation grounding in
+    <code>business_memory</code>.
+  </p>
+  <div class="grid two">
+    <article class="stat">
+      <strong>Run context</strong>
+      <p id="run-context-summary">Loading run context.</p>
+      <pre id="run-context-json"><code>Loading</code></pre>
+    </article>
+    <article class="stat">
+      <strong>Business memory</strong>
+      <p id="business-memory-summary">Loading business memory.</p>
+      <pre id="business-memory-json"><code>Loading</code></pre>
+    </article>
+  </div>
+</section>
+
+<section class="section-card">
   <h3>Compatibility mirrors and task ledger</h3>
   <div class="grid two">
     <article class="stat">
@@ -88,12 +109,37 @@
 </section>
 
 <section class="section-card">
-  <h3>MCP runtime</h3>
+  <h3>Candidate task runtime details</h3>
   <p>
-    When the monitor run is wired to an MCP-backed search adapter, the final run snapshot can
-    carry per-run configuration and usage evidence such as the selected provider path, whether the
-    adapter was actually used, and whether the run degraded to a local fallback.
+    The candidate task summary is useful for quick readback, but the ledger below should also expose
+    task-level dependency and retry details so orchestration evidence stays queryable after the run.
   </p>
+  <pre id="candidate-task-runtime-json"><code>Loading</code></pre>
+</section>
+
+<section class="section-card">
+  <h3>Live integration runtime evidence</h3>
+  <p>
+    When the monitor run is wired to provider-backed boundaries, the final snapshot can preserve
+    per-run configuration, usage, and degradation evidence instead of relying on repository-level
+    claims.
+  </p>
+  <div class="grid two">
+    <article class="stat">
+      <strong>MCP runtime</strong>
+      <p id="mcp-runtime-summary">Loading MCP runtime evidence.</p>
+      <pre id="mcp-runtime-json"><code>Loading</code></pre>
+    </article>
+    <article class="stat">
+      <strong>Browser fallback runtime</strong>
+      <p id="browser-runtime-summary">Loading browser runtime evidence.</p>
+      <pre id="browser-runtime-json"><code>Loading</code></pre>
+    </article>
+  </div>
+</section>
+
+<section class="section-card">
+  <h3>MCP runtime</h3>
   <p>
     Treat this section as runtime evidence, not a promise that a live MCP deployment always exists:
     some environments intentionally stay on the local gateway path, and some runs may show no MCP
@@ -128,6 +174,10 @@
     document.getElementById(elementId).textContent = text;
   };
 
+  const safeList = (value) => Array.isArray(value) ? value : [];
+  const safeObject = (value) =>
+    value && typeof value === "object" && !Array.isArray(value) ? value : {};
+
   const setMirrorChecks = (payload) => {
     const checks = [
       {
@@ -156,11 +206,29 @@
     }
     ledger.innerHTML = items
       .slice(0, 8)
-      .map(
-        (item) =>
-          `<li><strong>${item.stage}</strong> · ${item.status} · <code>${item.candidate_id}</code> · attempt ${item.attempt}/${item.max_attempts}</li>`,
-      )
+      .map((item) => {
+        const dependsOn = safeList(item.depends_on_task_ids);
+        const dependencyText = dependsOn.length ? ` | depends on ${dependsOn.join(", ")}` : "";
+        return `<li><strong>${item.stage}</strong> | ${item.status} | <code>${item.candidate_id}</code> | attempt ${item.attempt}/${item.max_attempts}${dependencyText}</li>`;
+      })
       .join("");
+  };
+
+  const setCandidateTaskRuntime = (items) => {
+    const runtime = items.slice(0, 8).map((item) => ({
+      task_id: item.task_id,
+      candidate_id: item.candidate_id,
+      stage: item.stage,
+      status: item.status,
+      attempt: item.attempt,
+      max_attempts: item.max_attempts,
+      depends_on_task_ids: item.depends_on_task_ids ?? [],
+      input_ref: item.input_ref ?? {},
+      output_ref: item.output_ref ?? {},
+      error_code: item.error_code ?? null,
+      error_message: item.error_message ?? null,
+    }));
+    setCodeBlock("candidate-task-runtime-json", runtime);
   };
 
   fetch(runEndpoint)
@@ -171,6 +239,11 @@
       return response.json();
     })
     .then((payload) => {
+      const runContext = safeObject(payload.run_context);
+      const businessMemory = safeObject(payload.business_memory);
+      const mcpRuntime = safeObject(payload.integration_runtime?.mcp);
+      const browserRuntime = safeObject(payload.integration_runtime?.browser);
+
       setSummary(
         "planner-summary",
         `Expanded queries: ${(payload.planner_output?.expanded_queries ?? []).length}; source plan steps: ${(payload.planner_output?.source_plan ?? []).length}.`,
@@ -187,10 +260,31 @@
         "evaluation-summary",
         `Final decisions: ${(payload.evaluation_output?.final_decisions ?? []).length}; push records: ${(payload.evaluation_output?.push_records ?? []).length}.`,
       );
+      setSummary(
+        "run-context-summary",
+        `Run context keys: ${Object.keys(runContext).length}.`,
+      );
+      setSummary(
+        "business-memory-summary",
+        `Business memory keys: ${Object.keys(businessMemory).length}; push history entries: ${safeList(businessMemory.push_history).length}.`,
+      );
+      setSummary(
+        "mcp-runtime-summary",
+        `Configured provider: ${mcpRuntime.configured_provider ?? "-"}; used in run: ${mcpRuntime.used_in_run ?? false}; fallback used: ${mcpRuntime.fallback_used ?? false}.`,
+      );
+      setSummary(
+        "browser-runtime-summary",
+        `Configured provider: ${browserRuntime.configured_provider ?? "-"}; used in run: ${browserRuntime.used_in_run ?? false}; fallback used: ${browserRuntime.fallback_used ?? false}.`,
+      );
+
       setCodeBlock("planner-json", payload.planner_output ?? {});
       setCodeBlock("retrieval-json", payload.retrieval_output ?? {});
       setCodeBlock("extraction-json", payload.extraction_output ?? {});
       setCodeBlock("evaluation-json", payload.evaluation_output ?? {});
+      setCodeBlock("run-context-json", runContext);
+      setCodeBlock("business-memory-json", businessMemory);
+      setCodeBlock("mcp-runtime-json", mcpRuntime);
+      setCodeBlock("browser-runtime-json", browserRuntime);
       setMirrorChecks(payload);
     })
     .catch(() => {
@@ -198,10 +292,19 @@
       setSummary("retrieval-summary", "Run detail API unavailable.");
       setSummary("extraction-summary", "Run detail API unavailable.");
       setSummary("evaluation-summary", "Run detail API unavailable.");
+      setSummary("run-context-summary", "Run detail API unavailable.");
+      setSummary("business-memory-summary", "Run detail API unavailable.");
+      setSummary("mcp-runtime-summary", "Run detail API unavailable.");
+      setSummary("browser-runtime-summary", "Run detail API unavailable.");
       setCodeBlock("planner-json", { error: "run detail unavailable" });
       setCodeBlock("retrieval-json", { error: "run detail unavailable" });
       setCodeBlock("extraction-json", { error: "run detail unavailable" });
       setCodeBlock("evaluation-json", { error: "run detail unavailable" });
+      setCodeBlock("run-context-json", { error: "run detail unavailable" });
+      setCodeBlock("business-memory-json", { error: "run detail unavailable" });
+      setCodeBlock("mcp-runtime-json", { error: "run detail unavailable" });
+      setCodeBlock("browser-runtime-json", { error: "run detail unavailable" });
+      setCodeBlock("candidate-task-runtime-json", { error: "candidate task evidence unavailable" });
       document.getElementById("mirror-checks").innerHTML = "<li>Mirror checks unavailable.</li>";
     });
 
@@ -213,11 +316,14 @@
       return response.json();
     })
     .then((payload) => {
-      setCandidateTaskLedger(payload.items ?? []);
+      const items = payload.items ?? [];
+      setCandidateTaskLedger(items);
+      setCandidateTaskRuntime(items);
     })
     .catch(() => {
       document.getElementById("candidate-task-ledger").innerHTML =
         "<li>Candidate task evidence unavailable.</li>";
+      setCodeBlock("candidate-task-runtime-json", { error: "candidate task evidence unavailable" });
     });
 </script>
 {% endblock %}

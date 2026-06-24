@@ -3305,6 +3305,13 @@ def test_static_run_pages_describe_runtime_evidence_sections() -> None:
     assert "const candidateTaskEndpoint = `/api/monitor/runs/${runId}/candidate-tasks`;" in run_detail_response.text
     assert '"run_runtime_page"' in run_detail_response.text
     assert "Structured stage read surface" in run_detail_response.text
+    assert "Run context and business memory" in run_detail_response.text
+    assert 'id="run-context-json"' in run_detail_response.text
+    assert 'id="business-memory-json"' in run_detail_response.text
+    assert "Live integration runtime evidence" in run_detail_response.text
+    assert 'id="mcp-runtime-json"' in run_detail_response.text
+    assert 'id="browser-runtime-json"' in run_detail_response.text
+    assert "Candidate task runtime details" in run_detail_response.text
     assert resume_alignment_response.status_code == 200
     assert "per-run configuration/usage/degradation evidence" in resume_alignment_response.text
     assert "structured stage contracts" in resume_alignment_response.text
