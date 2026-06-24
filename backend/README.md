@@ -64,13 +64,12 @@ Included in the current codebase:
 
 ## Current Architecture
 
-### Agent Stages
+### Top-Level Graph
 
 - `supervisor_bootstrap`
 - `planner_agent`
 - `retrieval_agent`
-- `extraction_agent`
-- `evaluation_agent`
+- `candidate_task_orchestrator`
 - `supervisor_finalize`
 
 ### Shared State Contracts
@@ -84,9 +83,9 @@ The multi-agent pipeline exchanges explicit state sections:
 - `extraction_output`
 - `evaluation_output`
 
-These structured sections let the planner, retrieval, extraction, and
-evaluation stages collaborate without depending on each other's internal
-implementation details.
+These structured sections let the planner, retrieval, candidate-task fetch,
+candidate-task extraction, and candidate-task evaluation behaviors collaborate
+without depending on each other's internal implementation details.
 
 ### Compatibility Strategy
 
@@ -103,8 +102,11 @@ supervisor finalization so existing API responses, HTML pages, and dashboard
 screens continue to work while the internals use stronger contracts.
 
 Candidate-level orchestration now runs inside the LangGraph monitor flow after
-retrieval. Redis/runtime state owns short-lived candidate task coordination,
-while PostgreSQL persists candidate task ledger facts for historical readback.
+retrieval. Fetch, extract, and evaluate still remain real specialist
+behaviors, but they are scheduled under `candidate_task_orchestrator` instead
+of being modeled as separate top-level graph nodes. Redis/runtime state owns
+short-lived candidate task coordination, while PostgreSQL persists candidate
+task ledger facts for historical readback.
 `GET /api/monitor/runs/{run_id}/candidate-tasks` exposes durable task evidence.
 
 ### Queue And Worker Flow
@@ -379,6 +381,7 @@ configuration.
 - `POST /api/monitor/{topic_id}/run`
 - `GET /api/monitor/runs/{run_id}`
 - `GET /api/monitor/runs/{run_id}/candidates`
+- `GET /api/monitor/runs/{run_id}/candidate-tasks`
 - `GET /api/pushes`
 - `GET /api/topics/{topic_id}/pushes`
 - `GET /api/monitor/runs/{run_id}/events`

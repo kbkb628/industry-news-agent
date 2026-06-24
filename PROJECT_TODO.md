@@ -1,12 +1,10 @@
 # Project TODO
 
 ## pending
-- polish showcase pages for resume-aligned demo flow
-- tighten dashboard wording around multi-agent orchestration and governance
-- run final repository presentation verification and commit milestone
+- none
 
 ## in_progress
-- showcase polish and final verification
+- none
 
 ## completed
 - truthful MVP closed loop
@@ -15,3 +13,7 @@
 - real in-process multi-agent architecture
 - project documentation alignment
 - resume-alignment assets frozen
+- showcase pages polished for resume-aligned demo flow
+- dashboard wording tightened around multi-agent orchestration and governance
+- final repository presentation verification completed
+- final showcase verification milestone committed in branch history
