@@ -1821,8 +1821,10 @@ def test_planner_agent_builds_context_aware_plan() -> None:
 
 def test_planner_agent_merges_semantic_memory_topic_keywords_into_expanded_queries() -> None:
     from app.agent.planner_agent import PlannerAgent
+    from app.agent.contracts import build_empty_business_memory
 
     planner = PlannerAgent(llm=MockLLM())
+    empty_business_memory = build_empty_business_memory()
     state = {
         "topic": {
             "topic_id": "topic_ai",
@@ -1854,6 +1856,7 @@ def test_planner_agent_merges_semantic_memory_topic_keywords_into_expanded_queri
 
     result = planner.run(state)
 
+    assert empty_business_memory["business_context"]["documents"] == []
     expanded_queries = result["planner_output"]["expanded_queries"]
 
     assert expanded_queries[:2] == ["openai", "enterprise"]

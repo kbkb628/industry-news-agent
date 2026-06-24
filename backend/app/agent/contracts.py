@@ -104,6 +104,7 @@ def build_empty_business_memory() -> BusinessMemory:
     return {
         "seed_keywords": [],
         "business_context": {
+            "documents": [],
             "semantic_memory": {
                 "topic_keywords": [],
                 "trusted_source_hints": [],
