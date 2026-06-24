@@ -16,7 +16,10 @@ The current codebase already runs a truthful end-to-end closed loop with:
 - minimal server-rendered HTML admin pages
 - local React + Vite dashboard for read-only operations view
 - LangGraph-based in-process multi-agent orchestration
-- `Supervisor -> Planner -> Retrieval -> Extraction -> Evaluation` stage flow
+- `Supervisor -> Planner -> Retrieval -> CandidateTaskOrchestrator -> Finalize`
+  top-level flow
+- candidate-level fetch / extract / evaluate task orchestration inside the
+  monitor run
 - structured shared-state contracts plus compatibility mirror fields
 - PostgreSQL persistence for topics, runs, candidates, push records, events,
   and eval results
@@ -35,8 +38,7 @@ than a flat list of helper functions.
 supervisor_bootstrap
   -> planner_agent
   -> retrieval_agent
-  -> extraction_agent
-  -> evaluation_agent
+  -> candidate_task_orchestrator
   -> supervisor_finalize
 ```
 
@@ -48,6 +50,12 @@ Specialist agents collaborate through explicit shared-state sections:
 - `retrieval_output`
 - `extraction_output`
 - `evaluation_output`
+
+Candidate-level execution is now expressed as bounded task orchestration inside
+the graph rather than as separate top-level extraction/evaluation graph nodes.
+Fetch, extract, and evaluate still remain real specialist behaviors, but they
+run under `candidate_task_orchestrator` so the system can show per-candidate
+task evidence and controlled same-stage coordination.
 
 For a claim-by-claim mapping from the resume wording to real code, APIs, pages,
 and truth boundaries, see [`docs/resume-alignment.md`](docs/resume-alignment.md).
@@ -66,8 +74,8 @@ create topic
 -> enqueue or manually trigger run
 -> planner expands queries and plans sources
 -> retrieval gathers candidate pool
--> extraction fetches content and structured evidence
--> evaluation deduplicates, scores, and decides push
+-> candidate_task_orchestrator runs fetch / extract / evaluate tasks per candidate
+-> global evaluation view deduplicates, scores, and decides push
 -> supervisor persists records, trace events, and eval output
 -> dashboard / HTML / APIs expose run results
 ```
@@ -134,6 +142,7 @@ npm run dev
 - `POST /api/monitor/{topic_id}/run`
 - `GET /api/monitor/runs/{run_id}`
 - `GET /api/monitor/runs/{run_id}/candidates`
+- `GET /api/monitor/runs/{run_id}/candidate-tasks`
 - `GET /api/monitor/runs/{run_id}/events`
 - `GET /api/pushes`
 - `GET /api/topics/{topic_id}/pushes`

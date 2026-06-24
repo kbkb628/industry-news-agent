@@ -38,6 +38,15 @@ export type MonitorRun = {
   expanded_queries?: string[];
   candidate_items?: Record<string, unknown>[];
   final_decisions?: Record<string, unknown>[];
+  candidate_task_summary?: {
+    task_count?: number;
+    completed_count?: number;
+    failed_count?: number;
+    skipped_count?: number;
+    fetch_completed_count?: number;
+    extract_completed_count?: number;
+    evaluate_completed_count?: number;
+  };
   errors?: Record<string, unknown>[];
   started_at?: string | null;
   finished_at?: string | null;

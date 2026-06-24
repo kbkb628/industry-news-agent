@@ -16,9 +16,11 @@ The project can truthfully be described as a topic-driven industry-news push
 agent with:
 
 - a real in-process multi-agent monitor flow
+- candidate-level task orchestration inside that monitor flow
 - structured planner, retrieval, extraction, and evaluation stages
 - scheduler and worker governance with retry and active-run controls
-- persisted run history, push decisions, candidate records, and eval results
+- persisted run history, push decisions, candidate records, candidate task
+  ledger records, and eval results
 - optional provider boundaries for search, browser fetch, history indexing,
   judge scoring, and notification delivery
 
@@ -30,19 +32,24 @@ agent with:
 - Code:
   - `backend/app/agent/graph.py`
   - `backend/app/agent/nodes.py`
+  - `backend/app/agent/candidate_orchestrator.py`
   - `backend/app/agent/contracts.py`
   - `backend/app/agent/state.py`
 - Evidence:
   - the graph is organized into `supervisor_bootstrap -> planner_agent ->
-    retrieval_agent -> extraction_agent -> evaluation_agent ->
-    supervisor_finalize`
+    retrieval_agent -> candidate_task_orchestrator -> supervisor_finalize`
+  - `candidate_task_orchestrator` schedules bounded per-candidate fetch,
+    extract, and evaluate work while keeping LangGraph as the top-level backbone
   - stage outputs are carried in structured sections such as
     `business_memory`, `planner_output`, `retrieval_output`,
     `extraction_output`, and `evaluation_output`
+  - per-candidate orchestration evidence is persisted through the candidate task
+    ledger and exposed by API
   - compatibility mirror fields still exist for the current API snapshot
 - API / pages:
   - `POST /api/monitor/{topic_id}/run`
   - `GET /api/monitor/runs/{run_id}`
+  - `GET /api/monitor/runs/{run_id}/candidate-tasks`
   - `GET /runs/{run_id}`
 - Truth boundary:
   - this is an in-process LangGraph orchestration model, not distributed agent
@@ -143,11 +150,14 @@ agent with:
 - Evidence:
   - monitor runs, candidates, extracted items, decisions, pushes, and eval
     results are persisted
+  - candidate task ledger records are persisted for per-candidate runtime
+    readback
   - the public APIs expose run detail, push history, candidate detail, and
     event traces
 - API / pages:
   - `GET /api/monitor/runs/{run_id}`
   - `GET /api/monitor/runs/{run_id}/candidates`
+  - `GET /api/monitor/runs/{run_id}/candidate-tasks`
   - `GET /api/monitor/runs/{run_id}/events`
   - `GET /api/pushes`
   - `GET /api/topics/{topic_id}/pushes`
@@ -190,11 +200,14 @@ agent with:
 Use these phrasings when you want to stay close to the implementation:
 
 - "Built a topic-driven, in-process multi-agent monitor flow with supervisor
-  orchestration and structured stage contracts."
+  orchestration, candidate-level task scheduling, and structured stage
+  contracts."
 - "PlannerAgent expands keywords from business memory and turns them into a
   structured query and source plan."
 - "The system persists runs, candidate records, push decisions, and eval
   results, and surfaces them through APIs and admin pages."
+- "Candidate fetch, extract, and evaluate work is recorded as a task ledger so
+  orchestration evidence is queryable after the run finishes."
 - "I added scheduler and worker governance so queued runs have retry, timeout,
   and active-run controls."
 
@@ -216,8 +229,11 @@ Keep these scoped unless the runtime environment proves more:
 
 1. Start at `GET /`
 2. Open `GET /runs/{run_id}` to show the compatibility snapshot
-3. Open `GET /runs/{run_id}/events` to show trace and governance events
-4. Open `GET /pushes` and `GET /quality` to show the persisted output and
+3. Open `GET /api/monitor/runs/{run_id}/candidate-tasks` to show candidate task
+   orchestration evidence
+4. Open `GET /runs/{run_id}/events` to show trace and governance events
+5. Open `GET /pushes` and `GET /quality` to show the persisted output and
    evaluation signals
-5. Reference `POST /api/monitor/{topic_id}/run` and `GET /api/monitor/runs/{run_id}`
+6. Reference `POST /api/monitor/{topic_id}/run`, `GET /api/monitor/runs/{run_id}`,
+   and `GET /api/monitor/runs/{run_id}/candidate-tasks`
    to tie the UI back to the API

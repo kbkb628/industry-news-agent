@@ -308,6 +308,23 @@ export default function App() {
               </p>
               <p>Candidates: {(run.data.candidate_items ?? []).length}</p>
               <p>Decisions: {(run.data.final_decisions ?? []).length}</p>
+              {run.data.candidate_task_summary && (
+                <>
+                  <p>
+                    Candidate task orchestration:{" "}
+                    {run.data.candidate_task_summary.task_count ?? 0} tasks |{" "}
+                    completed {run.data.candidate_task_summary.completed_count ?? 0} |{" "}
+                    skipped {run.data.candidate_task_summary.skipped_count ?? 0} |{" "}
+                    failed {run.data.candidate_task_summary.failed_count ?? 0}
+                  </p>
+                  <p>
+                    Stage evidence: fetch{" "}
+                    {run.data.candidate_task_summary.fetch_completed_count ?? 0} | extract{" "}
+                    {run.data.candidate_task_summary.extract_completed_count ?? 0} | evaluate{" "}
+                    {run.data.candidate_task_summary.evaluate_completed_count ?? 0}
+                  </p>
+                </>
+              )}
               <pre>{compactJson(run.data.errors ?? [])}</pre>
             </div>
           )}

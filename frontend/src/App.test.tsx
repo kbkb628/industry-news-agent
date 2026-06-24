@@ -79,6 +79,15 @@ describe("App", () => {
           expanded_queries: ["AI Agent funding"],
           candidate_items: [{ title: "Agent launch" }],
           final_decisions: [{ title: "Agent launch", should_push: true }],
+          candidate_task_summary: {
+            task_count: 3,
+            completed_count: 3,
+            skipped_count: 0,
+            failed_count: 0,
+            fetch_completed_count: 1,
+            extract_completed_count: 1,
+            evaluate_completed_count: 1,
+          },
           errors: [],
         });
       }
@@ -145,5 +154,8 @@ describe("App", () => {
     });
     expect(screen.getByText("AI Agent funding")).toBeInTheDocument();
     expect(screen.getByText("Retrieved candidate items.")).toBeInTheDocument();
+    expect(
+      screen.getByText(/Candidate task orchestration: 3 tasks/i),
+    ).toBeInTheDocument();
   });
 });
