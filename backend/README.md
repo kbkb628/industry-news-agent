@@ -333,6 +333,32 @@ cd backend
 py -3.12 -m uvicorn app.main:app --reload
 ```
 
+## Deterministic Demo Bootstrap
+
+For a fresh local database, you can seed one reproducible showcase run without
+relying on preexisting history:
+
+The command reads the normal backend settings first, so `DATABASE_URL` and
+`REDIS_URL` must already be present in `backend/.env` or the current shell
+environment.
+
+```bash
+cd backend
+py -3.12 -m app.demo.bootstrap_cli
+```
+
+This helper:
+
+- creates or reuses the fixed demo topic `topic_ai_agent`
+- clears prior persisted artifacts for `run_demo_bootstrap`
+- synchronously executes the real monitor graph with `MockLLM`
+- uses the existing fixture-backed RSS/search/article content path
+- persists run, candidate, extracted item, decision, push, event, eval, and
+  candidate-task evidence through the normal repository layer
+
+It is a deterministic local demo path, not a separate product workflow and not
+a claim of live external provider execution.
+
 ## Run With Docker Compose
 
 The root `docker-compose.yml` is a local demonstration stack, not a production

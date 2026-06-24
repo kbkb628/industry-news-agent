@@ -126,6 +126,42 @@ py -3.12 -m pip install -e ".[dev]"
 py -3.12 -m uvicorn app.main:app --reload
 ```
 
+### Deterministic Demo Bootstrap
+
+Use the demo bootstrap after the backend stack is available when you want a
+fresh environment to show the same persisted evidence chain without depending
+on old local database history.
+
+It uses the normal backend settings contract, so `DATABASE_URL` and
+`REDIS_URL` must already be configured through `backend/.env`, exported
+environment variables, or the Docker Compose environment.
+
+```bash
+cd backend
+py -3.12 -m app.demo.bootstrap_cli
+```
+
+The bootstrap path is intentionally bounded:
+
+- it creates or reuses the fixed demo topic `topic_ai_agent`
+- it resets the fixed demo run `run_demo_bootstrap`
+- it synchronously runs the real LangGraph monitor flow with `MockLLM`
+- it uses the existing fixture-backed RSS/search/content tools
+- it persists the resulting run, candidates, candidate tasks, pushes, events,
+  and eval output through the normal repository layer
+
+This is a deterministic local showcase helper, not a production ingestion mode.
+It exists so the HTML pages and dashboard can be reproduced from an empty local
+database with truthful runtime artifacts.
+
+After running it, the main demo readback order is:
+
+1. `GET /`
+2. `GET /runs/run_demo_bootstrap`
+3. `GET /runs/run_demo_bootstrap/events`
+4. `GET /pushes`
+5. `GET /quality`
+
 ### Manual Frontend
 
 ```bash
