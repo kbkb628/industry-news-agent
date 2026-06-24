@@ -26,6 +26,12 @@ function compactJson(value: unknown) {
   return JSON.stringify(value, null, 2);
 }
 
+function runtimeFlagLabel(value?: boolean) {
+  if (value === true) return "yes";
+  if (value === false) return "no";
+  return "-";
+}
+
 export default function App() {
   const [topics, setTopics] = useState<Loadable<Topic[]>>({
     status: "loading",
@@ -121,12 +127,15 @@ export default function App() {
       <section className="story-grid" aria-label="Architecture and governance">
         <article className="story-card">
           <p className="eyebrow">Multi-Agent Pipeline</p>
-          <h2>Supervisor -&gt; Planner -&gt; Retrieval -&gt; Extraction -&gt; Evaluation</h2>
+          <h2>
+            Supervisor -&gt; Planner -&gt; Retrieval -&gt;
+            CandidateTaskOrchestrator -&gt; Finalize
+          </h2>
           <p>
             The backend no longer presents a flat helper chain. A supervisor
-            controls run lifecycle while specialist agents exchange structured
-            state for planning, candidate recall, evidence extraction, and push
-            decisions.
+            controls run lifecycle while planner and retrieval stay top-level,
+            then candidate fetch, extract, and evaluate work runs inside the
+            orchestrator under one structured LangGraph contract.
           </p>
         </article>
         <article className="story-card">
@@ -285,8 +294,9 @@ export default function App() {
         <section className="panel">
           <h2>Run Detail</h2>
           <p className="panel-copy">
-            This view shows the API-facing compatibility snapshot while the
-            underlying graph uses structured multi-agent state contracts.
+            This view promotes the structured stage contracts into the primary
+            read surface while keeping compatibility mirrors visible for
+            concise readback.
           </p>
           {run === null && <p>Enter a run id to inspect monitor state.</p>}
           {run?.status === "loading" && <p>Loading run...</p>}
@@ -325,6 +335,110 @@ export default function App() {
                   </p>
                 </>
               )}
+              <article className="row-card">
+                <h3>Structured stage read surface</h3>
+                <p>
+                  The dashboard reads the same structured planner, retrieval,
+                  extraction, and evaluation sections that the backend exposes
+                  on the run API.
+                </p>
+              </article>
+              <div className="structured-grid">
+                <article className="row-card">
+                  <h3>Planner output</h3>
+                  <p>
+                    Expanded queries{" "}
+                    {run.data.planner_output?.expanded_queries?.length ?? 0} |
+                    source plan steps{" "}
+                    {run.data.planner_output?.source_plan?.length ?? 0}
+                  </p>
+                  <p>
+                    {(run.data.planner_output?.planning_reasons ?? []).join(
+                      " ",
+                    ) || "No planning reasons recorded."}
+                  </p>
+                  <pre>{compactJson(run.data.planner_output ?? {})}</pre>
+                </article>
+                <article className="row-card">
+                  <h3>Retrieval output</h3>
+                  <p>
+                    Candidate pool{" "}
+                    {run.data.retrieval_output?.candidate_pool?.length ?? 0} |
+                    provider fallbacks{" "}
+                    {run.data.retrieval_output?.provider_fallbacks?.length ?? 0}
+                  </p>
+                  <pre>{compactJson(run.data.retrieval_output ?? {})}</pre>
+                </article>
+                <article className="row-card">
+                  <h3>Extraction output</h3>
+                  <p>
+                    Fetched contents{" "}
+                    {run.data.extraction_output?.fetched_contents?.length ?? 0} |
+                    evidence items{" "}
+                    {run.data.extraction_output?.evidence_items?.length ?? 0}
+                  </p>
+                  <pre>{compactJson(run.data.extraction_output ?? {})}</pre>
+                </article>
+                <article className="row-card">
+                  <h3>Evaluation output</h3>
+                  <p>
+                    Final decisions{" "}
+                    {run.data.evaluation_output?.final_decisions?.length ?? 0} |
+                    push records{" "}
+                    {run.data.evaluation_output?.push_records?.length ?? 0}
+                  </p>
+                  <pre>{compactJson(run.data.evaluation_output ?? {})}</pre>
+                </article>
+              </div>
+              <div className="structured-grid">
+                <article className="row-card">
+                  <h3>MCP runtime</h3>
+                  <p>
+                    Configured provider{" "}
+                    {run.data.integration_runtime?.mcp?.configured_provider ??
+                      "-"}
+                  </p>
+                  <p>
+                    Enabled {runtimeFlagLabel(run.data.integration_runtime?.mcp?.enabled)} |
+                    used in run{" "}
+                    {runtimeFlagLabel(
+                      run.data.integration_runtime?.mcp?.used_in_run,
+                    )}{" "}
+                    | fallback used{" "}
+                    {runtimeFlagLabel(
+                      run.data.integration_runtime?.mcp?.fallback_used,
+                    )}
+                  </p>
+                </article>
+                <article className="row-card">
+                  <h3>Browser fallback runtime</h3>
+                  <p>
+                    Configured provider{" "}
+                    {run.data.integration_runtime?.browser
+                      ?.configured_provider ?? "-"}
+                  </p>
+                  <p>
+                    Enabled{" "}
+                    {runtimeFlagLabel(
+                      run.data.integration_runtime?.browser?.enabled,
+                    )}{" "}
+                    | used in run{" "}
+                    {runtimeFlagLabel(
+                      run.data.integration_runtime?.browser?.used_in_run,
+                    )}{" "}
+                    | fallback used{" "}
+                    {runtimeFlagLabel(
+                      run.data.integration_runtime?.browser?.fallback_used,
+                    )}
+                  </p>
+                  <p>
+                    Allowed domains:{" "}
+                    {run.data.integration_runtime?.browser?.allowed_domains?.join(
+                      ", ",
+                    ) || "-"}
+                  </p>
+                </article>
+              </div>
               <pre>{compactJson(run.data.errors ?? [])}</pre>
             </div>
           )}

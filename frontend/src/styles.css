@@ -186,6 +186,13 @@ button {
   background: rgba(255, 252, 242, 0.66);
 }
 
+.structured-grid {
+  display: grid;
+  gap: 12px;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  margin-top: 12px;
+}
+
 .row-card h3,
 .timeline-item h3 {
   margin: 0 0 8px;
@@ -232,6 +239,10 @@ pre {
   .panel-grid,
   .metric-grid,
   .story-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .structured-grid {
     grid-template-columns: 1fr;
   }
 

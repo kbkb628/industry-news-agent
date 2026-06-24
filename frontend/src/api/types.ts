@@ -38,6 +38,38 @@ export type MonitorRun = {
   expanded_queries?: string[];
   candidate_items?: Record<string, unknown>[];
   final_decisions?: Record<string, unknown>[];
+  planner_output?: {
+    expanded_queries?: string[];
+    source_plan?: Record<string, unknown>[];
+    planning_reasons?: string[];
+  };
+  retrieval_output?: {
+    candidate_pool?: Record<string, unknown>[];
+    provider_fallbacks?: Record<string, unknown>[];
+  };
+  extraction_output?: {
+    fetched_contents?: Record<string, unknown>[];
+    evidence_items?: Record<string, unknown>[];
+  };
+  evaluation_output?: {
+    final_decisions?: Record<string, unknown>[];
+    push_records?: Record<string, unknown>[];
+  };
+  integration_runtime?: {
+    mcp?: {
+      configured_provider?: string;
+      enabled?: boolean;
+      used_in_run?: boolean;
+      fallback_used?: boolean;
+    };
+    browser?: {
+      configured_provider?: string;
+      enabled?: boolean;
+      used_in_run?: boolean;
+      fallback_used?: boolean;
+      allowed_domains?: string[];
+    };
+  };
   candidate_task_summary?: {
     task_count?: number;
     completed_count?: number;

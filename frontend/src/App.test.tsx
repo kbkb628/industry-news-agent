@@ -79,6 +79,43 @@ describe("App", () => {
           expanded_queries: ["AI Agent funding"],
           candidate_items: [{ title: "Agent launch" }],
           final_decisions: [{ title: "Agent launch", should_push: true }],
+          planner_output: {
+            expanded_queries: ["AI Agent funding"],
+            source_plan: [
+              { tool_name: "rss_fetch", priority: 1 },
+              { tool_name: "search_news", priority: 2 },
+            ],
+            planning_reasons: [
+              "Trusted-source guidance favored feed-first planning.",
+            ],
+          },
+          retrieval_output: {
+            candidate_pool: [{ candidate_id: "cand_001", title: "Agent launch" }],
+            provider_fallbacks: [],
+          },
+          extraction_output: {
+            fetched_contents: [{ candidate_id: "cand_001", content: "full article" }],
+            evidence_items: [{ extracted_id: "ext_001", title: "Agent launch" }],
+          },
+          evaluation_output: {
+            final_decisions: [{ title: "Agent launch", should_push: true }],
+            push_records: [{ push_id: "push_001", should_push: true }],
+          },
+          integration_runtime: {
+            mcp: {
+              configured_provider: "onesearch",
+              enabled: true,
+              used_in_run: false,
+              fallback_used: true,
+            },
+            browser: {
+              configured_provider: "playwright_mcp",
+              enabled: true,
+              used_in_run: true,
+              fallback_used: true,
+              allowed_domains: ["example.com"],
+            },
+          },
           candidate_task_summary: {
             task_count: 3,
             completed_count: 3,
@@ -124,7 +161,7 @@ describe("App", () => {
     ).toBeInTheDocument();
     expect(
       await screen.findByText(
-        /Supervisor -> Planner -> Retrieval -> Extraction -> Evaluation/i,
+        /Supervisor -> Planner -> Retrieval -> CandidateTaskOrchestrator -> Finalize/i,
       ),
     ).toBeInTheDocument();
     expect(
@@ -156,6 +193,21 @@ describe("App", () => {
     expect(screen.getByText("Retrieved candidate items.")).toBeInTheDocument();
     expect(
       screen.getByText(/Candidate task orchestration: 3 tasks/i),
+    ).toBeInTheDocument();
+    expect(screen.getByText(/Structured stage read surface/i)).toBeInTheDocument();
+    expect(screen.getByText(/Planner output/i)).toBeInTheDocument();
+    expect(screen.getByText(/Retrieval output/i)).toBeInTheDocument();
+    expect(screen.getByText(/Extraction output/i)).toBeInTheDocument();
+    expect(screen.getByText(/Evaluation output/i)).toBeInTheDocument();
+    expect(screen.getByText(/MCP runtime/i)).toBeInTheDocument();
+    expect(screen.getByText(/Browser fallback runtime/i)).toBeInTheDocument();
+    expect(
+      screen.getAllByText(/Trusted-source guidance favored feed-first planning./i)
+        .length,
+    ).toBeGreaterThan(0);
+    expect(screen.getByText(/Configured provider onesearch/i)).toBeInTheDocument();
+    expect(
+      screen.getByText(/Configured provider playwright_mcp/i),
     ).toBeInTheDocument();
   });
 });
