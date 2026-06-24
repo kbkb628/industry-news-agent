@@ -505,17 +505,6 @@ def _parse_optional_datetime(value: Any) -> datetime | None:
     return datetime.fromisoformat(str(value).replace("Z", "+00:00"))
 
 
-def _build_history_index_query(state: dict[str, Any]) -> str:
-    topic_name = str(state.get("topic", {}).get("name", "")).strip()
-    seed_keywords = [
-        str(keyword).strip()
-        for keyword in state.get("seed_keywords", [])
-        if str(keyword).strip()
-    ]
-    parts = [part for part in [topic_name, *seed_keywords] if part]
-    return " ".join(parts)
-
-
 def _build_candidate_payloads(state: dict[str, Any]) -> tuple[CandidateRecordUpsertData, ...]:
     fetched_by_id = _index_by_candidate_id(list(state.get("fetched_contents", [])))
     extracted_by_id = _index_by_candidate_id(list(state.get("extracted_items", [])))
@@ -801,60 +790,6 @@ def supervisor_finalize_node(
                     "error_message": str(exc),
                 },
             )
-        history_index_query = _build_history_index_query(state)
-        if history_index_query:
-            try:
-                state["history_index_search_result"] = history_index.search_candidates(
-                    history_index_query,
-                    top_k=5,
-                )
-                if state["history_index_search_result"].get("provider") != "none":
-                    append_event(
-                        state,
-                        "search_history_index",
-                        "Searched candidate history projection for retrieval evidence.",
-                        payload={
-                            "provider": state["history_index_search_result"].get(
-                                "provider"
-                            ),
-                            "query": state["history_index_search_result"].get("query"),
-                            "matched_candidate_ids": [
-                                str(item.get("candidate_id"))
-                                for item in state["history_index_search_result"].get(
-                                    "items",
-                                    [],
-                                )
-                                if item.get("candidate_id") is not None
-                            ],
-                        },
-                    )
-            except Exception as exc:
-                errors = list(state.get("errors", []))
-                errors.append(
-                    {
-                        "tool_name": "history_index",
-                        "code": "history_index_search_failed",
-                        "message": str(exc),
-                        "details": {
-                            "provider": (
-                                settings.history_index_provider if settings else None
-                            ),
-                            "query": history_index_query,
-                        },
-                    }
-                )
-                state["errors"] = errors
-                append_event(
-                    state,
-                    "search_history_index",
-                    "Failed to search candidate history projection.",
-                    event_type="node_failed",
-                    payload={
-                        "provider": settings.history_index_provider if settings else None,
-                        "query": history_index_query,
-                        "error_message": str(exc),
-                    },
-                )
         run_repository.create_run_events(
             tuple(
                 RunEventCreateData(

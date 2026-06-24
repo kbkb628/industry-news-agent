@@ -1572,31 +1572,19 @@ def test_supervisor_finalize_records_history_index_failure_without_failing_run()
     assert "opensearch unavailable" in failed_event["payload"]["error_message"]
 
 
-def test_supervisor_finalize_records_history_index_search_metadata(
+def test_supervisor_finalize_indexes_history_projection_only(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     class RecordingIndex:
         def __init__(self) -> None:
-            self.search_calls: list[dict[str, object]] = []
+            self.index_calls: list[list[dict[str, object]]] = []
 
         def index_candidates(
             self,
             candidates: list[dict[str, object]],
         ) -> dict[str, object]:
+            self.index_calls.append(list(candidates))
             return {"indexed_count": len(candidates), "provider": "opensearch"}
-
-        def search_candidates(self, query: str, top_k: int = 5) -> dict[str, object]:
-            self.search_calls.append({"query": query, "top_k": top_k})
-            return {
-                "provider": "opensearch",
-                "query": query,
-                "items": [
-                    {
-                        "candidate_id": "cand_001",
-                        "title": "OpenAI agent update",
-                    }
-                ],
-            }
 
     class RecordingRepository:
         def __init__(self) -> None:
@@ -1773,23 +1761,13 @@ def test_supervisor_finalize_records_history_index_search_metadata(
     )
 
     assert result["history_index_result"]["indexed_count"] == 1
-    assert result["history_index_search_result"] == {
-        "provider": "opensearch",
-        "query": "AI Agent",
-        "items": [
-            {
-                "candidate_id": "cand_001",
-                "title": "OpenAI agent update",
-            }
-        ],
-    }
-    search_event = next(
-        event for event in result["events"] if event["node"] == "search_history_index"
+    assert "history_index_search_result" not in result
+    index_event = next(
+        event for event in result["events"] if event["node"] == "index_history"
     )
-    assert search_event["payload"]["provider"] == "opensearch"
-    assert search_event["payload"]["query"] == "AI Agent"
-    assert search_event["payload"]["matched_candidate_ids"] == ["cand_001"]
-    assert recording_index.search_calls == [{"query": "AI Agent", "top_k": 5}]
+    assert index_event["payload"]["provider"] == "opensearch"
+    assert index_event["payload"]["indexed_count"] == 1
+    assert recording_index.index_calls == [repository.candidate_records]
 
 
 def test_evaluate_run_node_only_closes_status_and_eval_result_without_persisting() -> None:

@@ -3229,6 +3229,16 @@ def test_opensearch_history_index_can_search_candidate_documents() -> None:
     assert client.post_requests[0]["url"] == (
         "http://localhost:9200/industry-news-candidates/_search"
     )
+    assert client.post_requests[0]["timeout"] == 3.0
+    assert client.post_requests[0]["json"] == {
+        "size": 3,
+        "query": {
+            "multi_match": {
+                "query": "OpenAI agent",
+                "fields": ["title^3", "raw_summary^2", "content", "decision_reason"],
+            }
+        },
+    }
 
 
 def test_build_history_index_returns_noop_without_complete_opensearch_settings() -> None:
