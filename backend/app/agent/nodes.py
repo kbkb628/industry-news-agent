@@ -505,6 +505,37 @@ def _parse_optional_datetime(value: Any) -> datetime | None:
     return datetime.fromisoformat(str(value).replace("Z", "+00:00"))
 
 
+def _build_history_index_query(state: dict[str, Any]) -> str:
+    topic_name = str(state.get("topic", {}).get("name", "")).strip()
+    final_decisions = list(state.get("final_decisions", []))
+
+    preferred_item = next(
+        (item for item in final_decisions if item.get("should_push")),
+        final_decisions[0] if final_decisions else {},
+    )
+    title = str(preferred_item.get("title", "")).strip()
+    decision_reason = str(preferred_item.get("decision_reason", "")).strip()
+
+    parts = [part for part in (topic_name, title, decision_reason) if part]
+    return " ".join(parts)
+
+
+def _build_history_index_search_evidence(search_result: dict[str, Any]) -> dict[str, Any]:
+    items = [
+        {
+            "candidate_id": str(item.get("candidate_id", "")),
+            "title": str(item.get("title", "")),
+        }
+        for item in search_result.get("items", [])
+    ]
+    return {
+        "provider": search_result.get("provider"),
+        "query": search_result.get("query"),
+        "item_count": len(items),
+        "items": items,
+    }
+
+
 def _build_candidate_payloads(state: dict[str, Any]) -> tuple[CandidateRecordUpsertData, ...]:
     fetched_by_id = _index_by_candidate_id(list(state.get("fetched_contents", [])))
     extracted_by_id = _index_by_candidate_id(list(state.get("extracted_items", [])))
@@ -753,6 +784,29 @@ def supervisor_finalize_node(
                 list(state["candidate_records"])
             )
             if state["history_index_result"].get("provider") != "none":
+                query = _build_history_index_query(state)
+                if query:
+                    try:
+                        search_result = history_index.search_candidates(query, top_k=3)
+                        state["history_index_result"]["search"] = (
+                            _build_history_index_search_evidence(search_result)
+                        )
+                    except Exception as exc:
+                        errors = list(state.get("errors", []))
+                        errors.append(
+                            {
+                                "tool_name": "history_index",
+                                "code": "history_index_search_failed",
+                                "message": str(exc),
+                                "details": {
+                                    "provider": state["history_index_result"].get(
+                                        "provider"
+                                    ),
+                                    "query": query,
+                                },
+                            }
+                        )
+                        state["errors"] = errors
                 append_event(
                     state,
                     "index_history",
