@@ -6,13 +6,12 @@ from langgraph.graph import END, StateGraph
 
 from app.agent.nodes import (
     append_event,
+    candidate_task_orchestrator_node,
     retrieve_business_context_node,
     supervisor_bootstrap_node,
     supervisor_finalize_node,
 )
 from app.agent.state import MonitorState
-from app.agent.evaluation_agent import EvaluationAgent
-from app.agent.extraction_agent import ExtractionAgent
 from app.agent.planner_agent import PlannerAgent
 from app.agent.retrieval_agent import RetrievalAgent
 from app.core.config import Settings
@@ -84,15 +83,13 @@ def build_monitor_graph(
         lambda state: _run_retrieval_stage(state, gateway=resolved_gateway),
     )
     graph.add_node(
-        "extraction_agent",
-        lambda state: _run_extraction_stage(state, gateway=resolved_gateway),
-    )
-    graph.add_node(
-        "evaluation_agent",
-        lambda state: EvaluationAgent(
+        "candidate_task_orchestrator",
+        lambda state: candidate_task_orchestrator_node(
+            state,
             gateway=resolved_gateway,
+            run_repository=run_repository,
             settings=settings,
-        ).run(state),
+        ),
     )
     graph.add_node(
         "supervisor_finalize",
@@ -108,9 +105,8 @@ def build_monitor_graph(
     graph.set_entry_point("supervisor_bootstrap")
     graph.add_edge("supervisor_bootstrap", "planner_agent")
     graph.add_edge("planner_agent", "retrieval_agent")
-    graph.add_edge("retrieval_agent", "extraction_agent")
-    graph.add_edge("extraction_agent", "evaluation_agent")
-    graph.add_edge("evaluation_agent", "supervisor_finalize")
+    graph.add_edge("retrieval_agent", "candidate_task_orchestrator")
+    graph.add_edge("candidate_task_orchestrator", "supervisor_finalize")
     graph.add_edge("supervisor_finalize", END)
 
     return graph.compile()
@@ -139,29 +135,6 @@ def _run_planner_stage(
         "plan_sources",
         "Planned candidate retrieval sources.",
         payload={"sources": list(state.get("source_plan", []))},
-    )
-    return state
-
-
-def _run_extraction_stage(
-    state: dict[str, Any],
-    *,
-    gateway: ToolGateway,
-) -> dict[str, Any]:
-    agent = ExtractionAgent(gateway=gateway)
-    agent.fetch_contents(state)
-    append_event(
-        state,
-        "fetch_contents",
-        "Fetched candidate content or preserved summary fallback inputs.",
-        payload={"count": len(state.get("fetched_contents", []))},
-    )
-    agent.extract_evidence(state)
-    append_event(
-        state,
-        "extract_structured_items",
-        "Extracted structured article summaries.",
-        payload={"count": len(state.get("extracted_items", []))},
     )
     return state
 

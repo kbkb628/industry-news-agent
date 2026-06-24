@@ -12,7 +12,12 @@ from fastapi.testclient import TestClient
 from app.api.monitor import get_monitor_graph, get_monitor_run_repository
 from app.api.topics import get_topic_repository
 from app.agent.graph import build_monitor_graph
-from app.agent.nodes import evaluate_run_node, persist_push_records_node, supervisor_finalize_node
+from app.agent.nodes import (
+    candidate_task_orchestrator_node,
+    evaluate_run_node,
+    persist_push_records_node,
+    supervisor_finalize_node,
+)
 from app.core.config import Settings
 from app.llm.mock_client import MockLLM
 from app.main import create_app
@@ -2193,6 +2198,7 @@ class InMemoryMonitorRunRepository:
         self.extracted_records: list[dict[str, object]] = []
         self.decision_records: list[dict[str, object]] = []
         self.push_records: list[dict[str, object]] = []
+        self.candidate_task_records: list[dict[str, object]] = []
         self.run_events: list[dict[str, object]] = []
         self.eval_results: dict[str, dict[str, object]] = {}
 
@@ -2417,6 +2423,47 @@ class InMemoryMonitorRunRepository:
         self.run_events.extend(persisted)
         return persisted
 
+    def create_candidate_task_records(self, payloads: tuple[object, ...]) -> list[dict[str, object]]:
+        persisted = [
+            {
+                "task_id": payload.task_id,
+                "run_id": payload.run_id,
+                "candidate_id": payload.candidate_id,
+                "stage": payload.stage,
+                "status": payload.status,
+                "attempt": payload.attempt,
+                "max_attempts": payload.max_attempts,
+                "depends_on_task_ids": list(payload.depends_on_task_ids),
+                "input_ref": dict(payload.input_ref),
+                "output_ref": dict(payload.output_ref),
+                "error_code": payload.error_code,
+                "error_message": payload.error_message,
+                "started_at": payload.started_at,
+                "finished_at": payload.finished_at,
+                "created_at": self._created_at,
+            }
+            for payload in payloads
+        ]
+        self.candidate_task_records.extend(persisted)
+        return persisted
+
+    def list_candidate_task_records(
+        self,
+        run_id: str,
+        *,
+        candidate_id: str | None = None,
+    ) -> list[dict[str, object]]:
+        records = [
+            record
+            for record in self.candidate_task_records
+            if record["run_id"] == run_id
+        ]
+        if candidate_id is not None:
+            records = [
+                record for record in records if record["candidate_id"] == candidate_id
+            ]
+        return records
+
     def get_eval_result(self, run_id: str | None = None) -> dict[str, object] | None:
         if run_id is not None:
             return self.eval_results.get(run_id)
@@ -2532,6 +2579,67 @@ def _wait_until(predicate: Callable[[], bool], timeout_seconds: float = 1.0) -> 
     raise AssertionError("Timed out waiting for asynchronous monitor run state")
 
 
+def build_gateway_with_mock_fetch_and_extract_tools() -> LocalToolGateway:
+    from app.tools.registry import build_default_tool_registry
+
+    gateway = LocalToolGateway()
+    build_default_tool_registry(llm=MockLLM()).register_into(gateway)
+    gateway._handlers["fetch_article_content"] = (
+        lambda candidates: ToolResponse.success(
+            tool_name="fetch_article_content",
+            summary="Fetched candidate content.",
+            data={
+                "candidates": [
+                    {
+                        **dict(candidates[0]),
+                        "content": "full content",
+                        "fetch_status": "fetched",
+                    }
+                ]
+            },
+        )
+    )
+    gateway._handlers["extract_article"] = (
+        lambda run_id, topic, candidates: ToolResponse.success(
+            tool_name="extract_article",
+            summary="Extracted evidence items.",
+            data={
+                "articles": [
+                    {
+                        "extracted_id": "ext_001",
+                        "candidate_id": candidates[0]["candidate_id"],
+                        "run_id": run_id,
+                        "topic_id": topic["topic_id"],
+                        "source_type": candidates[0]["source_type"],
+                        "source_name": candidates[0]["source_name"],
+                        "title": candidates[0]["title"],
+                        "url": candidates[0]["url"],
+                        "summary": "Strong launch signal",
+                        "content": candidates[0]["content"],
+                        "fetch_status": candidates[0]["fetch_status"],
+                        "extraction_mode": "structured",
+                    }
+                ]
+            },
+        )
+    )
+    return gateway
+
+
+def build_gateway_with_failing_fetch_tool() -> LocalToolGateway:
+    gateway = LocalToolGateway()
+    gateway.register(
+        "fetch_article_content",
+        lambda candidates: ToolResponse.failure(
+            tool_name="fetch_article_content",
+            summary="Fetch failed.",
+            code="fetch_failed",
+            message="fetch unavailable",
+        ),
+    )
+    return gateway
+
+
 def test_run_monitor_endpoint_executes_full_flow() -> None:
     topic_repository = InMemoryTopicRepository()
     run_repository = InMemoryMonitorRunRepository()
@@ -2557,6 +2665,128 @@ def test_run_monitor_endpoint_executes_full_flow() -> None:
     persisted_run = run_repository.get_monitor_run(payload["run_id"])
     assert persisted_run is not None
     assert persisted_run.state_snapshot["trigger"] == "manual"
+
+
+def test_monitor_graph_runs_candidate_orchestrator_and_persists_task_ledger() -> None:
+    repository = InMemoryMonitorRunRepository()
+    state = {
+        "run_id": "run_candidate_orchestration",
+        "topic_id": "topic_ai",
+        "topic": {
+            "topic_id": "topic_ai",
+            "name": "AI Agent",
+            "push_threshold": 0.7,
+            "cooldown_hours": 24,
+        },
+        "seed_keywords": ["AI Agent"],
+        "expanded_queries": ["AI Agent"],
+        "retrieval_output": {
+            "candidate_pool": [
+                {
+                    "candidate_id": "cand_001",
+                    "run_id": "run_candidate_orchestration",
+                    "topic_id": "topic_ai",
+                    "source_type": "search",
+                    "source_name": "Mock Search",
+                    "title": "AI Agent funding update",
+                    "url": "https://example.com/funding",
+                    "fetch_status": "pending",
+                    "raw_summary": "funding summary",
+                }
+            ]
+        },
+        "candidate_items": [],
+        "fetched_contents": [],
+        "extracted_items": [],
+        "scored_items": [],
+        "final_decisions": [],
+        "decision_reasons": [],
+        "push_records": [],
+        "tool_results": [],
+        "events": [],
+        "errors": [],
+        "status": "running",
+        "business_memory": {"push_history": []},
+        "evaluation_output": {},
+        "extraction_output": {},
+    }
+
+    result = candidate_task_orchestrator_node(
+        state,
+        gateway=build_gateway_with_mock_fetch_and_extract_tools(),
+        run_repository=repository,
+        settings=Settings(
+            database_url="postgresql+psycopg://user:pass@localhost:5432/news_agent",
+            redis_url="redis://localhost:6379/0",
+            candidate_fetch_concurrency=2,
+            candidate_extract_concurrency=1,
+            candidate_evaluate_concurrency=1,
+        ),
+    )
+
+    assert result["candidate_task_summary"]["task_count"] == 3
+    assert result["candidate_task_summary"]["evaluate_completed_count"] == 1
+    assert len(repository.candidate_task_records) == 3
+    assert result["final_decisions"][0]["candidate_id"] == "cand_001"
+    assert any(
+        event["node"] == "candidate_task_orchestrator" for event in result["events"]
+    )
+
+
+def test_candidate_orchestrator_records_failed_task_without_fake_success() -> None:
+    repository = InMemoryMonitorRunRepository()
+    state = {
+        "run_id": "run_candidate_failure",
+        "topic_id": "topic_ai",
+        "topic": {
+            "topic_id": "topic_ai",
+            "name": "AI Agent",
+            "push_threshold": 0.7,
+            "cooldown_hours": 24,
+        },
+        "retrieval_output": {
+            "candidate_pool": [
+                {
+                    "candidate_id": "cand_001",
+                    "run_id": "run_candidate_failure",
+                    "topic_id": "topic_ai",
+                    "source_type": "search",
+                    "source_name": "Mock Search",
+                    "title": "AI Agent funding update",
+                    "url": "https://example.com/funding",
+                    "fetch_status": "pending",
+                }
+            ]
+        },
+        "candidate_items": [],
+        "fetched_contents": [],
+        "extracted_items": [],
+        "scored_items": [],
+        "final_decisions": [],
+        "decision_reasons": [],
+        "push_records": [],
+        "tool_results": [],
+        "events": [],
+        "errors": [],
+        "status": "running",
+        "business_memory": {"push_history": []},
+        "evaluation_output": {},
+        "extraction_output": {},
+    }
+
+    result = candidate_task_orchestrator_node(
+        state,
+        gateway=build_gateway_with_failing_fetch_tool(),
+        run_repository=repository,
+        settings=Settings(
+            database_url="postgresql+psycopg://user:pass@localhost:5432/news_agent",
+            redis_url="redis://localhost:6379/0",
+        ),
+    )
+
+    assert result["candidate_task_summary"]["failed_count"] == 1
+    assert result["errors"][-1]["code"] == "tool_error"
+    assert not result["final_decisions"]
 
 
 def test_run_monitor_endpoint_returns_before_background_flow_finishes() -> None:

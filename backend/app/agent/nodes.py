@@ -5,12 +5,14 @@ from typing import Any
 
 from app.agent.contracts import (
     build_empty_business_memory,
+    build_empty_candidate_task_output,
     build_empty_evaluation_output,
     build_empty_extraction_output,
     build_empty_planner_output,
     build_empty_retrieval_output,
     build_empty_run_context,
 )
+from app.agent.candidate_orchestrator import CandidateTaskOrchestrator
 from app.agent.extraction_agent import ExtractionAgent
 from app.agent.evaluation_agent import EvaluationAgent
 from app.agent.planner_agent import PlannerAgent
@@ -27,6 +29,7 @@ from app.rag.knowledge_loader import load_knowledge_base
 from app.search.history_index import build_history_index
 from app.storage.repository import (
     CandidateRecordUpsertData,
+    CandidateTaskRecordCreateData,
     DecisionRecordUpsertData,
     EvalResultCreateData,
     ExtractedItemRecordUpsertData,
@@ -740,6 +743,123 @@ def evaluate_run_node(
     else:
         state["eval_result"] = dict(state["evaluation_output"]["eval_result"])
     state["status"] = "completed"
+    return state
+
+
+def candidate_task_orchestrator_node(
+    state: dict[str, Any],
+    *,
+    gateway: LocalToolGateway,
+    run_repository: MonitorRunRepositoryProtocol | None = None,
+    settings: Settings | None = None,
+) -> dict[str, Any]:
+    orchestrator = CandidateTaskOrchestrator(
+        fetch_concurrency=(settings.candidate_fetch_concurrency if settings else 2),
+        extract_concurrency=(settings.candidate_extract_concurrency if settings else 2),
+        evaluate_concurrency=(settings.candidate_evaluate_concurrency if settings else 2),
+    )
+    extraction_agent = ExtractionAgent(gateway=gateway)
+    evaluation_agent = EvaluationAgent(gateway=gateway, settings=settings)
+
+    tasks = orchestrator.build_initial_tasks(state)
+    completed_tasks: list[dict[str, Any]] = []
+    failed_tasks: list[dict[str, Any]] = []
+    queue = list(tasks)
+    orchestration_output = build_empty_candidate_task_output()
+
+    append_event(
+        state,
+        "candidate_task_orchestrator",
+        "Started candidate task orchestration.",
+        payload={"task_count": len(queue)},
+    )
+
+    while queue:
+        task = queue.pop(0)
+        try:
+            if task["stage"] == "fetch":
+                result = extraction_agent.run_fetch_task(task, state)
+                state["candidate_items"] = list(
+                    state.get("retrieval_output", {}).get("candidate_pool", [])
+                )
+                output_ref = {"fetched_candidate_id": str(result["candidate_id"])}
+            elif task["stage"] == "extract":
+                result = extraction_agent.run_extract_task(task, state)
+                output_ref = {"extracted_candidate_id": str(result["candidate_id"])}
+            else:
+                result = evaluation_agent.run_evaluate_task(task, state)
+                output_ref = {"decision_candidate_id": str(result["candidate_id"])}
+
+            completed = orchestrator.mark_task_completed(task, output_ref=output_ref)
+            completed_tasks.append(completed)
+            queue.extend(orchestrator.build_follow_up_tasks(completed))
+        except Exception as exc:
+            failed = dict(task)
+            failed["status"] = "failed"
+            failed["error_code"] = "tool_error"
+            failed["error_message"] = str(exc)
+            failed["finished_at"] = datetime.now(UTC).isoformat().replace("+00:00", "Z")
+            failed_tasks.append(failed)
+            errors = list(state.get("errors", []))
+            errors.append(
+                {
+                    "tool_name": "candidate_task_orchestrator",
+                    "code": "tool_error",
+                    "message": str(exc),
+                    "details": {
+                        "candidate_id": task["candidate_id"],
+                        "stage": task["stage"],
+                    },
+                }
+            )
+            state["errors"] = errors
+
+    all_tasks = completed_tasks + failed_tasks
+    state["candidate_task_plan"] = list(all_tasks)
+    state["candidate_task_runtime"] = orchestrator.build_runtime_view(all_tasks)
+    state["candidate_task_summary"] = orchestrator.build_summary(all_tasks)
+    orchestration_output["tasks"] = list(all_tasks)
+    orchestration_output["runtime"] = dict(state["candidate_task_runtime"])
+    orchestration_output["summary"] = dict(state["candidate_task_summary"])
+    state["candidate_task_output"] = orchestration_output
+
+    if run_repository is not None and all_tasks:
+        run_repository.create_candidate_task_records(
+            tuple(
+                CandidateTaskRecordCreateData(
+                    task_id=str(task["task_id"]),
+                    run_id=str(task["run_id"]),
+                    candidate_id=str(task["candidate_id"]),
+                    stage=str(task["stage"]),
+                    status=str(task["status"]),
+                    attempt=int(task.get("attempt", 1)),
+                    max_attempts=int(task.get("max_attempts", 1)),
+                    depends_on_task_ids=tuple(
+                        str(item) for item in task.get("depends_on_task_ids", [])
+                    ),
+                    input_ref=dict(task.get("input_ref", {})),
+                    output_ref=dict(task.get("output_ref", {})),
+                    error_code=(
+                        None if task.get("error_code") is None else str(task["error_code"])
+                    ),
+                    error_message=(
+                        None
+                        if task.get("error_message") is None
+                        else str(task["error_message"])
+                    ),
+                    started_at=None,
+                    finished_at=None,
+                )
+                for task in all_tasks
+            )
+        )
+
+    append_event(
+        state,
+        "candidate_task_orchestrator",
+        "Completed candidate task orchestration.",
+        payload=dict(state["candidate_task_summary"]),
+    )
     return state
 
 
