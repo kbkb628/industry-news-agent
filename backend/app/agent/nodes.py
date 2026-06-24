@@ -755,6 +755,16 @@ def candidate_task_orchestrator_node(
     run_repository: MonitorRunRepositoryProtocol | None = None,
     settings: Settings | None = None,
 ) -> dict[str, Any]:
+    def parse_task_datetime(value: Any) -> datetime | None:
+        if value is None:
+            return None
+        if isinstance(value, datetime):
+            return value
+        if isinstance(value, str):
+            normalized = value.replace("Z", "+00:00")
+            return datetime.fromisoformat(normalized)
+        raise TypeError(f"unsupported task datetime value: {type(value).__name__}")
+
     def merge_candidate_items(
         existing: list[dict[str, Any]],
         updates: list[dict[str, Any]],
@@ -802,16 +812,8 @@ def candidate_task_orchestrator_node(
                         if task.get("error_message") is None
                         else str(task["error_message"])
                     ),
-                    started_at=(
-                        None
-                        if task.get("started_at") is None
-                        else str(task["started_at"])
-                    ),
-                    finished_at=(
-                        None
-                        if task.get("finished_at") is None
-                        else str(task["finished_at"])
-                    ),
+                    started_at=parse_task_datetime(task.get("started_at")),
+                    finished_at=parse_task_datetime(task.get("finished_at")),
                 )
                 for task in tasks_to_persist
             )
@@ -1041,7 +1043,7 @@ def candidate_task_orchestrator_node(
         completed_tasks.extend(stage_completed)
         failed_tasks.extend(stage_failed)
         if pending_retries:
-            queue = pending_retries + queue
+            queue = pending_retries + follow_up_tasks + queue
         else:
             queue = follow_up_tasks + queue
 
@@ -1064,6 +1066,9 @@ def candidate_task_orchestrator_node(
             scoped_eval_state.get("decision_reasons", [])
         )
         state["push_records"] = list(scoped_eval_state.get("push_records", []))
+        state["evaluation_output"] = dict(
+            scoped_eval_state.get("evaluation_output", {})
+        )
         state["tool_results"] = list(scoped_eval_state.get("tool_results", state.get("tool_results", [])))
         state["errors"] = list(scoped_eval_state.get("errors", state.get("errors", [])))
         state["events"] = list(scoped_eval_state.get("events", state.get("events", [])))
