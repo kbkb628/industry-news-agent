@@ -245,10 +245,10 @@ def test_topics_html_page_renders() -> None:
         response = client.get("/")
 
     assert response.status_code == 200
-    assert "行业资讯结构化推送智能体" in response.text
-    assert "监控主题" in response.text
+    assert "Industry News Agent" in response.text
+    assert "Agent workflow highlights" in response.text
     assert 'href="/quality"' in response.text
-    assert "质量汇总" in response.text
+    assert "Quality Signals" in response.text
 
 
 def test_admin_html_pages_render() -> None:
@@ -261,15 +261,18 @@ def test_admin_html_pages_render() -> None:
         quality_response = client.get("/quality")
 
     assert pushes_response.status_code == 200
-    assert "推送记录" in pushes_response.text
+    assert "Push outcome review" in pushes_response.text
     assert run_detail_response.status_code == 200
-    assert "运行状态" in run_detail_response.text
+    assert "Run detail for" in run_detail_response.text
     assert "run_demo_001" in run_detail_response.text
     assert events_response.status_code == 200
-    assert "事件时间线" in events_response.text
+    assert "Execution timeline for" in events_response.text
     assert "run_demo_001" in events_response.text
+    assert "Live event timeline" in events_response.text
+    assert 'id="event-timeline"' in events_response.text
+    assert "const eventsEndpoint = `/api/monitor/runs/${runId}/events`;" in events_response.text
     assert quality_response.status_code == 200
-    assert "质量汇总" in quality_response.text
+    assert "Quality summary and reliability story" in quality_response.text
 
 
 @pytest.mark.parametrize("failing_method", ["commit", "refresh"])

@@ -30,4 +30,73 @@
     </article>
   </div>
 </section>
+
+<section class="section-card">
+  <h3>Live event timeline</h3>
+  <p>
+    This panel reads the persisted event API directly so the walkthrough stays anchored to runtime
+    evidence rather than static storytelling.
+  </p>
+  <div class="grid two">
+    <article class="stat">
+      <strong>Timeline summary</strong>
+      <p id="event-summary">Loading event summary.</p>
+      <pre id="event-summary-json"><code>Loading</code></pre>
+    </article>
+    <article class="stat">
+      <strong>Timeline entries</strong>
+      <ul id="event-timeline" class="timeline">
+        <li>Loading event timeline.</li>
+      </ul>
+    </article>
+  </div>
+</section>
+
+<script>
+  const runId = {{ run_id|tojson }};
+  const eventsEndpoint = `/api/monitor/runs/${runId}/events`;
+
+  const setCodeBlock = (elementId, value) => {
+    document.getElementById(elementId).textContent = JSON.stringify(value, null, 2);
+  };
+
+  fetch(eventsEndpoint)
+    .then((response) => {
+      if (!response.ok) {
+        throw new Error("events unavailable");
+      }
+      return response.json();
+    })
+    .then((payload) => {
+      const events = Array.isArray(payload.events) ? payload.events : [];
+      const summary = {
+        run_id: payload.run_id,
+        event_count: events.length,
+        event_types: [...new Set(events.map((event) => event.event_type))],
+        nodes: [...new Set(events.map((event) => event.node))],
+      };
+      document.getElementById("event-summary").textContent =
+        `Loaded ${events.length} persisted events across ${summary.nodes.length} nodes.`;
+      setCodeBlock("event-summary-json", summary);
+
+      const timeline = document.getElementById("event-timeline");
+      if (!events.length) {
+        timeline.innerHTML = "<li>No persisted events found for this run.</li>";
+        return;
+      }
+      timeline.innerHTML = events
+        .slice(0, 12)
+        .map(
+          (event) =>
+            `<li><strong>${event.event_type}</strong> | ${event.node} | ${event.message}</li>`,
+        )
+        .join("");
+    })
+    .catch(() => {
+      document.getElementById("event-summary").textContent = "Event timeline unavailable.";
+      setCodeBlock("event-summary-json", { error: "events unavailable" });
+      document.getElementById("event-timeline").innerHTML =
+        "<li>Event timeline unavailable.</li>";
+    });
+</script>
 {% endblock %}
