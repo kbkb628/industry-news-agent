@@ -174,12 +174,17 @@ class CandidateTaskOrchestrator:
         }
 
     def build_summary(self, tasks: list[dict[str, Any]]) -> dict[str, Any]:
+        failed_logical_tasks = {
+            (str(task.get("stage", "")), str(task.get("candidate_id", "")))
+            for task in tasks
+            if task.get("status") == "failed"
+        }
         return {
             "task_count": len(tasks),
             "completed_count": sum(
                 1 for task in tasks if task.get("status") == "completed"
             ),
-            "failed_count": sum(1 for task in tasks if task.get("status") == "failed"),
+            "failed_count": len(failed_logical_tasks),
             "skipped_count": sum(1 for task in tasks if task.get("status") == "skipped"),
             "fetch_completed_count": sum(
                 1

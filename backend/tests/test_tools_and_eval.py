@@ -1302,6 +1302,121 @@ def test_build_run_queue_falls_back_to_memory_when_redis_ping_fails(
     assert isinstance(queue, InMemoryRunQueue)
 
 
+def test_in_memory_run_queue_tracks_short_lived_coordination_state() -> None:
+    queue = InMemoryRunQueue()
+
+    assert queue.claim_enqueue_slot("topic_ai_agent", "scheduler") is True
+    assert queue.claim_enqueue_slot("topic_ai_agent", "scheduler") is False
+    queue.release_enqueue_slot("topic_ai_agent", "scheduler")
+    assert queue.claim_enqueue_slot("topic_ai_agent", "scheduler") is True
+
+    assert queue.claim_active_run("topic_ai_agent", "run_001") is True
+    assert queue.claim_active_run("topic_ai_agent", "run_002") is False
+    assert queue.get_active_run("topic_ai_agent") == "run_001"
+    queue.release_active_run("topic_ai_agent", "run_999")
+    assert queue.get_active_run("topic_ai_agent") == "run_001"
+    queue.release_active_run("topic_ai_agent", "run_001")
+    assert queue.get_active_run("topic_ai_agent") is None
+
+    retry_state = queue.set_retry_state(
+        run_id="run_retry_001",
+        topic_id="topic_ai_agent",
+        retry_count=1,
+        max_retries=2,
+        status="queued_for_retry",
+        reason="worker_retry",
+    )
+    assert retry_state == {
+        "run_id": "run_retry_001",
+        "topic_id": "topic_ai_agent",
+        "retry_count": 1,
+        "max_retries": 2,
+        "status": "queued_for_retry",
+        "reason": "worker_retry",
+    }
+    assert queue.get_retry_state("run_retry_001") == retry_state
+    queue.clear_retry_state("run_retry_001")
+    assert queue.get_retry_state("run_retry_001") is None
+
+
+def test_redis_stream_run_queue_tracks_short_lived_coordination_state() -> None:
+    class FakeRedisStreamClient:
+        def __init__(self) -> None:
+            self.created_groups: list[dict[str, object]] = []
+            self.values: dict[str, str] = {}
+
+        def xgroup_create(
+            self,
+            name: str,
+            groupname: str,
+            id: str,
+            mkstream: bool,
+        ) -> None:
+            self.created_groups.append(
+                {
+                    "name": name,
+                    "groupname": groupname,
+                    "id": id,
+                    "mkstream": mkstream,
+                }
+            )
+
+        def set(
+            self,
+            name: str,
+            value: str,
+            *,
+            ex: int | None = None,
+            nx: bool = False,
+        ) -> bool:
+            _ = ex
+            if nx and name in self.values:
+                return False
+            self.values[name] = value
+            return True
+
+        def get(self, name: str) -> str | None:
+            return self.values.get(name)
+
+        def delete(self, *names: str) -> int:
+            deleted = 0
+            for name in names:
+                if name in self.values:
+                    deleted += 1
+                    del self.values[name]
+            return deleted
+
+    client = FakeRedisStreamClient()
+    queue = RedisStreamRunQueue(client)
+
+    assert queue.claim_enqueue_slot("topic_ai_agent", "scheduler") is True
+    assert queue.claim_enqueue_slot("topic_ai_agent", "scheduler") is False
+    queue.release_enqueue_slot("topic_ai_agent", "scheduler")
+    assert queue.claim_enqueue_slot("topic_ai_agent", "scheduler") is True
+
+    assert queue.claim_active_run("topic_ai_agent", "run_001") is True
+    assert queue.claim_active_run("topic_ai_agent", "run_002") is False
+    assert queue.get_active_run("topic_ai_agent") == "run_001"
+    queue.release_active_run("topic_ai_agent", "run_999")
+    assert queue.get_active_run("topic_ai_agent") == "run_001"
+    queue.release_active_run("topic_ai_agent", "run_001")
+    assert queue.get_active_run("topic_ai_agent") is None
+
+    retry_state = queue.set_retry_state(
+        run_id="run_retry_001",
+        topic_id="topic_ai_agent",
+        retry_count=1,
+        max_retries=2,
+        status="queued_for_retry",
+        reason="worker_retry",
+    )
+    assert retry_state["retry_count"] == 1
+    assert retry_state["reason"] == "worker_retry"
+    assert queue.get_retry_state("run_retry_001") == retry_state
+    queue.clear_retry_state("run_retry_001")
+    assert queue.get_retry_state("run_retry_001") is None
+
+
 def test_redis_stream_run_queue_acknowledges_only_after_explicit_success() -> None:
     class FakeRedisStreamClient:
         def __init__(self) -> None:

@@ -10,6 +10,7 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from langgraph.graph.state import CompiledStateGraph
 from pydantic import ValidationError
 from sqlalchemy.orm import Session
+from starlette.requests import Request
 
 from app.agent.contracts import (
     build_empty_candidate_task_output,
@@ -249,6 +250,7 @@ def run_monitor(
 @router.get("/runs/{run_id}", response_model=MonitorRunStateResponse)
 def get_run_state(
     run_id: str,
+    request: Request,
     repository: Annotated[
         MonitorRunRepositoryProtocol,
         Depends(get_monitor_run_repository),
@@ -259,15 +261,22 @@ def get_run_state(
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Monitor run not found",
-        )
+    )
 
     snapshot = dict(run_record.state_snapshot)
+    retry_state = None
+    run_queue = getattr(request.app.state, "run_queue", None)
+    if run_queue is not None and hasattr(run_queue, "get_retry_state"):
+        retry_state = run_queue.get_retry_state(run_id)
+    run_context = dict(snapshot.get("run_context", {}))
+    if retry_state is not None:
+        run_context["retry_state"] = retry_state
     return MonitorRunStateResponse(
         run_id=run_record.run_id,
         topic_id=run_record.topic_id,
         trigger=str(snapshot.get("trigger", "manual")),
         status=run_record.status,
-        run_context=dict(snapshot.get("run_context", {})),
+        run_context=run_context,
         business_memory=dict(snapshot.get("business_memory", {})),
         planner_output=dict(snapshot.get("planner_output", {})),
         retrieval_output=dict(snapshot.get("retrieval_output", {})),

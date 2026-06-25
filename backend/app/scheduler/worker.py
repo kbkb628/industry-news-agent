@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from collections import deque
 from dataclasses import dataclass, field
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from concurrent.futures import ThreadPoolExecutor, TimeoutError as FuturesTimeoutError
 from copy import deepcopy
 from threading import Event
@@ -19,7 +19,7 @@ from app.api.monitor import (
 from app.core.config import Settings
 from app.llm.base import BaseLLMClient
 from app.llm.mock_client import MockLLM
-from app.storage.redis_store import build_redis_client
+from app.storage.redis_store import RedisEphemeralStateStore, build_redis_client
 from app.storage.repository import (
     MonitorRunRepositoryProtocol,
     RunEventCreateData,
@@ -54,10 +54,53 @@ class RunQueueProtocol(Protocol):
 
     def requeue(self, delivery: RunQueueMessage, *, reason: str) -> None: ...
 
+    def claim_enqueue_slot(self, topic_id: str, trigger: str) -> bool: ...
+
+    def release_enqueue_slot(self, topic_id: str, trigger: str) -> None: ...
+
+    def claim_active_run(self, topic_id: str, run_id: str) -> bool: ...
+
+    def get_active_run(self, topic_id: str) -> str | None: ...
+
+    def release_active_run(self, topic_id: str, run_id: str | None = None) -> None: ...
+
+    def set_retry_state(
+        self,
+        *,
+        run_id: str,
+        topic_id: str,
+        retry_count: int,
+        max_retries: int,
+        status: str,
+        reason: str | None,
+    ) -> dict[str, Any]: ...
+
+    def get_retry_state(self, run_id: str) -> dict[str, Any] | None: ...
+
+    def clear_retry_state(self, run_id: str) -> None: ...
+
 
 class InMemoryRunQueue:
     def __init__(self) -> None:
         self._queue: deque[RunQueueMessage] = deque()
+        self._enqueue_slots: dict[str, tuple[bool, datetime]] = {}
+        self._active_runs: dict[str, tuple[str, datetime]] = {}
+        self._retry_states: dict[str, tuple[dict[str, Any], datetime]] = {}
+
+    @staticmethod
+    def _expires_at(ttl_seconds: int) -> datetime:
+        return datetime.now(UTC).replace(microsecond=0) + timedelta(seconds=ttl_seconds)
+
+    @staticmethod
+    def _prune_expired(store: dict[str, tuple[Any, datetime]]) -> None:
+        now = datetime.now(UTC)
+        expired_keys = [key for key, (_, expires_at) in store.items() if expires_at <= now]
+        for key in expired_keys:
+            del store[key]
+
+    @staticmethod
+    def _enqueue_slot_key(topic_id: str, trigger: str) -> str:
+        return f"{topic_id}:{trigger}"
 
     def enqueue(self, message: RunQueueMessage) -> dict[str, Any]:
         self._queue.append(message)
@@ -90,6 +133,81 @@ class InMemoryRunQueue:
         )
         self.acknowledge(delivery)
 
+    def claim_enqueue_slot(
+        self,
+        topic_id: str,
+        trigger: str,
+        ttl_seconds: int = 60,
+    ) -> bool:
+        self._prune_expired(self._enqueue_slots)
+        key = self._enqueue_slot_key(topic_id, trigger)
+        if key in self._enqueue_slots:
+            return False
+        self._enqueue_slots[key] = (True, self._expires_at(ttl_seconds))
+        return True
+
+    def release_enqueue_slot(self, topic_id: str, trigger: str) -> None:
+        self._enqueue_slots.pop(self._enqueue_slot_key(topic_id, trigger), None)
+
+    def claim_active_run(
+        self,
+        topic_id: str,
+        run_id: str,
+        ttl_seconds: int = 900,
+    ) -> bool:
+        self._prune_expired(self._active_runs)
+        if topic_id in self._active_runs:
+            return False
+        self._active_runs[topic_id] = (run_id, self._expires_at(ttl_seconds))
+        return True
+
+    def get_active_run(self, topic_id: str) -> str | None:
+        self._prune_expired(self._active_runs)
+        value = self._active_runs.get(topic_id)
+        if value is None:
+            return None
+        return value[0]
+
+    def release_active_run(self, topic_id: str, run_id: str | None = None) -> None:
+        current = self._active_runs.get(topic_id)
+        if current is None:
+            return
+        if run_id is not None and current[0] != run_id:
+            return
+        del self._active_runs[topic_id]
+
+    def set_retry_state(
+        self,
+        *,
+        run_id: str,
+        topic_id: str,
+        retry_count: int,
+        max_retries: int,
+        status: str,
+        reason: str | None,
+        ttl_seconds: int = 900,
+    ) -> dict[str, Any]:
+        payload = {
+            "run_id": run_id,
+            "topic_id": topic_id,
+            "retry_count": retry_count,
+            "max_retries": max_retries,
+            "status": status,
+            "reason": reason,
+        }
+        self._retry_states[run_id] = (payload, self._expires_at(ttl_seconds))
+        return dict(payload)
+
+    def get_retry_state(self, run_id: str) -> dict[str, Any] | None:
+        self._prune_expired(self._retry_states)
+        payload = self._retry_states.get(run_id)
+        if payload is None:
+            return None
+        return dict(payload[0])
+
+    def clear_retry_state(self, run_id: str) -> None:
+        self._retry_states.pop(run_id, None)
+
 
 class RedisStreamRunQueue:
     def __init__(
@@ -104,6 +222,7 @@ class RedisStreamRunQueue:
         claim_count: int = 1,
     ) -> None:
         self.redis_client = redis_client
+        self.state_store = RedisEphemeralStateStore(redis_client)
         self.stream_key = stream_key
         self.group_name = group_name
         self.consumer_name = consumer_name
@@ -242,6 +361,75 @@ class RedisStreamRunQueue:
         self.enqueue(requeued_message)
         self.acknowledge(delivery)
 
+    def claim_enqueue_slot(
+        self,
+        topic_id: str,
+        trigger: str,
+        ttl_seconds: int = 60,
+    ) -> bool:
+        return self.state_store.claim_value(
+            key=f"enqueue:{topic_id}:{trigger}",
+            value="1",
+            ttl_seconds=ttl_seconds,
+        )
+
+    def release_enqueue_slot(self, topic_id: str, trigger: str) -> None:
+        self.state_store.delete(f"enqueue:{topic_id}:{trigger}")
+
+    def claim_active_run(
+        self,
+        topic_id: str,
+        run_id: str,
+        ttl_seconds: int = 900,
+    ) -> bool:
+        return self.state_store.claim_value(
+            key=f"active_run:{topic_id}",
+            value=run_id,
+            ttl_seconds=ttl_seconds,
+        )
+
+    def get_active_run(self, topic_id: str) -> str | None:
+        return self.state_store.get_value(f"active_run:{topic_id}")
+
+    def release_active_run(self, topic_id: str, run_id: str | None = None) -> None:
+        current = self.get_active_run(topic_id)
+        if current is None:
+            return
+        if run_id is not None and current != run_id:
+            return
+        self.state_store.delete(f"active_run:{topic_id}")
+
+    def set_retry_state(
+        self,
+        *,
+        run_id: str,
+        topic_id: str,
+        retry_count: int,
+        max_retries: int,
+        status: str,
+        reason: str | None,
+        ttl_seconds: int = 900,
+    ) -> dict[str, Any]:
+        payload = {
+            "run_id": run_id,
+            "topic_id": topic_id,
+            "retry_count": retry_count,
+            "max_retries": max_retries,
+            "status": status,
+            "reason": reason,
+        }
+        return self.state_store.set_json(
+            key=f"retry:{run_id}",
+            payload=payload,
+            ttl_seconds=ttl_seconds,
+        )
+
+    def get_retry_state(self, run_id: str) -> dict[str, Any] | None:
+        return self.state_store.get_json(f"retry:{run_id}")
+
+    def clear_retry_state(self, run_id: str) -> None:
+        self.state_store.delete(f"retry:{run_id}")
+
 
 def build_run_queue(settings: Settings | None = None) -> RunQueueProtocol:
     try:
@@ -292,6 +480,57 @@ class MonitorWorkerService:
         if isinstance(self.queue, InMemoryRunQueue):
             return "memory"
         return self.queue.__class__.__name__.lower()
+
+    def _release_enqueue_slot(self, topic_id: str, trigger: str) -> None:
+        release = getattr(self.queue, "release_enqueue_slot", None)
+        if callable(release):
+            release(topic_id, trigger)
+
+    def _claim_active_run(self, topic_id: str, run_id: str) -> bool:
+        claim = getattr(self.queue, "claim_active_run", None)
+        if not callable(claim):
+            return True
+        return bool(claim(topic_id, run_id))
+
+    def _get_active_run(self, topic_id: str) -> str | None:
+        getter = getattr(self.queue, "get_active_run", None)
+        if not callable(getter):
+            return None
+        value = getter(topic_id)
+        if value is None:
+            return None
+        return str(value)
+
+    def _release_active_run(self, topic_id: str, run_id: str | None = None) -> None:
+        release = getattr(self.queue, "release_active_run", None)
+        if callable(release):
+            release(topic_id, run_id)
+
+    def _set_retry_state(
+        self,
+        *,
+        run_id: str,
+        topic_id: str,
+        retry_count: int,
+        max_retries: int,
+        status: str,
+        reason: str | None,
+    ) -> None:
+        setter = getattr(self.queue, "set_retry_state", None)
+        if callable(setter):
+            setter(
+                run_id=run_id,
+                topic_id=topic_id,
+                retry_count=retry_count,
+                max_retries=max_retries,
+                status=status,
+                reason=reason,
+            )
+
+    def _clear_retry_state(self, run_id: str) -> None:
+        clearer = getattr(self.queue, "clear_retry_state", None)
+        if callable(clearer):
+            clearer(run_id)
 
     def _build_queue_metrics(self, message: RunQueueMessage) -> dict[str, Any]:
         dequeued_at = datetime.now(UTC)
@@ -419,6 +658,7 @@ class MonitorWorkerService:
         message = self.queue.dequeue()
         if message is None:
             return None
+        self._release_enqueue_slot(message.topic_id, message.trigger)
 
         topic = self.topic_repository.get_topic(message.topic_id)
         if topic is None:
@@ -456,6 +696,26 @@ class MonitorWorkerService:
                 }
         else:
             run_id = message.run_id or f"run_{uuid.uuid4().hex[:12]}"
+        if not self._claim_active_run(topic.topic_id, run_id):
+            active_run_id = self._get_active_run(topic.topic_id) or run_id
+            self._persist_governance_event(
+                run_id=active_run_id,
+                topic_id=topic.topic_id,
+                event_type="governance_skipped",
+                node="worker_active_run_guard",
+                message="Skipped queued run because a short-lived coordination lock is already active for the topic.",
+                payload={
+                    **queue_metrics,
+                    "active_run_id": active_run_id,
+                },
+            )
+            self.queue.acknowledge(message)
+            return {
+                "run_id": active_run_id,
+                "topic_id": topic.topic_id,
+                "trigger": message.trigger,
+                "status": "skipped_active_run",
+            }
         base_state = _build_initial_state(topic, run_id)
         base_state["trigger"] = message.trigger
         effective_max_retries = (
@@ -481,6 +741,8 @@ class MonitorWorkerService:
         try:
             graph = self._build_graph()
             result = self._invoke_graph_with_timeout(graph, attempt_state)
+            self._clear_retry_state(run_id)
+            self._release_active_run(topic.topic_id, run_id)
             self.queue.acknowledge(message)
             return {
                 "run_id": run_id,
@@ -519,6 +781,8 @@ class MonitorWorkerService:
                     },
                 )
                 _mark_run_failed(self.run_repository, attempt_state, exc)
+                self._clear_retry_state(run_id)
+                self._release_active_run(topic.topic_id, run_id)
                 self.queue.acknowledge(message)
                 return {
                     "run_id": run_id,
@@ -540,6 +804,14 @@ class MonitorWorkerService:
                     **queue_metrics,
                 },
             )
+            self._set_retry_state(
+                run_id=run_id,
+                topic_id=topic.topic_id,
+                retry_count=attempt + 1,
+                max_retries=effective_max_retries,
+                status="queued_for_retry",
+                reason=str(exc),
+            )
             self.queue.requeue(
                 RunQueueMessage(
                     topic_id=message.topic_id,
@@ -554,6 +826,7 @@ class MonitorWorkerService:
                 ),
                 reason="worker_retry",
             )
+            self._release_active_run(topic.topic_id, run_id)
             _persist_initial_run(self.run_repository, attempt_state)
             return {
                 "run_id": run_id,
@@ -611,6 +884,12 @@ def enqueue_topic_run(
     queue: RunQueueProtocol,
     trigger: str = "scheduler",
 ) -> dict[str, Any]:
+    if not queue.claim_enqueue_slot(topic_id, trigger):
+        return {
+            "topic_id": topic_id,
+            "trigger": trigger,
+            "status": "skipped_duplicate",
+        }
     return queue.enqueue(
         RunQueueMessage(
             topic_id=topic_id,

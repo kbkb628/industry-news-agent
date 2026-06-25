@@ -31,7 +31,8 @@ Durable storage contract:
   results.
 - Redis and Redis Stream do not replace PostgreSQL business facts.
 - Redis owns short-lived coordination only: queue transport, active-run
-  protection, and transient worker execution state.
+  protection, enqueue dedup, retry visibility, and transient worker execution
+  state.
 - If Redis is unavailable, runtime coordination may degrade to in-memory
   execution, but PostgreSQL business facts remain durable and authoritative.
 - OpenSearch/Elasticsearch is a derived retrieval projection only, not an
@@ -146,7 +147,11 @@ has been persisted. Retryable failures are re-enqueued with
 the current worker invocation stops at that handoff point. The queue owns the
 next retry delivery, including the durable `run_id` plus persisted
 `retry_count` and `max_retries` metadata needed to exhaust the retry budget
-across later deliveries and eventually mark the run failed.
+across later deliveries and eventually mark the run failed. Short-lived Redis
+coordination also holds scheduler enqueue slots per `topic_id + trigger`,
+active-run locks per topic, and transient retry state keyed by `run_id` so the
+worker/API can expose retry handoff status without moving durable run facts out
+of PostgreSQL.
 Timeout handling is best-effort in the current in-process thread model. The
 worker marks the run failed, records governance timeout events, and blocks late
 repository writes from the timed-out invocation path, but it does not guarantee
@@ -155,6 +160,11 @@ The code falls back to an in-memory queue only as an execution fallback, not as
 the source of truth for business records. Governance events keep the
 coordination backend visible in persisted run traces while PostgreSQL remains
 the authoritative record of run facts.
+
+`GET /api/monitor/runs/{run_id}` may additionally surface
+`run_context.retry_state` when a run is currently parked for worker retry. That
+field is intentionally transient: it comes from short-lived coordination state,
+not from the durable monitor-run record.
 
 Not claimed by the current implementation:
 

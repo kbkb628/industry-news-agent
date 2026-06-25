@@ -4356,6 +4356,22 @@ def test_scheduler_job_enqueues_message_with_scheduler_trigger() -> None:
     assert message.trigger == "scheduler"
 
 
+def test_enqueue_topic_run_skips_duplicate_scheduler_message_while_enqueue_slot_is_live() -> None:
+    queue = InMemoryRunQueue()
+
+    first = enqueue_topic_run("topic_001", queue=queue, trigger="scheduler")
+    second = enqueue_topic_run("topic_001", queue=queue, trigger="scheduler")
+
+    assert first["status"] == "queued"
+    assert second == {
+        "topic_id": "topic_001",
+        "trigger": "scheduler",
+        "status": "skipped_duplicate",
+    }
+    assert queue.dequeue() is not None
+    assert queue.dequeue() is None
+
+
 def test_scheduler_job_enqueues_and_worker_processes_topic_run() -> None:
     topic_repository = InMemoryTopicRepository()
     run_repository = InMemoryMonitorRunRepository()
@@ -4410,6 +4426,48 @@ def test_scheduler_job_enqueues_and_worker_processes_topic_run() -> None:
     assert run_record is not None
     assert run_record.status == "completed"
     assert run_record.state_snapshot["trigger"] == "scheduler"
+
+
+def test_worker_releases_short_lived_queue_coordination_state_after_completion() -> None:
+    topic_repository = InMemoryTopicRepository()
+    run_repository = InMemoryMonitorRunRepository()
+    queue = InMemoryRunQueue()
+    worker = MonitorWorkerService(
+        topic_repository=topic_repository,
+        run_repository=run_repository,
+        llm=MockLLM(),
+        queue=queue,
+    )
+    topic = topic_repository.create_topic(
+        TopicCreateData(
+            name="AI Agent",
+            description="Track enterprise AI agent launches and deployment updates.",
+            seed_keywords=("OpenAI", "enterprise", "automation"),
+            trusted_sources=("AI Daily RSS", "AI Search"),
+            exclude_keywords=("rumor",),
+            push_threshold=0.72,
+            cooldown_hours=24,
+            enabled=True,
+            schedule_cron="0 */6 * * *",
+        )
+    )
+
+    enqueue_result = enqueue_topic_run(
+        topic.topic_id,
+        queue=queue,
+        trigger="scheduler",
+    )
+
+    assert enqueue_result["status"] == "queued"
+    assert queue.claim_enqueue_slot(topic.topic_id, "scheduler") is False
+
+    result = worker.process_next()
+
+    assert result is not None
+    assert result["status"] == "completed"
+    assert queue.claim_enqueue_slot(topic.topic_id, "scheduler") is True
+    queue.release_enqueue_slot(topic.topic_id, "scheduler")
+    assert queue.get_active_run(topic.topic_id) is None
 
 
 def test_worker_loop_survives_processing_error_and_continues() -> None:
@@ -4595,6 +4653,61 @@ def test_worker_requeues_retryable_failure_and_stops_current_delivery(monkeypatc
     assert queued_retry.max_retries == 1
 
 
+def test_worker_records_short_lived_retry_state_when_requeueing(monkeypatch) -> None:
+    topic_repository = InMemoryTopicRepository()
+    run_repository = InMemoryMonitorRunRepository()
+    topic = topic_repository.create_topic(
+        TopicCreateData(
+            name="AI Agent",
+            description="Track enterprise AI agent launches and deployment updates.",
+            seed_keywords=("OpenAI", "enterprise", "automation"),
+            trusted_sources=("AI Daily RSS", "AI Search"),
+            exclude_keywords=("rumor",),
+            push_threshold=0.72,
+            cooldown_hours=24,
+            enabled=True,
+            schedule_cron="0 */6 * * *",
+        )
+    )
+    queue = InMemoryRunQueue()
+    queue.enqueue(
+        RunQueueMessage(
+            topic_id=topic.topic_id,
+            trigger="scheduler",
+        )
+    )
+
+    class AlwaysFailingGraph:
+        def invoke(self, state: dict[str, object]) -> dict[str, object]:
+            raise RuntimeError("transient failure")
+
+    monkeypatch.setattr(
+        "app.scheduler.worker.build_monitor_graph",
+        lambda llm, run_repository: AlwaysFailingGraph(),
+    )
+
+    worker = MonitorWorkerService(
+        topic_repository=topic_repository,
+        run_repository=run_repository,
+        llm=MockLLM(),
+        queue=queue,
+        max_retries=1,
+    )
+
+    result = worker.process_next()
+
+    assert result is not None
+    assert result["status"] == "queued_for_retry"
+    assert queue.get_retry_state(result["run_id"]) == {
+        "run_id": result["run_id"],
+        "topic_id": topic.topic_id,
+        "retry_count": 1,
+        "max_retries": 1,
+        "status": "queued_for_retry",
+        "reason": "transient failure",
+    }
+
+
 def test_worker_marks_run_failed_after_retry_budget_is_exhausted_across_deliveries(
     monkeypatch,
 ) -> None:
@@ -4759,6 +4872,64 @@ def test_worker_retry_delivery_uses_queued_run_id_instead_of_current_active_run(
     unrelated_run = run_repository.get_monitor_run("run_unrelated_active")
     assert unrelated_run is not None
     assert unrelated_run.status == "running"
+
+
+def test_run_detail_api_surfaces_retry_state_from_short_lived_coordination() -> None:
+    topic_repository = InMemoryTopicRepository()
+    run_repository = InMemoryMonitorRunRepository()
+    topic = topic_repository.create_topic(
+        TopicCreateData(
+            name="AI Agent",
+            description="Track enterprise AI agent launches and deployment updates.",
+            seed_keywords=("OpenAI", "enterprise", "automation"),
+            trusted_sources=("AI Daily RSS", "AI Search"),
+            exclude_keywords=("rumor",),
+            push_threshold=0.72,
+            cooldown_hours=24,
+            enabled=True,
+            schedule_cron="0 */6 * * *",
+        )
+    )
+    run_repository.monitor_runs["run_retry_visible"] = MonitorRunRecord(
+        run_id="run_retry_visible",
+        topic_id=topic.topic_id,
+        status="running",
+        state_snapshot={
+            "run_id": "run_retry_visible",
+            "topic_id": topic.topic_id,
+            "trigger": "scheduler",
+            "status": "running",
+            "run_context": {},
+        },
+        error_summary=None,
+        started_at=datetime(2026, 6, 24, 9, 0, tzinfo=UTC),
+        finished_at=None,
+        created_at=datetime(2026, 6, 24, 9, 0, tzinfo=UTC),
+    )
+
+    with _build_monitor_client(topic_repository, run_repository) as client:
+        queue = InMemoryRunQueue()
+        queue.set_retry_state(
+            run_id="run_retry_visible",
+            topic_id=topic.topic_id,
+            retry_count=1,
+            max_retries=2,
+            status="queued_for_retry",
+            reason="worker_retry",
+        )
+        client.app.state.run_queue = queue
+
+        response = client.get("/api/monitor/runs/run_retry_visible")
+
+    assert response.status_code == 200
+    assert response.json()["run_context"]["retry_state"] == {
+        "run_id": "run_retry_visible",
+        "topic_id": topic.topic_id,
+        "retry_count": 1,
+        "max_retries": 2,
+        "status": "queued_for_retry",
+        "reason": "worker_retry",
+    }
 
 
 def test_worker_acknowledges_queue_message_after_successful_completion(
