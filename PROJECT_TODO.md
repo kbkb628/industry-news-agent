@@ -32,3 +32,4 @@
 - quality proxy evidence surfaces aligned across persistence, HTML, dashboard, and docs
 - final resume-truth broad verification completed
 - final resume-truth alignment documentation completed
+- close remaining resume wording gaps across tool-access contract, provider boundaries, proxy metrics, and concurrency wording

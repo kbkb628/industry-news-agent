@@ -17,9 +17,9 @@ Final verification status for this document:
 - frontend verification passed on July 1, 2026:
   `npm --prefix frontend test -- --run`
   `npm --prefix frontend run build`
-- repository cleanliness checks passed on July 1, 2026:
+- repository hygiene check on July 1, 2026:
   `git diff --check`
-  `git status --short`
+  `git status --short` showed expected local modifications pending commit
 
 ## Resume Claim Snapshot
 
@@ -29,9 +29,12 @@ agent with:
 - a real in-process multi-agent monitor flow
 - candidate-level task orchestration inside that monitor flow
 - structured planner, retrieval, extraction, and evaluation stages
-- scheduler and worker governance with retry and active-run controls
+- scheduler and worker governance with bounded concurrency, retry, timeout, and
+  active-run controls
 - persisted run history, push decisions, candidate records, candidate task
   ledger records, and eval results
+- a unified tool-access contract read surface with visible per-capability
+  provider paths
 - optional provider boundaries for search, browser fetch, history indexing,
   judge scoring, and notification delivery
 
@@ -118,10 +121,10 @@ agent with:
 - Evidence:
   - evaluation deduplicates, scores, decides push/skip, and writes
     `eval_result`
-  - the judge layer supports the mock rule judge and an optional
-    OpenAI-compatible boundary
-  - persisted eval history now includes recall proxy, false-positive proxy,
-    candidate-task failure rate, event-latency proxy, and runtime-cost proxy
+- the judge layer supports the mock rule judge and an optional
+  OpenAI-compatible boundary
+- persisted eval history now includes recall proxy, false-positive proxy,
+  candidate-task failure-rate proxy, event-latency proxy, and runtime-cost proxy
   - push decisions are persisted and exposed through run snapshots
 - API / pages:
   - `POST /api/eval/run`
@@ -131,9 +134,9 @@ agent with:
 - Truth boundary:
   - the current judge default is deterministic and local; live judge support is
     optional and should be described as a provider boundary
-  - recall, false-positive, failure-rate, and latency metrics are truthful as
-    proxy evidence surfaces, not as production monitoring or real-time SLO
-    claims
+- recall, false-positive, failure-rate, latency, and runtime-cost metrics are
+  truthful as proxy evidence surfaces, not as production monitoring or
+  real-time SLO claims
 
 ### 5. "Built scheduler and worker governance around the monitor loop"
 
@@ -143,7 +146,8 @@ agent with:
   - `backend/app/api/monitor.py`
   - `backend/app/agent/nodes.py`
 - Evidence:
-  - worker execution includes retry, timeout, and active-run guard behavior
+- worker execution includes bounded concurrency, retry, timeout, and active-run
+  guard behavior
   - scheduled topic jobs enqueue monitor runs
   - governance events are emitted for the run lifecycle
 - API / pages:
@@ -187,7 +191,32 @@ agent with:
   - quality pages and dashboard cards now expose the persisted proxy metrics
     explicitly so the resume wording stays inside the actual runtime evidence
 
-### 7. "Supports optional integrations without pretending they are always live"
+### 7. "Unified search/browser/notification access under one contract"
+
+- Status: `partial`
+- Code:
+  - `backend/app/integrations/runtime_summary.py`
+  - `backend/app/tools/registry.py`
+  - `backend/app/templates/run_detail.html`
+  - `frontend/src/App.tsx`
+- Evidence:
+  - `integration_runtime.tool_access.contract` is now a stable
+    `unified_tool_gateway` read surface
+  - search, browser, and notification each expose both `tool_name` and
+    `provider_path`
+  - the dashboard and HTML run detail page show the contract separately from
+    the actual provider path used by that capability
+- API / pages:
+  - `GET /api/monitor/runs/{run_id}`
+  - `GET /runs/{run_id}`
+- Truth boundary:
+  - the contract is unified, but the actual provider paths are not all MCP in
+    the current repo
+  - search may run through `mcp_gateway`; browser and notification currently
+    remain on `tool_gateway` with optional provider-backed adapters behind
+    those local tool boundaries
+
+### 8. "Supports optional integrations without pretending they are always live"
 
 - Status: `boundary`
 - Code:
@@ -226,8 +255,11 @@ Use these phrasings when you want to stay close to the implementation:
   results, and surfaces them through APIs and admin pages."
 - "Candidate fetch, extract, and evaluate work is recorded as a task ledger so
   orchestration evidence is queryable after the run finishes."
-- "I added scheduler and worker governance so queued runs have retry, timeout,
-  and active-run controls."
+- "I added scheduler and worker governance so queued runs have bounded
+  concurrency, retry, timeout, and active-run controls."
+- "I used a unified tool-access contract for search, browser, and notification,
+  while surfacing the actual provider path per capability so the MCP boundary
+  stays truthful."
 
 ## Partial / Boundary Claims
 
@@ -235,13 +267,16 @@ Keep these scoped unless the runtime environment proves more:
 
 - "LLM-backed" should be read as `MockLLM` plus swappable provider boundaries
   unless a live provider is actually configured.
-- "Search integration" should be framed as an optional provider boundary.
+- "Search integration" should be framed as a unified tool contract plus an
+  optional provider boundary.
 - "Browser automation" should be framed as a fallback adapter, not a fully
   managed browser fleet.
 - "OpenSearch history index" should be framed as a projection boundary, not the
   source of truth.
 - "AI judge" should be framed as a deterministic local judge with an optional
   OpenAI-compatible adapter.
+- "Resilience" should be framed as bounded concurrency, retry, timeout, and
+  active-run controls rather than a full circuit-breaker subsystem.
 
 ## Suggested Demo Order
 

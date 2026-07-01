@@ -2,11 +2,12 @@
 {% block title %}Quality Signals | Industry News Agent{% endblock %}
 {% block content %}
 <section class="section-card">
-  <h2>质量汇总 / Quality summary and reliability story</h2>
+  <h2>Quality summary and reliability story</h2>
   <p>
     This showcase page retains the existing summary fetch, but it now frames evaluation metrics as
-    evidence for reliability engineering: success rates, fallback counts, recall proxy, candidate-stage
-    failure rate, and latency proxy are easier to read and easier to explain.
+    evidence for reliability engineering: success rates, fallback counts, recall proxy,
+    candidate-stage failure-rate proxy, latency proxy, and runtime-cost proxy are easier to read
+    and easier to explain.
   </p>
   <div class="grid two">
     <article class="stat">
@@ -15,7 +16,7 @@
         <li>Run count shows how much evidence backs the showcase.</li>
         <li>Tool success rate reflects orchestration stability under normal operation.</li>
         <li>Fetch success rate indicates content acquisition health.</li>
-        <li>Recall, false-positive, and failure-rate values are proxy evidence, not production KPI claims.</li>
+        <li>Recall, false-positive, failure-rate, latency, and runtime-cost values are proxy evidence, not production KPI claims.</li>
         <li>Fallback totals expose resilience tradeoffs rather than hiding them.</li>
       </ul>
     </article>
@@ -54,11 +55,11 @@
       <dd id="recall-proxy">Loading</dd>
     </div>
     <div class="stat">
-      <dt>Candidate task failure rate</dt>
+      <dt>Candidate task failure-rate proxy</dt>
       <dd id="task-failure-rate">Loading</dd>
     </div>
     <div class="stat">
-      <dt>Average event latency</dt>
+      <dt>Average event latency proxy</dt>
       <dd id="event-latency">Loading</dd>
     </div>
     <div class="stat">
@@ -72,7 +73,7 @@
   <h3>Latest evaluation contract</h3>
   <p>
     The latest persisted eval result is shown directly so reviewers can inspect the current judge
-    mode, suggestions, and summary metrics without leaving the showcase page.
+    mode, suggestions, and proxy metrics without leaving the showcase page.
   </p>
   <div class="grid two">
     <article class="stat">
@@ -113,7 +114,7 @@
       document.getElementById("false-positive-total").textContent =
         summary.total_false_positive_proxy_count ?? 0;
       document.getElementById("latest-eval-summary").textContent =
-        `Latest run ${summary.latest_eval.run_id} | judge ${summary.latest_eval.judge_mode} | recall proxy ${Math.round(((summary.latest_eval.candidate_recall_proxy ?? 0) * 100))}% | suggestions ${(summary.latest_eval.suggestions ?? []).length}.`;
+        `Latest run ${summary.latest_eval.run_id} | judge ${summary.latest_eval.judge_mode} | recall proxy ${Math.round(((summary.latest_eval.candidate_recall_proxy ?? 0) * 100))}% | runtime cost proxy units ${(summary.latest_eval.runtime_cost_proxy?.tool_calls ?? 0) + (summary.latest_eval.runtime_cost_proxy?.browser_fallbacks ?? 0) + (summary.latest_eval.runtime_cost_proxy?.model_decisions ?? 0)} | suggestions ${(summary.latest_eval.suggestions ?? []).length}.`;
       document.getElementById("latest-eval-json").textContent = JSON.stringify(
         summary.latest_eval,
         null,

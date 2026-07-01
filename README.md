@@ -28,7 +28,7 @@ The current codebase already runs a truthful end-to-end closed loop with:
 - MockLLM-first execution path with replaceable provider boundaries
 - local JSONL/keyword-based business context retrieval
 - persisted quality proxy evidence for recall, false-positive, task-failure,
-  latency, and runtime-cost readback
+  event-latency, and runtime-cost readback
 - visible fallback, error, and governance events
 
 ## Multi-Agent Architecture
@@ -91,13 +91,15 @@ Implemented now:
 - real dedup / scoring / push-decision path
 - real scheduler + queued worker flow
 - real compatibility-preserving multi-agent contracts
+- real unified tool-access contract readback for search, browser, and
+  notification with per-capability provider-path evidence
 
 Optional integration boundaries already reserved in code:
 
-- OneSearch-compatible MCP gateway for `search_news`
+- OneSearch-compatible MCP-backed provider path for `search_news`
 - OpenWebSearch-compatible provider path
-- Playwright MCP-compatible browser fallback path
-- OpenSearch-compatible history index projection
+- Playwright-compatible browser fallback adapter boundary
+- OpenSearch-compatible history index projection boundary
 - OpenAI-compatible eval judge provider
 - generic webhook notification delivery
 
@@ -116,14 +118,18 @@ actual runtime boundary of this codebase:
   the durable business store
 - RAG uses local keyword + BM25 + hashed-embedding retrieval instead of
   embedding-like naming over token overlap alone
-- quality pages and dashboard surfaces expose persisted proxy evidence rather
-  than only aggregate success counters
+- quality pages and dashboard surfaces expose persisted proxy evidence,
+  including event-latency and runtime-cost proxies, rather than only aggregate
+  success counters
 
 What remains intentionally scoped:
 
 - external search / browser / judge / notification providers are optional
   boundaries, not guaranteed live services
 - quality metrics are proxy evidence for the local runtime, not production SLOs
+- queue and candidate-stage reliability are implemented as bounded concurrency,
+  retry, timeout, and active-run controls rather than as a distributed
+  circuit-breaker fleet
 - the project is a truthful showcase system, not a production deployment claim
 
 ## Quick Start
@@ -190,8 +196,9 @@ existing success and fallback counts:
 
 - recall proxy from retrieved-to-deduped candidate retention
 - false-positive proxy totals from high-score-but-rejected noisy candidates
-- candidate task failure rate across fetch/extract/evaluate ledger records
-- average event latency from recorded graph and worker events
+- candidate task failure-rate proxy across fetch/extract/evaluate ledger records
+- event-latency proxy from recorded graph and worker events
+- runtime-cost proxy units from tool calls, browser fallbacks, and judge/model decisions
 
 These are intentionally described as proxy signals for the local/runtime-real
 MVP, not as production observability or online serving SLAs.

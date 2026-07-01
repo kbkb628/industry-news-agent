@@ -136,6 +136,21 @@ describe("App", () => {
               fallback_used: true,
               allowed_domains: ["example.com"],
             },
+            tool_access: {
+              contract: "unified_tool_gateway",
+              search: {
+                provider_path: "mcp_gateway",
+                tool_name: "search_news",
+              },
+              browser: {
+                provider_path: "tool_gateway",
+                tool_name: "fetch_article_content",
+              },
+              notification: {
+                provider_path: "tool_gateway",
+                tool_name: "notification_send",
+              },
+            },
           },
           candidate_task_summary: {
             task_count: 3,
@@ -236,8 +251,8 @@ describe("App", () => {
     expect(await screen.findByText("Tool success")).toBeInTheDocument();
     expect(await screen.findByText("100%")).toBeInTheDocument();
     expect(await screen.findByText(/Recall proxy 82%/i)).toBeInTheDocument();
-    expect(await screen.findByText(/Task failure rate 11%/i)).toBeInTheDocument();
-    expect(await screen.findByText(/Avg event latency 245 ms/i)).toBeInTheDocument();
+    expect(await screen.findByText(/Task failure-rate proxy 11%/i)).toBeInTheDocument();
+    expect(await screen.findByText(/Avg event latency proxy 245 ms/i)).toBeInTheDocument();
   });
 
   it("loads run detail and trace timeline for a run id", async () => {
@@ -266,6 +281,9 @@ describe("App", () => {
     expect(screen.getByText(/Push history 1 \| documents 1/i)).toBeInTheDocument();
     expect(screen.getByText(/MCP runtime/i)).toBeInTheDocument();
     expect(screen.getByText(/Browser fallback runtime/i)).toBeInTheDocument();
+    expect(screen.getByText(/Tool access contract/i)).toBeInTheDocument();
+    expect(screen.getByText(/Contract unified_tool_gateway/i)).toBeInTheDocument();
+    expect(screen.getByText(/Search path mcp_gateway \| tool search_news/i)).toBeInTheDocument();
     expect(
       screen.getAllByText(/Trusted-source guidance favored feed-first planning./i)
         .length,

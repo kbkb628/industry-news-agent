@@ -4,7 +4,7 @@
 
 This backend implements the core industry-news monitoring project described in
 `DEVELOPMENT_GUIDE.md`, centered on a working end-to-end monitor loop plus a set
-of already completed optional integrations that remain truthful in scope.
+of optional integration boundaries that remain truthful in scope.
 
 For a concise resume-to-code evidence map and claim status labels, see
 [`../docs/resume-alignment.md`](../docs/resume-alignment.md). Repository
@@ -52,10 +52,10 @@ Included in the current codebase:
 - Redis-backed run queue with in-memory fallback
 - Redis Stream consumer-group flow for queued monitor runs with explicit post-processing acknowledge/requeue semantics
 - worker retry, timeout, active-run guard, and governance events
-- optional OneSearch-compatible MCP gateway boundary for `search_news`
+- optional OneSearch-compatible MCP-backed provider path for `search_news`
 - optional OpenWebSearch provider path with mock search fallback
 - explicit browser fetch fallback metadata and events
-- optional Playwright MCP-compatible browser fetch provider behind the HTTP fallback path
+- optional Playwright-compatible browser fetch adapter behind the HTTP fallback path
 - optional OpenSearch-compatible candidate history full-text index projection
 - optional deterministic local semantic-like dedup after exact dedup
 - optional generic webhook notification channel after persisted push records
@@ -67,6 +67,8 @@ Final resume-truth alignment status:
 
 - the multi-agent, scheduler/worker, Redis coordination, RAG retrieval, and
   quality-evidence claims are now all backed by implemented runtime behavior
+- `integration_runtime.tool_access` now separates the unified tool-access
+  contract from the actual provider path used by each capability
 - the optional provider-facing pieces remain explicit integration boundaries
   whose truth depends on environment configuration, not on repository presence
 - the quality metrics exposed by `GET /api/eval/summary`, `GET /quality`, and
@@ -130,6 +132,9 @@ candidate. Redis/runtime state owns short-lived candidate task coordination,
 while PostgreSQL persists candidate task ledger facts, including retry
 attempts, for historical readback.
 `GET /api/monitor/runs/{run_id}/candidate-tasks` exposes durable task evidence.
+This should be described as bounded in-process concurrency with retry/timeout
+controls, not as a distributed stage-worker fleet or a full circuit-breaker
+implementation.
 
 ### Queue And Worker Flow
 
@@ -170,6 +175,9 @@ The code falls back to an in-memory queue only as an execution fallback, not as
 the source of truth for business records. Governance events keep the
 coordination backend visible in persisted run traces while PostgreSQL remains
 the authoritative record of run facts.
+The current resilience story is bounded concurrency plus retry, timeout,
+active-run guard, and transient coordination/rate controls. It should not be
+marketed as a full circuit-breaker subsystem.
 
 `GET /api/monitor/runs/{run_id}` may additionally surface
 `run_context.retry_state` when a run is currently parked for worker retry. That
@@ -231,6 +239,11 @@ boundary, not a claim of verified live MCP service deployment. When configured,
 the run snapshot now exposes `integration_runtime.mcp` so a reviewer can see
 whether the MCP-backed path was enabled, actually used, or degraded to
 fallback in that specific run.
+The same snapshot also exposes `integration_runtime.tool_access`, where
+`contract=unified_tool_gateway` stays stable while each capability reports its
+actual `provider_path`. In the current repo, search may point at
+`mcp_gateway`, while browser and notification still report `tool_gateway`
+unless their execution model is changed in code.
 
 Optional search-provider variables:
 
@@ -277,9 +290,9 @@ the visible failure reason when browser fallback could not complete.
 Webhook notification delivery is also summarized in
 `integration_runtime.notification`, including whether delivery was enabled,
 attempted in that run, and whether it succeeded. The snapshot additionally
-exposes `integration_runtime.tool_access` so a reviewer can see which
-capability currently runs through the MCP gateway boundary and which ones still
-run through the local tool gateway.
+exposes `integration_runtime.tool_access` so a reviewer can see that all three
+capabilities share one readback contract while still showing which ones run
+through `mcp_gateway` versus `tool_gateway`.
 
 The `integration_runtime` section is runtime evidence, not a claim that every
 environment always wires live external MCP or Playwright-compatible services.

@@ -3490,9 +3490,19 @@ def test_build_integration_runtime_reports_enabled_mcp_and_browser_config() -> N
             "failure_code": None,
         },
         "tool_access": {
-            "search": "mcp_gateway",
-            "browser": "tool_gateway",
-            "notification": "tool_gateway",
+            "contract": "unified_tool_gateway",
+            "search": {
+                "provider_path": "mcp_gateway",
+                "tool_name": "search_news",
+            },
+            "browser": {
+                "provider_path": "tool_gateway",
+                "tool_name": "fetch_article_content",
+            },
+            "notification": {
+                "provider_path": "tool_gateway",
+                "tool_name": "notification_send",
+            },
         },
     }
 
@@ -3635,10 +3645,45 @@ def test_build_integration_runtime_derives_usage_and_fallback_counts_from_run_ev
         "failure_code": None,
     }
     assert runtime["tool_access"] == {
-        "search": "mcp_gateway",
-        "browser": "tool_gateway",
-        "notification": "tool_gateway",
+        "contract": "unified_tool_gateway",
+        "search": {
+            "provider_path": "mcp_gateway",
+            "tool_name": "search_news",
+        },
+        "browser": {
+            "provider_path": "tool_gateway",
+            "tool_name": "fetch_article_content",
+        },
+        "notification": {
+            "provider_path": "tool_gateway",
+            "tool_name": "notification_send",
+        },
     }
+
+
+def test_build_integration_runtime_reports_unified_tool_contract_even_when_only_search_uses_mcp() -> None:
+    settings = Settings(
+        database_url="postgresql+psycopg://user:pass@localhost:5432/news_agent",
+        redis_url="redis://localhost:6379/0",
+        mcp_gateway_provider="onesearch",
+        onesearch_base_url="http://localhost:8090",
+        browser_fetch_provider="playwright_mcp",
+        playwright_mcp_base_url="http://localhost:8931",
+        browser_allowed_domains=["example.com"],
+        notification_provider="webhook",
+        notification_webhook_url="https://hooks.example.com/news",
+    )
+
+    runtime = build_integration_runtime(
+        settings=settings,
+        tool_results=[],
+        fetched_contents=[],
+    )
+
+    assert runtime["tool_access"]["contract"] == "unified_tool_gateway"
+    assert runtime["tool_access"]["search"]["provider_path"] == "mcp_gateway"
+    assert runtime["tool_access"]["browser"]["provider_path"] == "tool_gateway"
+    assert runtime["tool_access"]["notification"]["provider_path"] == "tool_gateway"
 
 
 def test_build_integration_runtime_reports_browser_attempt_and_allowed_domain_governance() -> None:

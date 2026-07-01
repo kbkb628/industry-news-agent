@@ -185,7 +185,10 @@ export default function App() {
         </article>
         <article className="story-card">
           <p className="eyebrow">Quality and fallback signals</p>
-          <h2>Trace completeness, recall proxy, latency, failure-rate evidence</h2>
+          <h2>
+            Trace completeness, recall proxy, latency proxy, failure-rate proxy
+            evidence
+          </h2>
           <p>
             Evaluation persists run quality metrics so the project can show how
             retrieval and extraction quality are observed instead of treated as
@@ -239,29 +242,34 @@ export default function App() {
             <h3>Failure handling</h3>
             <p>Workers emit retry, timeout, and active-run-guard governance events.</p>
             <p>Failed runs are persisted instead of being silently dropped.</p>
+            <p>
+              Candidate-stage reliability stays within bounded in-process
+              concurrency plus retry and timeout controls, not a distributed
+              circuit-breaker fleet.
+            </p>
           </article>
         </section>
 
         <section className="panel">
           <h2>Quality Snapshot</h2>
           <p className="panel-copy">
-            These values come from persisted eval summaries rather than static
-            showcase data.
+            These values come from persisted eval summaries and are labeled as
+            proxy signals where the implementation is heuristic or runtime-local.
           </p>
           {summary.status === "loading" && <p>Loading quality summary...</p>}
           {summary.status === "error" && (
             <p className="error">{summary.message}</p>
           )}
           {summary.status === "ready" && (
-            <>
-              <article className="row-card">
-                <h3>Observed metrics</h3>
+              <>
+                <article className="row-card">
+                <h3>Observed proxy metrics</h3>
                 <p>Run count {summary.data.run_count}</p>
                 <p>Total push records {summary.data.total_push_count}</p>
                 <p>Fallback count {fallbackTotal}</p>
                 <p>Recall proxy {recallProxy}</p>
-                <p>Task failure rate {taskFailureRate}</p>
-                <p>Avg event latency {avgEventLatency}</p>
+                <p>Task failure-rate proxy {taskFailureRate}</p>
+                <p>Avg event latency proxy {avgEventLatency}</p>
                 <p>
                   False-positive proxy total{" "}
                   {summary.data.total_false_positive_proxy_count}
@@ -272,7 +280,7 @@ export default function App() {
                 <p>Latest run {summary.data.latest_eval.run_id}</p>
                 <p>Judge mode {summary.data.latest_eval.judge_mode ?? "mock_rule_judge"}</p>
                 <p>
-                  Runtime cost proxy: tools{" "}
+                  Runtime cost proxy units: tools{" "}
                   {summary.data.latest_eval.runtime_cost_proxy?.tool_calls ?? 0} |
                   browser fallbacks{" "}
                   {summary.data.latest_eval.runtime_cost_proxy?.browser_fallbacks ?? 0}
@@ -502,6 +510,36 @@ export default function App() {
                   <p>
                     Allowed domains:{" "}
                     {run.data.integration_runtime?.browser?.allowed_domains?.join(", ") ||
+                      "-"}
+                  </p>
+                </article>
+                <article className="row-card">
+                  <h3>Tool access contract</h3>
+                  <p>
+                    Contract{" "}
+                    {run.data.integration_runtime?.tool_access?.contract ?? "-"}
+                  </p>
+                  <p>
+                    Search path{" "}
+                    {run.data.integration_runtime?.tool_access?.search?.provider_path ??
+                      "-"}
+                    {" | "}tool{" "}
+                    {run.data.integration_runtime?.tool_access?.search?.tool_name ?? "-"}
+                  </p>
+                  <p>
+                    Browser path{" "}
+                    {run.data.integration_runtime?.tool_access?.browser?.provider_path ??
+                      "-"}
+                    {" | "}tool{" "}
+                    {run.data.integration_runtime?.tool_access?.browser?.tool_name ??
+                      "-"}
+                  </p>
+                  <p>
+                    Notification path{" "}
+                    {run.data.integration_runtime?.tool_access?.notification
+                      ?.provider_path ?? "-"}
+                    {" | "}tool{" "}
+                    {run.data.integration_runtime?.tool_access?.notification?.tool_name ??
                       "-"}
                   </p>
                 </article>

@@ -5,7 +5,7 @@ from typing import Any
 from app.core.config import Settings
 
 
-def _build_tool_access_summary(settings: Settings | None) -> dict[str, str]:
+def _build_tool_access_summary(settings: Settings | None) -> dict[str, Any]:
     search_access = "tool_gateway"
     if (
         settings is not None
@@ -14,9 +14,19 @@ def _build_tool_access_summary(settings: Settings | None) -> dict[str, str]:
     ):
         search_access = "mcp_gateway"
     return {
-        "search": search_access,
-        "browser": "tool_gateway",
-        "notification": "tool_gateway",
+        "contract": "unified_tool_gateway",
+        "search": {
+            "provider_path": search_access,
+            "tool_name": "search_news",
+        },
+        "browser": {
+            "provider_path": "tool_gateway",
+            "tool_name": "fetch_article_content",
+        },
+        "notification": {
+            "provider_path": "tool_gateway",
+            "tool_name": "notification_send",
+        },
     }
 
 

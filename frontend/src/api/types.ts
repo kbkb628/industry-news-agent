@@ -75,6 +75,21 @@ export type MonitorRun = {
       fallback_used?: boolean;
       allowed_domains?: string[];
     };
+    tool_access?: {
+      contract?: string;
+      search?: {
+        provider_path?: string;
+        tool_name?: string;
+      };
+      browser?: {
+        provider_path?: string;
+        tool_name?: string;
+      };
+      notification?: {
+        provider_path?: string;
+        tool_name?: string;
+      };
+    };
   };
   candidate_task_summary?: {
     task_count?: number;

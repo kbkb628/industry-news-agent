@@ -504,9 +504,19 @@ def test_supervisor_finalize_adds_integration_runtime_summary_to_snapshot() -> N
     assert result["integration_runtime"]["notification"]["configured_provider"] == "webhook"
     assert result["integration_runtime"]["notification"]["used_in_run"] is True
     assert result["integration_runtime"]["tool_access"] == {
-        "search": "mcp_gateway",
-        "browser": "tool_gateway",
-        "notification": "tool_gateway",
+        "contract": "unified_tool_gateway",
+        "search": {
+            "provider_path": "mcp_gateway",
+            "tool_name": "search_news",
+        },
+        "browser": {
+            "provider_path": "tool_gateway",
+            "tool_name": "fetch_article_content",
+        },
+        "notification": {
+            "provider_path": "tool_gateway",
+            "tool_name": "notification_send",
+        },
     }
 
 

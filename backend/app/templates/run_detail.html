@@ -135,6 +135,11 @@
       <p id="browser-runtime-summary">Loading browser runtime evidence.</p>
       <pre id="browser-runtime-json"><code>Loading</code></pre>
     </article>
+    <article class="stat">
+      <strong>Tool access contract</strong>
+      <p id="tool-access-summary">Loading unified tool access evidence.</p>
+      <pre id="tool-access-json"><code>Loading</code></pre>
+    </article>
   </div>
 </section>
 
@@ -143,7 +148,19 @@
   <p>
     Treat this section as runtime evidence, not a promise that a live MCP deployment always exists:
     some environments intentionally stay on the local gateway path, and some runs may show no MCP
-    usage at all.
+    usage at all. In this repo, MCP evidence should be read alongside the unified tool-access
+    contract so "tool is reachable through one contract" is not confused with "tool actually ran
+    through MCP in this run."
+  </p>
+</section>
+
+<section class="section-card">
+  <h3>Tool access contract</h3>
+  <p>
+    <code>integration_runtime.tool_access</code> separates the stable access contract from the
+    actual provider path. <code>contract</code> shows that search, browser, and notification are
+    read back through one unified tool surface, while each <code>provider_path</code> shows whether
+    the run stayed on the local tool gateway or crossed an MCP-backed boundary.
   </p>
 </section>
 
@@ -243,6 +260,7 @@
       const businessMemory = safeObject(payload.business_memory);
       const mcpRuntime = safeObject(payload.integration_runtime?.mcp);
       const browserRuntime = safeObject(payload.integration_runtime?.browser);
+      const toolAccess = safeObject(payload.integration_runtime?.tool_access);
 
       setSummary(
         "planner-summary",
@@ -276,6 +294,10 @@
         "browser-runtime-summary",
         `Configured provider: ${browserRuntime.configured_provider ?? "-"}; used in run: ${browserRuntime.used_in_run ?? false}; fallback used: ${browserRuntime.fallback_used ?? false}.`,
       );
+      setSummary(
+        "tool-access-summary",
+        `Contract: ${toolAccess.contract ?? "-"}; search tool ${toolAccess.search?.tool_name ?? "-"} via ${toolAccess.search?.provider_path ?? "-"}; browser tool ${toolAccess.browser?.tool_name ?? "-"} via ${toolAccess.browser?.provider_path ?? "-"}; notification tool ${toolAccess.notification?.tool_name ?? "-"} via ${toolAccess.notification?.provider_path ?? "-"}.`,
+      );
 
       setCodeBlock("planner-json", payload.planner_output ?? {});
       setCodeBlock("retrieval-json", payload.retrieval_output ?? {});
@@ -285,6 +307,7 @@
       setCodeBlock("business-memory-json", businessMemory);
       setCodeBlock("mcp-runtime-json", mcpRuntime);
       setCodeBlock("browser-runtime-json", browserRuntime);
+      setCodeBlock("tool-access-json", toolAccess);
       setMirrorChecks(payload);
     })
     .catch(() => {
@@ -296,6 +319,7 @@
       setSummary("business-memory-summary", "Run detail API unavailable.");
       setSummary("mcp-runtime-summary", "Run detail API unavailable.");
       setSummary("browser-runtime-summary", "Run detail API unavailable.");
+      setSummary("tool-access-summary", "Run detail API unavailable.");
       setCodeBlock("planner-json", { error: "run detail unavailable" });
       setCodeBlock("retrieval-json", { error: "run detail unavailable" });
       setCodeBlock("extraction-json", { error: "run detail unavailable" });
@@ -304,6 +328,7 @@
       setCodeBlock("business-memory-json", { error: "run detail unavailable" });
       setCodeBlock("mcp-runtime-json", { error: "run detail unavailable" });
       setCodeBlock("browser-runtime-json", { error: "run detail unavailable" });
+      setCodeBlock("tool-access-json", { error: "run detail unavailable" });
       setCodeBlock("candidate-task-runtime-json", { error: "candidate task evidence unavailable" });
       document.getElementById("mirror-checks").innerHTML = "<li>Mirror checks unavailable.</li>";
     });
