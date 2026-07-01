@@ -109,6 +109,8 @@ agent with:
     `eval_result`
   - the judge layer supports the mock rule judge and an optional
     OpenAI-compatible boundary
+  - persisted eval history now includes recall proxy, false-positive proxy,
+    candidate-task failure rate, event-latency proxy, and runtime-cost proxy
   - push decisions are persisted and exposed through run snapshots
 - API / pages:
   - `POST /api/eval/run`
@@ -118,6 +120,9 @@ agent with:
 - Truth boundary:
   - the current judge default is deterministic and local; live judge support is
     optional and should be described as a provider boundary
+  - recall, false-positive, failure-rate, and latency metrics are truthful as
+    proxy evidence surfaces, not as production monitoring or real-time SLO
+    claims
 
 ### 5. "Built scheduler and worker governance around the monitor loop"
 
@@ -168,6 +173,8 @@ agent with:
 - Truth boundary:
   - the compatibility snapshot remains the primary read surface for existing UI
     paths
+  - quality pages and dashboard cards now expose the persisted proxy metrics
+    explicitly so the resume wording stays inside the actual runtime evidence
 
 ### 7. "Supports optional integrations without pretending they are always live"
 
@@ -233,7 +240,8 @@ Keep these scoped unless the runtime environment proves more:
    orchestration evidence
 4. Open `GET /runs/{run_id}/events` to show trace and governance events
 5. Open `GET /pushes` and `GET /quality` to show the persisted output and
-   evaluation signals
+   evaluation signals, including recall proxy, task-failure proxy, and latency
+   proxy
 6. Reference `POST /api/monitor/{topic_id}/run`, `GET /api/monitor/runs/{run_id}`,
    and `GET /api/monitor/runs/{run_id}/candidate-tasks`
    to tie the UI back to the API

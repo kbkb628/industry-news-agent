@@ -162,6 +162,17 @@ After running it, the main demo readback order is:
 4. `GET /pushes`
 5. `GET /quality`
 
+The quality surfaces now expose persisted proxy evidence in addition to the
+existing success and fallback counts:
+
+- recall proxy from retrieved-to-deduped candidate retention
+- false-positive proxy totals from high-score-but-rejected noisy candidates
+- candidate task failure rate across fetch/extract/evaluate ledger records
+- average event latency from recorded graph and worker events
+
+These are intentionally described as proxy signals for the local/runtime-real
+MVP, not as production observability or online serving SLAs.
+
 ### Manual Frontend
 
 ```bash

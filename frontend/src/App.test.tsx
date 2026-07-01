@@ -56,9 +56,13 @@ describe("App", () => {
           total_raw_summary_count: 0,
           total_browser_fallback_count: 1,
           total_provider_fallback_count: 1,
+          total_false_positive_proxy_count: 1,
           avg_tool_success_rate: 1,
           avg_fetch_success_rate: 0.75,
           avg_trace_completeness: 0.9,
+          avg_candidate_recall_proxy: 0.82,
+          avg_candidate_task_failure_rate: 0.11,
+          avg_event_latency_ms: 245,
           latest_eval: {
             eval_id: "eval_001",
             run_id: "run_001",
@@ -67,6 +71,15 @@ describe("App", () => {
             deduped_count: 3,
             push_count: 1,
             tool_success_rate: 1,
+            candidate_recall_proxy: 0.82,
+            false_positive_proxy_count: 1,
+            candidate_task_failure_rate: 0.11,
+            avg_event_latency_ms: 245,
+            runtime_cost_proxy: {
+              tool_calls: 5,
+              browser_fallbacks: 1,
+              model_decisions: 2,
+            },
           },
         });
       }
@@ -222,6 +235,9 @@ describe("App", () => {
     expect(await screen.findByText("push_001")).toBeInTheDocument();
     expect(await screen.findByText("Tool success")).toBeInTheDocument();
     expect(await screen.findByText("100%")).toBeInTheDocument();
+    expect(await screen.findByText(/Recall proxy 82%/i)).toBeInTheDocument();
+    expect(await screen.findByText(/Task failure rate 11%/i)).toBeInTheDocument();
+    expect(await screen.findByText(/Avg event latency 245 ms/i)).toBeInTheDocument();
   });
 
   it("loads run detail and trace timeline for a run id", async () => {

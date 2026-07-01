@@ -2819,9 +2819,19 @@ class InMemoryMonitorRunRepository:
             "total_provider_fallback_count": sum(
                 int(result["provider_fallback_count"]) for result in results
             ),
+            "total_false_positive_proxy_count": sum(
+                int(result["false_positive_proxy_count"]) for result in results
+            ),
             "avg_tool_success_rate": _avg("tool_success_rate"),
             "avg_fetch_success_rate": _avg("fetch_success_rate"),
             "avg_trace_completeness": _avg("trace_completeness"),
+            "avg_candidate_recall_proxy": _avg("candidate_recall_proxy"),
+            "avg_candidate_task_failure_rate": _avg(
+                "candidate_task_failure_rate"
+            ),
+            "avg_event_latency_ms": round(
+                sum(int(result["avg_event_latency_ms"]) for result in results) / run_count
+            ),
             "latest_eval": latest,
         }
 
@@ -2841,6 +2851,15 @@ class InMemoryMonitorRunRepository:
             "raw_summary_count": payload.raw_summary_count,
             "browser_fallback_count": payload.browser_fallback_count,
             "provider_fallback_count": payload.provider_fallback_count,
+            "candidate_recall_proxy": payload.candidate_recall_proxy,
+            "false_positive_proxy_count": payload.false_positive_proxy_count,
+            "candidate_task_failure_rate": payload.candidate_task_failure_rate,
+            "avg_event_latency_ms": payload.avg_event_latency_ms,
+            "runtime_cost_proxy": dict(payload.runtime_cost_proxy),
+            "judge_mode": payload.judge_mode,
+            "judge_score": payload.judge_score,
+            "judge_reason": payload.judge_reason,
+            "judge_issues": list(payload.judge_issues),
             "suggestions": list(payload.suggestions),
             "created_at": self._created_at,
         }
@@ -3854,6 +3873,11 @@ def test_eval_summary_returns_quality_trend_metrics() -> None:
         "raw_summary_count": 2,
         "browser_fallback_count": 1,
         "provider_fallback_count": 1,
+        "candidate_recall_proxy": 0.67,
+        "false_positive_proxy_count": 0,
+        "candidate_task_failure_rate": 0.0,
+        "avg_event_latency_ms": 210,
+        "runtime_cost_proxy": {"tool_calls": 4},
         "suggestions": [],
         "created_at": datetime(2026, 6, 9, 12, 0, tzinfo=UTC),
     }
@@ -3872,6 +3896,11 @@ def test_eval_summary_returns_quality_trend_metrics() -> None:
         "raw_summary_count": 0,
         "browser_fallback_count": 2,
         "provider_fallback_count": 0,
+        "candidate_recall_proxy": 0.88,
+        "false_positive_proxy_count": 1,
+        "candidate_task_failure_rate": 0.25,
+        "avg_event_latency_ms": 320,
+        "runtime_cost_proxy": {"tool_calls": 6},
         "suggestions": ["review provider fallback"],
         "created_at": datetime(2026, 6, 9, 13, 0, tzinfo=UTC),
     }
@@ -3887,9 +3916,13 @@ def test_eval_summary_returns_quality_trend_metrics() -> None:
     assert payload["total_raw_summary_count"] == 2
     assert payload["total_browser_fallback_count"] == 3
     assert payload["total_provider_fallback_count"] == 1
+    assert payload["total_false_positive_proxy_count"] == 1
     assert payload["avg_tool_success_rate"] == 0.75
     assert payload["avg_fetch_success_rate"] == 0.75
     assert payload["avg_trace_completeness"] == 0.95
+    assert payload["avg_candidate_recall_proxy"] == 0.78
+    assert payload["avg_candidate_task_failure_rate"] == 0.12
+    assert payload["avg_event_latency_ms"] == 265
     assert payload["latest_eval"]["eval_id"] == "eval_002"
 
 

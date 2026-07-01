@@ -104,6 +104,18 @@ export default function App() {
     summary.status === "ready"
       ? percent(summary.data.avg_trace_completeness)
       : "-";
+  const recallProxy =
+    summary.status === "ready"
+      ? percent(summary.data.avg_candidate_recall_proxy)
+      : "-";
+  const taskFailureRate =
+    summary.status === "ready"
+      ? percent(summary.data.avg_candidate_task_failure_rate)
+      : "-";
+  const avgEventLatency =
+    summary.status === "ready"
+      ? `${summary.data.avg_event_latency_ms} ms`
+      : "-";
   const fallbackTotal =
     summary.status === "ready"
       ? summary.data.total_raw_summary_count +
@@ -173,11 +185,12 @@ export default function App() {
         </article>
         <article className="story-card">
           <p className="eyebrow">Quality and fallback signals</p>
-          <h2>Trace completeness, tool success, fetch health, fallback counts</h2>
+          <h2>Trace completeness, recall proxy, latency, failure-rate evidence</h2>
           <p>
             Evaluation persists run quality metrics so the project can show how
             retrieval and extraction quality are observed instead of treated as
-            opaque model output.
+            opaque model output. These are proxy metrics for the current MVP
+            runtime, not overstated production observability claims.
           </p>
         </article>
       </section>
@@ -246,11 +259,26 @@ export default function App() {
                 <p>Run count {summary.data.run_count}</p>
                 <p>Total push records {summary.data.total_push_count}</p>
                 <p>Fallback count {fallbackTotal}</p>
+                <p>Recall proxy {recallProxy}</p>
+                <p>Task failure rate {taskFailureRate}</p>
+                <p>Avg event latency {avgEventLatency}</p>
+                <p>
+                  False-positive proxy total{" "}
+                  {summary.data.total_false_positive_proxy_count}
+                </p>
               </article>
               <article className="row-card">
                 <h3>Latest eval</h3>
                 <p>Latest run {summary.data.latest_eval.run_id}</p>
                 <p>Judge mode {summary.data.latest_eval.judge_mode ?? "mock_rule_judge"}</p>
+                <p>
+                  Runtime cost proxy: tools{" "}
+                  {summary.data.latest_eval.runtime_cost_proxy?.tool_calls ?? 0} |
+                  browser fallbacks{" "}
+                  {summary.data.latest_eval.runtime_cost_proxy?.browser_fallbacks ?? 0}
+                  {" | "}model decisions{" "}
+                  {summary.data.latest_eval.runtime_cost_proxy?.model_decisions ?? 0}
+                </p>
                 <p>
                   Suggestions:{" "}
                   {(summary.data.latest_eval.suggestions ?? []).join(", ") || "-"}

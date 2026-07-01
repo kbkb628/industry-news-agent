@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from typing import Any, Protocol
 
@@ -181,6 +181,11 @@ class EvalResultCreateData:
     raw_summary_count: int
     browser_fallback_count: int
     provider_fallback_count: int
+    candidate_recall_proxy: float = 0.0
+    false_positive_proxy_count: int = 0
+    candidate_task_failure_rate: float = 0.0
+    avg_event_latency_ms: int = 0
+    runtime_cost_proxy: dict[str, Any] = field(default_factory=dict)
     judge_mode: str = "mock_rule_judge"
     judge_score: float = 1.0
     judge_reason: str = "Mock judge found no rule-based quality issues."
@@ -1019,6 +1024,9 @@ class SqlAlchemyMonitorRunRepository:
             "total_provider_fallback_count": sum(
                 result.provider_fallback_count for result in results
             ),
+            "total_false_positive_proxy_count": sum(
+                result.false_positive_proxy_count for result in results
+            ),
             "avg_tool_success_rate": round(
                 sum(result.tool_success_rate for result in results) / run_count,
                 2,
@@ -1030,6 +1038,17 @@ class SqlAlchemyMonitorRunRepository:
             "avg_trace_completeness": round(
                 sum(result.trace_completeness for result in results) / run_count,
                 2,
+            ),
+            "avg_candidate_recall_proxy": round(
+                sum(result.candidate_recall_proxy for result in results) / run_count,
+                2,
+            ),
+            "avg_candidate_task_failure_rate": round(
+                sum(result.candidate_task_failure_rate for result in results) / run_count,
+                2,
+            ),
+            "avg_event_latency_ms": round(
+                sum(result.avg_event_latency_ms for result in results) / run_count
             ),
             "latest_eval": self._serialize_eval_result(latest),
         }
@@ -1049,6 +1068,11 @@ class SqlAlchemyMonitorRunRepository:
             raw_summary_count=payload.raw_summary_count,
             browser_fallback_count=payload.browser_fallback_count,
             provider_fallback_count=payload.provider_fallback_count,
+            candidate_recall_proxy=payload.candidate_recall_proxy,
+            false_positive_proxy_count=payload.false_positive_proxy_count,
+            candidate_task_failure_rate=payload.candidate_task_failure_rate,
+            avg_event_latency_ms=payload.avg_event_latency_ms,
+            runtime_cost_proxy=dict(payload.runtime_cost_proxy),
             judge_mode=payload.judge_mode,
             judge_score=payload.judge_score,
             judge_reason=payload.judge_reason,
@@ -1077,6 +1101,11 @@ class SqlAlchemyMonitorRunRepository:
             "raw_summary_count": model.raw_summary_count,
             "browser_fallback_count": model.browser_fallback_count,
             "provider_fallback_count": model.provider_fallback_count,
+            "candidate_recall_proxy": model.candidate_recall_proxy,
+            "false_positive_proxy_count": model.false_positive_proxy_count,
+            "candidate_task_failure_rate": model.candidate_task_failure_rate,
+            "avg_event_latency_ms": model.avg_event_latency_ms,
+            "runtime_cost_proxy": dict(model.runtime_cost_proxy),
             "judge_mode": model.judge_mode,
             "judge_score": model.judge_score,
             "judge_reason": model.judge_reason,

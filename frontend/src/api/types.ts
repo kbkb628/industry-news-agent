@@ -144,6 +144,15 @@ export type EvalResult = {
   raw_summary_count?: number;
   browser_fallback_count?: number;
   provider_fallback_count?: number;
+  candidate_recall_proxy?: number;
+  false_positive_proxy_count?: number;
+  candidate_task_failure_rate?: number;
+  avg_event_latency_ms?: number;
+  runtime_cost_proxy?: {
+    tool_calls?: number;
+    browser_fallbacks?: number;
+    model_decisions?: number;
+  };
   judge_mode?: string;
   judge_score?: number;
   judge_reason?: string;
@@ -159,8 +168,12 @@ export type EvalSummary = {
   total_raw_summary_count: number;
   total_browser_fallback_count: number;
   total_provider_fallback_count: number;
+  total_false_positive_proxy_count: number;
   avg_tool_success_rate: number;
   avg_fetch_success_rate: number;
   avg_trace_completeness: number;
+  avg_candidate_recall_proxy: number;
+  avg_candidate_task_failure_rate: number;
+  avg_event_latency_ms: number;
   latest_eval: EvalResult;
 };

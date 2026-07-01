@@ -1324,6 +1324,21 @@ def supervisor_finalize_node(
                     provider_fallback_count=int(
                         state["eval_result"]["provider_fallback_count"]
                     ),
+                    candidate_recall_proxy=float(
+                        state["eval_result"].get("candidate_recall_proxy", 0.0)
+                    ),
+                    false_positive_proxy_count=int(
+                        state["eval_result"].get("false_positive_proxy_count", 0)
+                    ),
+                    candidate_task_failure_rate=float(
+                        state["eval_result"].get("candidate_task_failure_rate", 0.0)
+                    ),
+                    avg_event_latency_ms=int(
+                        state["eval_result"].get("avg_event_latency_ms", 0)
+                    ),
+                    runtime_cost_proxy=dict(
+                        state["eval_result"].get("runtime_cost_proxy", {})
+                    ),
                     judge_mode=str(state["eval_result"]["judge_mode"]),
                     judge_score=float(state["eval_result"]["judge_score"]),
                     judge_reason=str(state["eval_result"]["judge_reason"]),

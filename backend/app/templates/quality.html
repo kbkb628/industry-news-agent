@@ -5,8 +5,8 @@
   <h2>质量汇总 / Quality summary and reliability story</h2>
   <p>
     This showcase page retains the existing summary fetch, but it now frames evaluation metrics as
-    evidence for reliability engineering: success rates, fallback counts, and run volume are easier
-    to read and easier to explain.
+    evidence for reliability engineering: success rates, fallback counts, recall proxy, candidate-stage
+    failure rate, and latency proxy are easier to read and easier to explain.
   </p>
   <div class="grid two">
     <article class="stat">
@@ -15,6 +15,7 @@
         <li>Run count shows how much evidence backs the showcase.</li>
         <li>Tool success rate reflects orchestration stability under normal operation.</li>
         <li>Fetch success rate indicates content acquisition health.</li>
+        <li>Recall, false-positive, and failure-rate values are proxy evidence, not production KPI claims.</li>
         <li>Fallback totals expose resilience tradeoffs rather than hiding them.</li>
       </ul>
     </article>
@@ -22,7 +23,8 @@
       <strong>Showcase message</strong>
       <p>
         The project is strongest when it demonstrates graceful degradation, visible telemetry,
-        and a disciplined explanation of what the MVP can measure today.
+        and a disciplined explanation of what the MVP can measure today without overstating
+        unavailable online observability.
       </p>
     </article>
   </div>
@@ -46,6 +48,22 @@
     <div class="stat">
       <dt>Total fallbacks</dt>
       <dd id="fallback-total">Loading</dd>
+    </div>
+    <div class="stat">
+      <dt>Recall proxy</dt>
+      <dd id="recall-proxy">Loading</dd>
+    </div>
+    <div class="stat">
+      <dt>Candidate task failure rate</dt>
+      <dd id="task-failure-rate">Loading</dd>
+    </div>
+    <div class="stat">
+      <dt>Average event latency</dt>
+      <dd id="event-latency">Loading</dd>
+    </div>
+    <div class="stat">
+      <dt>False-positive proxy total</dt>
+      <dd id="false-positive-total">Loading</dd>
     </div>
   </dl>
 </section>
@@ -86,8 +104,16 @@
         summary.total_raw_summary_count +
         summary.total_browser_fallback_count +
         summary.total_provider_fallback_count;
+      document.getElementById("recall-proxy").textContent =
+        `${Math.round((summary.avg_candidate_recall_proxy ?? 0) * 100)}%`;
+      document.getElementById("task-failure-rate").textContent =
+        `${Math.round((summary.avg_candidate_task_failure_rate ?? 0) * 100)}%`;
+      document.getElementById("event-latency").textContent =
+        `${summary.avg_event_latency_ms ?? 0} ms`;
+      document.getElementById("false-positive-total").textContent =
+        summary.total_false_positive_proxy_count ?? 0;
       document.getElementById("latest-eval-summary").textContent =
-        `Latest run ${summary.latest_eval.run_id} | judge ${summary.latest_eval.judge_mode} | suggestions ${(summary.latest_eval.suggestions ?? []).length}.`;
+        `Latest run ${summary.latest_eval.run_id} | judge ${summary.latest_eval.judge_mode} | recall proxy ${Math.round(((summary.latest_eval.candidate_recall_proxy ?? 0) * 100))}% | suggestions ${(summary.latest_eval.suggestions ?? []).length}.`;
       document.getElementById("latest-eval-json").textContent = JSON.stringify(
         summary.latest_eval,
         null,
@@ -99,6 +125,10 @@
       document.getElementById("tool-success-rate").textContent = "-";
       document.getElementById("fetch-success-rate").textContent = "-";
       document.getElementById("fallback-total").textContent = "-";
+      document.getElementById("recall-proxy").textContent = "-";
+      document.getElementById("task-failure-rate").textContent = "-";
+      document.getElementById("event-latency").textContent = "-";
+      document.getElementById("false-positive-total").textContent = "-";
       document.getElementById("latest-eval-summary").textContent = "Latest evaluation unavailable.";
       document.getElementById("latest-eval-json").textContent = JSON.stringify(
         { error: "summary unavailable" },

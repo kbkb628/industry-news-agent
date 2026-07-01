@@ -78,6 +78,50 @@ def score_run(state: dict[str, Any]) -> dict[str, Any]:
     if retrieved_count:
         dedup_rate = round((retrieved_count - deduped_count) / retrieved_count, 2)
 
+    candidate_recall_proxy = 0.0
+    if retrieved_count:
+        candidate_recall_proxy = round(deduped_count / retrieved_count, 2)
+
+    false_positive_proxy_count = sum(
+        1
+        for decision in state.get("final_decisions", [])
+        if not decision.get("should_push")
+        and "canonical_url already exists" not in str(decision.get("decision_reason", ""))
+        and "within cooldown" not in str(decision.get("decision_reason", "")).lower()
+        and (
+            float(decision.get("score", 0.0)) >= 0.75
+            or "noisy evidence" in str(decision.get("decision_reason", "")).lower()
+        )
+    )
+
+    candidate_task_plan = list(state.get("candidate_task_plan", []))
+    candidate_task_failure_rate = 0.0
+    if candidate_task_plan:
+        failed_tasks = sum(
+            1 for task in candidate_task_plan if task.get("status") == "failed"
+        )
+        candidate_task_failure_rate = round(
+            failed_tasks / len(candidate_task_plan),
+            2,
+        )
+
+    event_latencies = [
+        int(event["elapsed_ms"])
+        for event in state.get("events", [])
+        if event.get("elapsed_ms") is not None
+    ]
+    avg_event_latency_ms = 0
+    if event_latencies:
+        avg_event_latency_ms = round(sum(event_latencies) / len(event_latencies))
+
+    runtime_cost_proxy = {
+        "tool_calls": len(tool_results),
+        "browser_fallbacks": sum(
+            1 for item in fetched_contents if item.get("fetch_method") == "browser_fallback"
+        ),
+        "model_decisions": len(state.get("final_decisions", [])),
+    }
+
     return {
         "retrieved_count": retrieved_count,
         "deduped_count": deduped_count,
@@ -90,6 +134,11 @@ def score_run(state: dict[str, Any]) -> dict[str, Any]:
         "raw_summary_count": raw_summary_count,
         "browser_fallback_count": browser_fallback_count,
         "provider_fallback_count": provider_fallback_count,
+        "candidate_recall_proxy": candidate_recall_proxy,
+        "false_positive_proxy_count": false_positive_proxy_count,
+        "candidate_task_failure_rate": candidate_task_failure_rate,
+        "avg_event_latency_ms": avg_event_latency_ms,
+        "runtime_cost_proxy": runtime_cost_proxy,
         "suggestions": build_eval_suggestions(
             push_count=push_count,
             fetch_success_rate=fetch_success_rate,

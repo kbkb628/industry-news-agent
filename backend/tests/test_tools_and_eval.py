@@ -962,6 +962,11 @@ def test_sqlalchemy_repository_summarizes_eval_quality_metrics() -> None:
                 raw_summary_count=2,
                 browser_fallback_count=1,
                 provider_fallback_count=1,
+                candidate_recall_proxy=0.67,
+                false_positive_proxy_count=0,
+                candidate_task_failure_rate=0.0,
+                avg_event_latency_ms=210,
+                runtime_cost_proxy={"tool_calls": 4},
                 suggestions=(),
             )
         )
@@ -980,6 +985,11 @@ def test_sqlalchemy_repository_summarizes_eval_quality_metrics() -> None:
                 raw_summary_count=0,
                 browser_fallback_count=2,
                 provider_fallback_count=0,
+                candidate_recall_proxy=0.88,
+                false_positive_proxy_count=1,
+                candidate_task_failure_rate=0.25,
+                avg_event_latency_ms=320,
+                runtime_cost_proxy={"tool_calls": 6},
                 suggestions=("review provider fallback",),
             )
         )
@@ -992,9 +1002,13 @@ def test_sqlalchemy_repository_summarizes_eval_quality_metrics() -> None:
     assert summary["total_raw_summary_count"] == 2
     assert summary["total_browser_fallback_count"] == 3
     assert summary["total_provider_fallback_count"] == 1
+    assert summary["total_false_positive_proxy_count"] == 1
     assert summary["avg_tool_success_rate"] == 0.75
     assert summary["avg_fetch_success_rate"] == 0.75
     assert summary["avg_trace_completeness"] == 0.95
+    assert summary["avg_candidate_recall_proxy"] == 0.78
+    assert summary["avg_candidate_task_failure_rate"] == 0.12
+    assert summary["avg_event_latency_ms"] == 265
     assert summary["latest_eval"]["run_id"] == "run_002"
 
 
@@ -1240,6 +1254,65 @@ def test_score_run_reports_phase2_quality_fallback_metrics() -> None:
     assert result["raw_summary_count"] == 1
     assert result["browser_fallback_count"] == 2
     assert result["provider_fallback_count"] == 1
+
+
+def test_score_run_reports_task6_quality_evidence_metrics() -> None:
+    result = score_run(
+        {
+            "candidate_items": [{}, {}, {}, {}],
+            "deduped_items": [{}, {}, {}],
+            "push_records": [{}, {}],
+            "final_decisions": [
+                {"should_push": True, "score": 0.92, "decision_reason": "high confidence"},
+                {
+                    "should_push": False,
+                    "score": 0.81,
+                    "decision_reason": "within cooldown duplicate angle",
+                },
+                {
+                    "should_push": False,
+                    "score": 0.77,
+                    "decision_reason": "below threshold despite noisy evidence",
+                },
+            ],
+            "fetched_contents": [
+                {"fetch_status": "fetched", "fetch_method": "http"},
+                {"fetch_status": "fetched", "fetch_method": "browser_fallback"},
+                {"fetch_status": "failed"},
+                {"fetch_status": "fetched", "fetch_method": "http"},
+            ],
+            "tool_results": [
+                {"success": True, "tool_name": "search_news", "metadata": {}},
+                {"success": False, "tool_name": "fetch_article_content", "metadata": {}},
+                {"success": True, "tool_name": "notification_send", "metadata": {}},
+            ],
+            "candidate_task_plan": [
+                {"stage": "fetch", "status": "completed"},
+                {"stage": "fetch", "status": "failed"},
+                {"stage": "extract", "status": "completed"},
+                {"stage": "evaluate", "status": "completed"},
+            ],
+            "events": [
+                *[
+                    {"node": node}
+                    for node in score_run.__globals__["REQUIRED_TRACE_NODES"]
+                ],
+                {"node": "worker_dequeue", "elapsed_ms": 120},
+                {"node": "fetch_contents", "elapsed_ms": 480},
+                {"node": "evaluate_run", "elapsed_ms": 200},
+            ],
+        }
+    )
+
+    assert result["candidate_recall_proxy"] == 0.75
+    assert result["false_positive_proxy_count"] == 1
+    assert result["candidate_task_failure_rate"] == 0.25
+    assert result["avg_event_latency_ms"] == 267
+    assert result["runtime_cost_proxy"] == {
+        "tool_calls": 3,
+        "browser_fallbacks": 1,
+        "model_decisions": 3,
+    }
 
 
 def test_build_session_factory_binds_to_provided_engine() -> None:
@@ -3401,6 +3474,10 @@ def test_build_integration_runtime_reports_enabled_mcp_and_browser_config() -> N
             "fallback_reason": None,
             "browser_fetch_count": 0,
             "failed_browser_fetch_count": 0,
+            "browser_attempt_count": 0,
+            "browser_blocked_count": 0,
+            "browser_failure_reason": None,
+            "last_browser_provider": None,
         },
         "notification": {
             "configured_provider": "none",
@@ -3446,6 +3523,10 @@ def test_build_integration_runtime_disables_browser_when_required_config_is_miss
         "fallback_reason": None,
         "browser_fetch_count": 0,
         "failed_browser_fetch_count": 0,
+        "browser_attempt_count": 0,
+        "browser_blocked_count": 0,
+        "browser_failure_reason": None,
+        "last_browser_provider": None,
     }
 
 
@@ -3538,6 +3619,10 @@ def test_build_integration_runtime_derives_usage_and_fallback_counts_from_run_ev
         "fallback_reason": "http failed",
         "browser_fetch_count": 1,
         "failed_browser_fetch_count": 1,
+        "browser_attempt_count": 0,
+        "browser_blocked_count": 0,
+        "browser_failure_reason": None,
+        "last_browser_provider": None,
     }
     assert runtime["notification"] == {
         "configured_provider": "webhook",
