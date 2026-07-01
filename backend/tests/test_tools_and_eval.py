@@ -3660,6 +3660,7 @@ def test_build_integration_runtime_reports_enabled_mcp_and_browser_config() -> N
     assert runtime["tool_access"]["browser"]["provider_path"] == "tool_gateway"
     assert runtime["tool_access"]["notification"]["provider_path"] == "tool_gateway"
     assert runtime["tool_access"]["calls"] == []
+    assert runtime["tool_access"]["calls"] == []
 
 
 def test_build_integration_runtime_disables_browser_when_required_config_is_missing() -> None:
