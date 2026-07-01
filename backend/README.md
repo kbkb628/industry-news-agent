@@ -63,6 +63,16 @@ Included in the current codebase:
 - optional OpenAI-compatible LLM-as-Judge provider with mock fallback
 - local Docker Compose stack for backend, PostgreSQL, and Redis
 
+Final resume-truth alignment status:
+
+- the multi-agent, scheduler/worker, Redis coordination, RAG retrieval, and
+  quality-evidence claims are now all backed by implemented runtime behavior
+- the optional provider-facing pieces remain explicit integration boundaries
+  whose truth depends on environment configuration, not on repository presence
+- the quality metrics exposed by `GET /api/eval/summary`, `GET /quality`, and
+  the React dashboard are persisted proxy signals rather than production
+  observability guarantees
+
 ## Current Architecture
 
 ### Top-Level Graph

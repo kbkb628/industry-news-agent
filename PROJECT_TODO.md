@@ -29,3 +29,6 @@
 - deterministic demo bootstrap added for reproducible showcase evidence
 - final repository presentation verification completed
 - final showcase verification milestone committed in branch history
+- quality proxy evidence surfaces aligned across persistence, HTML, dashboard, and docs
+- final resume-truth broad verification completed
+- final resume-truth alignment documentation completed

@@ -27,6 +27,8 @@ The current codebase already runs a truthful end-to-end closed loop with:
 - APScheduler topic registration and worker consumption flow
 - MockLLM-first execution path with replaceable provider boundaries
 - local JSONL/keyword-based business context retrieval
+- persisted quality proxy evidence for recall, false-positive, task-failure,
+  latency, and runtime-cost readback
 - visible fallback, error, and governance events
 
 ## Multi-Agent Architecture
@@ -102,6 +104,27 @@ Optional integration boundaries already reserved in code:
 These integration boundaries are implemented as optional adapters. They should
 not be described as verified production deployments unless they are actually
 wired to live services in the target environment.
+
+## Final Alignment Status
+
+The repository is now aligned to the resume-facing technical wording inside the
+actual runtime boundary of this codebase:
+
+- multi-agent orchestration is real and runs in-process through LangGraph
+- candidate-level task coordination is real and leaves durable task-ledger evidence
+- Redis owns short-lived queue and retry coordination while PostgreSQL remains
+  the durable business store
+- RAG uses local keyword + BM25 + hashed-embedding retrieval instead of
+  embedding-like naming over token overlap alone
+- quality pages and dashboard surfaces expose persisted proxy evidence rather
+  than only aggregate success counters
+
+What remains intentionally scoped:
+
+- external search / browser / judge / notification providers are optional
+  boundaries, not guaranteed live services
+- quality metrics are proxy evidence for the local runtime, not production SLOs
+- the project is a truthful showcase system, not a production deployment claim
 
 ## Quick Start
 

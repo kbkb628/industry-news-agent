@@ -10,6 +10,17 @@ truth boundary. The labels below are intentionally conservative:
 - `boundary` means the repo contains an integration hook or compatibility shim,
   not a verified live production deployment.
 
+Final verification status for this document:
+
+- backend broad verification passed on July 1, 2026:
+  `py -3.12 -m pytest backend/tests/test_demo_bootstrap.py backend/tests/test_tools_and_eval.py backend/tests/test_monitor_run_flow.py backend/tests/test_topics_api.py -q`
+- frontend verification passed on July 1, 2026:
+  `npm --prefix frontend test -- --run`
+  `npm --prefix frontend run build`
+- repository cleanliness checks passed on July 1, 2026:
+  `git diff --check`
+  `git status --short`
+
 ## Resume Claim Snapshot
 
 The project can truthfully be described as a topic-driven industry-news push
