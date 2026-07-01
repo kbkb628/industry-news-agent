@@ -128,6 +128,15 @@ export default function App() {
     run?.status === "ready" ? run.data.run_context ?? {} : {};
   const businessMemory =
     run?.status === "ready" ? run.data.business_memory ?? {} : {};
+  const businessContext =
+    run?.status === "ready" ? run.data.business_memory?.business_context ?? {} : {};
+  const semanticMemory =
+    businessContext.semantic_memory &&
+    typeof businessContext.semantic_memory === "object"
+      ? businessContext.semantic_memory
+      : {};
+  const ragEvalMetrics =
+    run?.status === "ready" ? run.data.evaluation_output?.eval_result ?? {} : {};
   const historyIndexResult =
     run?.status === "ready" ? run.data.history_index_result ?? {} : {};
   const historyIndexSearch =
@@ -477,6 +486,27 @@ export default function App() {
                     {memoryDocumentCount}
                   </p>
                   <pre>{compactJson(businessMemory)}</pre>
+                </article>
+              </div>
+              <div className="structured-grid">
+                <article className="row-card">
+                  <h3>RAG grounding runtime</h3>
+                  <p>
+                    Retrieval mode {businessContext.retrieval_mode ?? "-"} | retrievers{" "}
+                    {businessContext.retrievers?.join(", ") || "-"}
+                  </p>
+                  <p>
+                    Semantic keywords {semanticMemory.topic_keywords?.length ?? 0} |
+                    trusted sources {semanticMemory.trusted_source_hints?.length ?? 0} |
+                    push rules {semanticMemory.push_rules?.length ?? 0}
+                  </p>
+                  <p>
+                    RAG guidance applied{" "}
+                    {ragEvalMetrics.rag_guidance_applied_count ?? 0} | trusted
+                    matches {ragEvalMetrics.trusted_source_match_count ?? 0} |
+                    rule hits {ragEvalMetrics.rule_guidance_hits ?? 0}
+                  </p>
+                  <pre>{compactJson(businessContext)}</pre>
                 </article>
               </div>
               <div className="structured-grid">

@@ -48,6 +48,7 @@ Included in the current codebase:
 - richer eval metrics for raw-summary, browser fallback, and provider fallback trends
 - minimal HTML admin pages for topics, pushes, run detail, and events
 - minimal HTML admin pages for topics, pushes, quality, history search, run detail, and events
+- explicit run-detail and resume-alignment read surfaces for local RAG grounding evidence
 - local React + Vite dashboard over existing backend APIs
 - APScheduler topic jobs that enqueue worker runs
 - Redis-backed run queue with in-memory fallback
@@ -320,6 +321,12 @@ The repo now exposes a minimal operator-facing history-search workflow at
 just an internal adapter anymore. The provider boundary still stays explicit:
 `provider=none` is a truthful outcome when no OpenSearch-compatible service is
 configured.
+
+The run detail page and React dashboard also expose the local RAG path more
+directly: `business_memory.business_context.semantic_memory` is summarized as
+run-level grounding evidence, and evaluation-time guidance metrics are shown
+alongside it so the planner/scoring effect chain is visible without reading raw
+JSON only.
 
 Optional semantic-dedup variables:
 

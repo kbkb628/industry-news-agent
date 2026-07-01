@@ -96,6 +96,18 @@ describe("App", () => {
           business_memory: {
             push_history: [{ title: "Prior agent funding alert" }],
             documents: [{ doc_id: "kb_001", title: "Trusted sources improve push quality" }],
+            business_context: {
+              retrieval_mode: "hybrid",
+              retrievers: ["keyword", "bm25", "embedding"],
+              semantic_memory: {
+                topic_keywords: ["AI Agent", "MCP"],
+                trusted_source_hints: ["openai.com", "github.com"],
+                source_preferences: ["rss_first", "trusted_domain_priority"],
+                push_rules: [
+                  "prefer trusted source domains when scores are close",
+                ],
+              },
+            },
           },
           expanded_queries: ["AI Agent funding"],
           candidate_items: [{ title: "Agent launch" }],
@@ -121,6 +133,11 @@ describe("App", () => {
           evaluation_output: {
             final_decisions: [{ title: "Agent launch", should_push: true }],
             push_records: [{ push_id: "push_001", should_push: true }],
+            eval_result: {
+              rag_guidance_applied_count: 1,
+              trusted_source_match_count: 1,
+              rule_guidance_hits: 2,
+            },
           },
           history_index_result: {
             provider: "opensearch",
@@ -288,6 +305,16 @@ describe("App", () => {
     expect(screen.getByText(/Run context and business memory/i)).toBeInTheDocument();
     expect(screen.getByText(/Run context keys 2/i)).toBeInTheDocument();
     expect(screen.getByText(/Push history 1 \| documents 1/i)).toBeInTheDocument();
+    expect(screen.getByText(/RAG grounding runtime/i)).toBeInTheDocument();
+    expect(
+      screen.getByText(/Retrieval mode hybrid \| retrievers keyword, bm25, embedding/i),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByText(/Semantic keywords 2 \| trusted sources 2 \| push rules 1/i),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByText(/RAG guidance applied 1 \| trusted matches 1 \| rule hits 2/i),
+    ).toBeInTheDocument();
     expect(screen.getByText(/MCP runtime/i)).toBeInTheDocument();
     expect(screen.getByText(/Browser fallback runtime/i)).toBeInTheDocument();
     expect(screen.getByText(/Tool access contract/i)).toBeInTheDocument();

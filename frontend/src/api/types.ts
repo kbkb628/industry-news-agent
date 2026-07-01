@@ -39,6 +39,18 @@ export type MonitorRun = {
   business_memory?: {
     push_history?: Record<string, unknown>[];
     documents?: Record<string, unknown>[];
+    business_context?: {
+      retrieval_mode?: string;
+      retrievers?: string[];
+      semantic_memory?: {
+        topic_keywords?: string[];
+        trusted_source_hints?: string[];
+        source_preferences?: string[];
+        push_rules?: string[];
+        history_guidance?: string[];
+        evidence_summary?: string[];
+      };
+    };
     [key: string]: unknown;
   };
   expanded_queries?: string[];
@@ -60,6 +72,12 @@ export type MonitorRun = {
   evaluation_output?: {
     final_decisions?: Record<string, unknown>[];
     push_records?: Record<string, unknown>[];
+    eval_result?: {
+      rag_guidance_applied_count?: number;
+      trusted_source_match_count?: number;
+      rule_guidance_hits?: number;
+      [key: string]: unknown;
+    };
   };
   history_index_result?: {
     provider?: string;

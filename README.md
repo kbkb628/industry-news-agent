@@ -27,6 +27,7 @@ The current codebase already runs a truthful end-to-end closed loop with:
 - APScheduler topic registration and worker consumption flow
 - MockLLM-first execution path with replaceable provider boundaries
 - local JSONL/keyword-based business context retrieval
+- explicit run-detail readback for local RAG grounding and guidance metrics
 - persisted quality proxy evidence for recall, false-positive, task-failure,
   event-latency, and runtime-cost readback
 - visible fallback, error, and governance events
@@ -188,10 +189,11 @@ After running it, the main demo readback order is:
 
 1. `GET /`
 2. `GET /runs/run_demo_bootstrap`
-3. `GET /runs/run_demo_bootstrap/events`
-4. `GET /pushes`
-5. `GET /quality`
-6. `GET /history-search`
+3. explain the `RAG grounding runtime` section on the run detail page
+4. `GET /runs/run_demo_bootstrap/events`
+5. `GET /pushes`
+6. `GET /quality`
+7. `GET /history-search`
 
 The quality surfaces now expose persisted proxy evidence in addition to the
 existing success and fallback counts:

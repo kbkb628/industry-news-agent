@@ -53,8 +53,29 @@
       <strong>Suggested demo order</strong>
       <ul class="checklist">
         <li>Open the dashboard or topic page to establish monitoring scope.</li>
-        <li>Show run detail and candidate task readback to explain structured stage contracts plus bounded same-stage orchestration.</li>
+        <li>Show run detail, RAG grounding evidence, and candidate task readback to explain structured stage contracts plus bounded same-stage orchestration.</li>
         <li>Finish with trace events, pushes, and quality metrics to show reliability and evaluation evidence.</li>
+      </ul>
+    </article>
+  </div>
+</section>
+
+<section class="section-card">
+  <div class="grid two">
+    <article class="stat">
+      <strong>RAG grounding evidence</strong>
+      <ul class="checklist">
+        <li>The local knowledge-base retrieval result is persisted under <code>business_context</code> and mirrored into <code>business_memory.business_context</code>.</li>
+        <li><code>semantic_memory</code> gives planner and evaluation a stable contract for topic keywords, trusted-source hints, source preferences, push rules, and history guidance.</li>
+        <li>Run detail surfaces can show both the retrieved semantic guidance and the resulting RAG-impact metrics such as guidance hits and trusted-source matches.</li>
+      </ul>
+    </article>
+    <article class="stat">
+      <strong>Truthful wording</strong>
+      <ul class="checklist">
+        <li>Describe this as local structured RAG grounding, not as an external vector database deployment.</li>
+        <li>Emphasize that planner and scoring behavior are measurably influenced by retrieved business guidance.</li>
+        <li>Use the run-level read surface to prove the effect chain instead of treating RAG as background implementation detail.</li>
       </ul>
     </article>
   </div>

@@ -84,7 +84,9 @@ agent with:
   - legacy top-level `expanded_queries` and `source_plan` are still mirrored for
     compatibility
 - API / pages:
-  - surfaced indirectly through the monitor run APIs and detail pages
+  - `GET /api/monitor/runs/{run_id}`
+  - `GET /runs/{run_id}`
+  - local React dashboard run detail view
 - Truth boundary:
   - planning is structured and context-aware, but remains bounded by the
     current mock/adapter LLM and the implemented source options
@@ -131,9 +133,11 @@ agent with:
   - `GET /api/eval/summary`
   - `GET /pushes`
   - `GET /quality`
+  - `GET /runs/{run_id}`
+  - local React dashboard run detail view
 - Truth boundary:
   - the current judge default is deterministic and local; live judge support is
-    optional and should be described as a provider boundary
+  optional and should be described as a provider boundary
 - recall, false-positive, failure-rate, latency, and runtime-cost metrics are
   truthful as proxy evidence surfaces, not as production monitoring or
   real-time SLO claims
@@ -269,6 +273,9 @@ Keep these scoped unless the runtime environment proves more:
 
 - "LLM-backed" should be read as `MockLLM` plus swappable provider boundaries
   unless a live provider is actually configured.
+- "RAG grounding" is now visible through run-detail read surfaces, but it is a
+  local JSONL + keyword/BM25/hashed-embedding path rather than an external
+  vector-store deployment.
 - "Search integration" should be framed as a unified tool contract plus an
   optional provider boundary.
 - "Browser automation" should be framed as a fallback adapter, not a fully

@@ -25,6 +25,7 @@ def test_html_pages_expose_showcase_navigation_and_resume_copy(
     assert resume_response.status_code == 200
     assert "Resume Alignment" in resume_response.text
     assert "Interview talking points" in resume_response.text
+    assert "RAG grounding evidence" in resume_response.text
 
     assert history_response.status_code == 200
     assert "History Search" in history_response.text
