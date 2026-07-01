@@ -3592,6 +3592,8 @@ def test_run_detail_returns_completed_state() -> None:
     assert "used_in_run" in payload["integration_runtime"]["mcp"]
     assert payload["integration_runtime"]["browser"]["configured_provider"] == "playwright_mcp"
     assert "fallback_used" in payload["integration_runtime"]["browser"]
+    assert "browser_attempt_count" in payload["integration_runtime"]["browser"]
+    assert "last_browser_provider" in payload["integration_runtime"]["browser"]
     assert payload["errors"] == []
 
 

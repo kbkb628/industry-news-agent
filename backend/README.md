@@ -260,7 +260,9 @@ fallbacks remain visible as failed candidate fetches instead of being presented
 as complete article content. When configured, the run snapshot now exposes
 `integration_runtime.browser` so a reviewer can see whether the browser
 fallback path was enabled, actually used, and whether degraded browser-backed
-attempts occurred in that specific run.
+attempts occurred in that specific run. The browser runtime section also records
+attempt counts, allowed-domain blocks, the last attempted browser provider, and
+the visible failure reason when browser fallback could not complete.
 
 Webhook notification delivery is also summarized in
 `integration_runtime.notification`, including whether delivery was enabled,

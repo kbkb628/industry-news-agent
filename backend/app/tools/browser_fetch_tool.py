@@ -117,17 +117,24 @@ class BrowserFetchTool(FixtureTool):
                 resolved["content"] = content
             except Exception as exc:
                 if self.browser_fetcher is not None:
+                    resolved["browser_attempted"] = True
+                    resolved["browser_provider"] = self.browser_provider
                     try:
                         resolved["content"] = self.browser_fetcher(str(candidate["url"]))
                         resolved["fetch_status"] = "fetched"
                         resolved["fetch_method"] = "browser_fallback"
                         resolved["fetch_fallback_reason"] = str(exc)
+                        resolved["browser_allowed"] = True
                         used_browser_fallback = True
                     except Exception as fallback_exc:
                         resolved["fetch_status"] = "failed"
                         resolved["content"] = ""
                         resolved["fetch_error"] = str(fallback_exc)
                         resolved["fetch_fallback_reason"] = str(exc)
+                        resolved["browser_failure_reason"] = str(fallback_exc)
+                        resolved["browser_allowed"] = "not allowed" not in str(
+                            fallback_exc
+                        ).lower()
                 else:
                     resolved["fetch_status"] = "failed"
                     resolved["content"] = ""

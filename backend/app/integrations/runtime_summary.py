@@ -61,6 +61,12 @@ def build_integration_runtime(
     browser_fetches = [
         item for item in fetched_contents if item.get("fetch_method") == "browser_fallback"
     ]
+    browser_attempts = [
+        item for item in fetched_contents if item.get("browser_attempted") is True
+    ]
+    blocked_browser_fetches = [
+        item for item in browser_attempts if item.get("browser_allowed") is False
+    ]
     failed_browser_fetches = [
         item
         for item in fetched_contents
@@ -72,6 +78,14 @@ def build_integration_runtime(
         browser_fallback_reason = browser_fetches[0].get("fetch_fallback_reason")
     elif failed_browser_fetches:
         browser_fallback_reason = failed_browser_fetches[0].get("fetch_fallback_reason")
+    browser_failure_reason = None
+    if blocked_browser_fetches:
+        browser_failure_reason = blocked_browser_fetches[0].get("browser_failure_reason")
+    elif failed_browser_fetches:
+        browser_failure_reason = failed_browser_fetches[0].get("browser_failure_reason")
+    last_browser_provider = None
+    if browser_attempts:
+        last_browser_provider = browser_attempts[-1].get("browser_provider")
 
     notification_provider = "none" if settings is None else settings.notification_provider
     notification_enabled = False
@@ -135,6 +149,10 @@ def build_integration_runtime(
             "fallback_reason": browser_fallback_reason,
             "browser_fetch_count": len(browser_fetches),
             "failed_browser_fetch_count": len(failed_browser_fetches),
+            "browser_attempt_count": len(browser_attempts),
+            "browser_blocked_count": len(blocked_browser_fetches),
+            "browser_failure_reason": browser_failure_reason,
+            "last_browser_provider": last_browser_provider,
         },
         "notification": {
             "configured_provider": notification_provider,

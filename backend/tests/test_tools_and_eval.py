@@ -3556,6 +3556,50 @@ def test_build_integration_runtime_derives_usage_and_fallback_counts_from_run_ev
     }
 
 
+def test_build_integration_runtime_reports_browser_attempt_and_allowed_domain_governance() -> None:
+    settings = Settings(
+        database_url="postgresql+psycopg://user:pass@localhost:5432/news_agent",
+        redis_url="redis://localhost:6379/0",
+        browser_fetch_provider="playwright_mcp",
+        playwright_mcp_base_url="http://localhost:8931",
+        browser_allowed_domains=["example.com"],
+    )
+
+    runtime = build_integration_runtime(
+        settings=settings,
+        tool_results=[],
+        fetched_contents=[
+            {
+                "candidate_id": "cand_disallowed",
+                "fetch_status": "failed",
+                "fetch_error": "Browser fetch domain is not allowed: blocked.example.net",
+                "fetch_fallback_reason": "plain http failed",
+                "browser_attempted": True,
+                "browser_allowed": False,
+                "browser_provider": "playwright_mcp",
+                "browser_failure_reason": "Browser fetch domain is not allowed: blocked.example.net",
+            }
+        ],
+    )
+
+    assert runtime["browser"] == {
+        "configured_provider": "playwright_mcp",
+        "enabled": True,
+        "selected_tool_path": "fetch_article_content.browser_fallback",
+        "base_url_configured": True,
+        "allowed_domains": ["example.com"],
+        "used_in_run": False,
+        "fallback_used": True,
+        "fallback_reason": "plain http failed",
+        "browser_fetch_count": 0,
+        "failed_browser_fetch_count": 1,
+        "browser_attempt_count": 1,
+        "browser_blocked_count": 1,
+        "browser_failure_reason": "Browser fetch domain is not allowed: blocked.example.net",
+        "last_browser_provider": "playwright_mcp",
+    }
+
+
 def test_task6_search_provider_falls_back_to_mock_when_real_provider_fails() -> None:
     from app.core.config import Settings
     from app.tools.registry import build_default_tool_registry
@@ -3688,6 +3732,9 @@ def test_browser_fetch_tool_marks_browser_fallback_when_http_fetch_fails() -> No
     assert candidate["fetch_fallback_reason"] == (
         "http failed for https://example.com/articles/browser-fallback"
     )
+    assert candidate["browser_attempted"] is True
+    assert candidate["browser_allowed"] is True
+    assert candidate["browser_provider"] is None
     assert response.metadata["used_browser_fallback"] is True
 
 
@@ -3727,8 +3774,52 @@ def test_browser_fetch_tool_does_not_use_browser_when_http_fetch_succeeds() -> N
     assert candidate["content"] == (
         "http content for https://example.com/articles/http-first"
     )
+    assert candidate.get("browser_attempted") is not True
     assert calls == []
     assert response.metadata["used_browser_fallback"] is False
+
+
+def test_browser_fetch_tool_records_disallowed_domain_failure_when_browser_fallback_is_blocked() -> None:
+    from app.tools.browser_fetch_tool import BrowserFetchTool
+
+    def failing_fetcher(url: str) -> str:
+        raise RuntimeError(f"http failed for {url}")
+
+    def blocked_browser_fetcher(url: str) -> str:
+        raise ValueError("Browser fetch domain is not allowed: blocked.example.net")
+
+    tool = BrowserFetchTool(
+        fetcher=failing_fetcher,
+        browser_fetcher=blocked_browser_fetcher,
+        browser_provider="playwright_mcp",
+    )
+
+    response = tool(
+        candidates=[
+            {
+                "candidate_id": "cand_browser_blocked",
+                "url": "https://blocked.example.net/story",
+                "raw_summary": "Blocked summary",
+            }
+        ]
+    )
+
+    assert response.success is True
+    assert response.data is not None
+    candidate = response.data["candidates"][0]
+    assert candidate["fetch_status"] == "failed"
+    assert candidate["content"] == ""
+    assert candidate["browser_attempted"] is True
+    assert candidate["browser_allowed"] is False
+    assert candidate["browser_provider"] == "playwright_mcp"
+    assert candidate["browser_failure_reason"] == (
+        "Browser fetch domain is not allowed: blocked.example.net"
+    )
+    assert candidate["fetch_fallback_reason"] == (
+        "http failed for https://blocked.example.net/story"
+    )
+    assert response.metadata["used_browser_fallback"] is False
+    assert response.metadata["browser_provider"] == "playwright_mcp"
 
 
 def test_playwright_mcp_browser_fetcher_calls_allowed_domain_and_truncates() -> None:
