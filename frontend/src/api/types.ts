@@ -61,6 +61,15 @@ export type MonitorRun = {
     final_decisions?: Record<string, unknown>[];
     push_records?: Record<string, unknown>[];
   };
+  history_index_result?: {
+    provider?: string;
+    indexed_count?: number;
+    search?: {
+      query?: string;
+      returned_count?: number;
+      items?: Record<string, unknown>[];
+    };
+  };
   integration_runtime?: {
     mcp?: {
       configured_provider?: string;

@@ -282,6 +282,7 @@ def get_run_state(
         retrieval_output=dict(snapshot.get("retrieval_output", {})),
         extraction_output=dict(snapshot.get("extraction_output", {})),
         evaluation_output=dict(snapshot.get("evaluation_output", {})),
+        history_index_result=dict(snapshot.get("history_index_result", {})),
         expanded_queries=list(snapshot.get("expanded_queries", [])),
         candidate_items=list(snapshot.get("candidate_items", [])),
         final_decisions=list(snapshot.get("final_decisions", [])),

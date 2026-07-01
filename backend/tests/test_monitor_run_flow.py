@@ -5058,6 +5058,58 @@ def test_history_search_api_returns_provider_results_from_history_index() -> Non
     ]
 
 
+def test_run_detail_api_surfaces_history_index_runtime_evidence() -> None:
+    run_repository = InMemoryMonitorRunRepository()
+    run_repository.monitor_runs["run_history_evidence"] = MonitorRunRecord(
+        run_id="run_history_evidence",
+        topic_id="topic_001",
+        status="completed",
+        state_snapshot={
+            "run_id": "run_history_evidence",
+            "topic_id": "topic_001",
+            "trigger": "manual",
+            "status": "completed",
+            "history_index_result": {
+                "provider": "opensearch",
+                "indexed_count": 2,
+                "search": {
+                    "query": "OpenAI agent",
+                    "returned_count": 1,
+                    "items": [
+                        {
+                            "candidate_id": "cand_hist_001",
+                            "title": "OpenAI agent update",
+                        }
+                    ],
+                },
+            },
+        },
+        error_summary=None,
+        started_at=datetime(2026, 6, 24, 9, 0, tzinfo=UTC),
+        finished_at=datetime(2026, 6, 24, 9, 1, tzinfo=UTC),
+        created_at=datetime(2026, 6, 24, 9, 0, tzinfo=UTC),
+    )
+
+    with _build_monitor_client(InMemoryTopicRepository(), run_repository) as client:
+        response = client.get("/api/monitor/runs/run_history_evidence")
+
+    assert response.status_code == 200
+    assert response.json()["history_index_result"] == {
+        "provider": "opensearch",
+        "indexed_count": 2,
+        "search": {
+            "query": "OpenAI agent",
+            "returned_count": 1,
+            "items": [
+                {
+                    "candidate_id": "cand_hist_001",
+                    "title": "OpenAI agent update",
+                }
+            ],
+        },
+    }
+
+
 def test_worker_acknowledges_queue_message_after_successful_completion(
     monkeypatch,
 ) -> None:

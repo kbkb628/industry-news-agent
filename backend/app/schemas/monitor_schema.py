@@ -38,6 +38,7 @@ class MonitorRunStateResponse(BaseModel):
     retrieval_output: dict[str, Any] = Field(default_factory=dict)
     extraction_output: dict[str, Any] = Field(default_factory=dict)
     evaluation_output: dict[str, Any] = Field(default_factory=dict)
+    history_index_result: dict[str, Any] = Field(default_factory=dict)
     expanded_queries: list[str] = Field(default_factory=list)
     candidate_items: list[dict[str, Any]] = Field(default_factory=list)
     final_decisions: list[dict[str, Any]] = Field(default_factory=list)

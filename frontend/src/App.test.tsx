@@ -122,6 +122,15 @@ describe("App", () => {
             final_decisions: [{ title: "Agent launch", should_push: true }],
             push_records: [{ push_id: "push_001", should_push: true }],
           },
+          history_index_result: {
+            provider: "opensearch",
+            indexed_count: 2,
+            search: {
+              query: "OpenAI agent",
+              returned_count: 1,
+              items: [{ candidate_id: "cand_hist_001", title: "OpenAI agent update" }],
+            },
+          },
           integration_runtime: {
             mcp: {
               configured_provider: "onesearch",
@@ -282,6 +291,9 @@ describe("App", () => {
     expect(screen.getByText(/MCP runtime/i)).toBeInTheDocument();
     expect(screen.getByText(/Browser fallback runtime/i)).toBeInTheDocument();
     expect(screen.getByText(/Tool access contract/i)).toBeInTheDocument();
+    expect(screen.getByText(/History index runtime/i)).toBeInTheDocument();
+    expect(screen.getByText(/Provider opensearch/i)).toBeInTheDocument();
+    expect(screen.getByText(/Indexed 2 \| search results 1/i)).toBeInTheDocument();
     expect(screen.getByText(/Contract unified_tool_gateway/i)).toBeInTheDocument();
     expect(screen.getByText(/Search path mcp_gateway \| tool search_news/i)).toBeInTheDocument();
     expect(

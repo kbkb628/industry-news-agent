@@ -64,6 +64,7 @@ def test_monitor_schema_defaults_and_summary_status() -> None:
     assert monitor.expanded_queries == []
     assert monitor.candidate_items == []
     assert monitor.final_decisions == []
+    assert monitor.history_index_result == {}
     assert monitor.errors == []
     assert MonitorRunStatus.COMPLETED == "completed"
 

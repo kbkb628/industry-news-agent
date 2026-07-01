@@ -128,6 +128,12 @@ export default function App() {
     run?.status === "ready" ? run.data.run_context ?? {} : {};
   const businessMemory =
     run?.status === "ready" ? run.data.business_memory ?? {} : {};
+  const historyIndexResult =
+    run?.status === "ready" ? run.data.history_index_result ?? {} : {};
+  const historyIndexSearch =
+    historyIndexResult.search && typeof historyIndexResult.search === "object"
+      ? historyIndexResult.search
+      : {};
   const pushHistoryCount = Array.isArray(businessMemory.push_history)
     ? businessMemory.push_history.length
     : 0;
@@ -471,6 +477,21 @@ export default function App() {
                     {memoryDocumentCount}
                   </p>
                   <pre>{compactJson(businessMemory)}</pre>
+                </article>
+              </div>
+              <div className="structured-grid">
+                <article className="row-card">
+                  <h3>History index runtime</h3>
+                  <p>Provider {historyIndexResult.provider ?? "-"}</p>
+                  <p>
+                    Indexed {historyIndexResult.indexed_count ?? 0} | search results{" "}
+                    {historyIndexSearch.returned_count ??
+                      (Array.isArray(historyIndexSearch.items)
+                        ? historyIndexSearch.items.length
+                        : 0)}
+                  </p>
+                  <p>Query {historyIndexSearch.query ?? "-"}</p>
+                  <pre>{compactJson(historyIndexResult)}</pre>
                 </article>
               </div>
               <div className="structured-grid">

@@ -144,6 +144,22 @@
 </section>
 
 <section class="section-card">
+  <h3>History index runtime</h3>
+  <p>
+    This section exposes per-run candidate history indexing and search evidence when the monitor
+    writes or queries a history layer. Treat it as run-level retrieval evidence, not as a blanket
+    claim that OpenSearch is always configured in every environment.
+  </p>
+  <div class="grid two">
+    <article class="stat">
+      <strong>History index runtime</strong>
+      <p id="history-index-summary">Loading history index runtime evidence.</p>
+      <pre id="history-index-json"><code>Loading</code></pre>
+    </article>
+  </div>
+</section>
+
+<section class="section-card">
   <h3>MCP runtime</h3>
   <p>
     Treat this section as runtime evidence, not a promise that a live MCP deployment always exists:
@@ -258,6 +274,8 @@
     .then((payload) => {
       const runContext = safeObject(payload.run_context);
       const businessMemory = safeObject(payload.business_memory);
+      const historyIndex = safeObject(payload.history_index_result);
+      const historySearch = safeObject(historyIndex.search);
       const mcpRuntime = safeObject(payload.integration_runtime?.mcp);
       const browserRuntime = safeObject(payload.integration_runtime?.browser);
       const toolAccess = safeObject(payload.integration_runtime?.tool_access);
@@ -287,6 +305,10 @@
         `Business memory keys: ${Object.keys(businessMemory).length}; push history entries: ${safeList(businessMemory.push_history).length}.`,
       );
       setSummary(
+        "history-index-summary",
+        `Provider: ${historyIndex.provider ?? "-"}; indexed: ${historyIndex.indexed_count ?? 0}; search results: ${historySearch.returned_count ?? safeList(historySearch.items).length}.`,
+      );
+      setSummary(
         "mcp-runtime-summary",
         `Configured provider: ${mcpRuntime.configured_provider ?? "-"}; used in run: ${mcpRuntime.used_in_run ?? false}; fallback used: ${mcpRuntime.fallback_used ?? false}.`,
       );
@@ -305,6 +327,7 @@
       setCodeBlock("evaluation-json", payload.evaluation_output ?? {});
       setCodeBlock("run-context-json", runContext);
       setCodeBlock("business-memory-json", businessMemory);
+      setCodeBlock("history-index-json", historyIndex);
       setCodeBlock("mcp-runtime-json", mcpRuntime);
       setCodeBlock("browser-runtime-json", browserRuntime);
       setCodeBlock("tool-access-json", toolAccess);
@@ -317,6 +340,7 @@
       setSummary("evaluation-summary", "Run detail API unavailable.");
       setSummary("run-context-summary", "Run detail API unavailable.");
       setSummary("business-memory-summary", "Run detail API unavailable.");
+      setSummary("history-index-summary", "Run detail API unavailable.");
       setSummary("mcp-runtime-summary", "Run detail API unavailable.");
       setSummary("browser-runtime-summary", "Run detail API unavailable.");
       setSummary("tool-access-summary", "Run detail API unavailable.");
@@ -326,6 +350,7 @@
       setCodeBlock("evaluation-json", { error: "run detail unavailable" });
       setCodeBlock("run-context-json", { error: "run detail unavailable" });
       setCodeBlock("business-memory-json", { error: "run detail unavailable" });
+      setCodeBlock("history-index-json", { error: "run detail unavailable" });
       setCodeBlock("mcp-runtime-json", { error: "run detail unavailable" });
       setCodeBlock("browser-runtime-json", { error: "run detail unavailable" });
       setCodeBlock("tool-access-json", { error: "run detail unavailable" });
