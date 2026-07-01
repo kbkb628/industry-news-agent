@@ -361,11 +361,11 @@
       );
       setSummary(
         "browser-runtime-summary",
-        `Configured provider: ${browserRuntime.configured_provider ?? "-"}; used in run: ${browserRuntime.used_in_run ?? false}; fallback used: ${browserRuntime.fallback_used ?? false}.`,
+        `Configured provider: ${browserRuntime.configured_provider ?? "-"}; used in run: ${browserRuntime.used_in_run ?? false}; fallback used: ${browserRuntime.fallback_used ?? false}; attempts: ${browserRuntime.browser_attempt_count ?? 0}; blocked: ${browserRuntime.browser_blocked_count ?? 0}; last provider: ${browserRuntime.last_browser_provider ?? "-"}.`,
       );
       setSummary(
         "notification-runtime-summary",
-        `Configured provider: ${notificationRuntime.configured_provider ?? "-"}; used in run: ${notificationRuntime.used_in_run ?? false}; delivery succeeded: ${notificationRuntime.delivery_succeeded ?? false}.`,
+        `Configured provider: ${notificationRuntime.configured_provider ?? "-"}; used in run: ${notificationRuntime.used_in_run ?? false}; delivery attempted: ${notificationRuntime.delivery_attempted ?? false}; delivery succeeded: ${notificationRuntime.delivery_succeeded ?? false}; failure code: ${notificationRuntime.failure_code ?? "-"}.`,
       );
       setSummary(
         "tool-access-summary",

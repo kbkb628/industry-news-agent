@@ -332,6 +332,11 @@ The same run-detail read surfaces now also summarize
 `integration_runtime.notification` directly, so notification delivery no longer
 stays implicit behind tool-access or event-only readback.
 
+The dashboard/browser-facing read surface also now shows browser-attempt counts,
+blocked-domain counts, last attempted browser provider, notification delivery
+attempt state, and notification failure code when present, so degradation
+explanations do not depend on raw JSON inspection alone.
+
 Optional semantic-dedup variables:
 
 - `SEMANTIC_DEDUP_PROVIDER=none` keeps the default exact dedup behavior.

@@ -95,6 +95,7 @@ Implemented now:
 - real unified tool-access contract readback for search, browser, and
   notification with per-capability provider-path evidence
 - explicit notification runtime readback beside MCP/browser/history evidence on run detail surfaces
+- explicit browser-attempt and notification-delivery governance readback on dashboard run detail surfaces
 
 Optional integration boundaries already reserved in code:
 

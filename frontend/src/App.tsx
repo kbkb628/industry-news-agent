@@ -563,6 +563,19 @@ export default function App() {
                     {run.data.integration_runtime?.browser?.allowed_domains?.join(", ") ||
                       "-"}
                   </p>
+                  <p>
+                    Attempts{" "}
+                    {run.data.integration_runtime?.browser?.browser_attempt_count ?? 0} |
+                    blocked{" "}
+                    {run.data.integration_runtime?.browser?.browser_blocked_count ?? 0} |
+                    last provider{" "}
+                    {run.data.integration_runtime?.browser?.last_browser_provider ?? "-"}
+                  </p>
+                  <p>
+                    Failure reason{" "}
+                    {run.data.integration_runtime?.browser?.browser_failure_reason ??
+                      "-"}
+                  </p>
                 </article>
                 <article className="row-card">
                   <h3>Notification runtime</h3>
@@ -584,6 +597,14 @@ export default function App() {
                     {runtimeFlagLabel(
                       run.data.integration_runtime?.notification?.delivery_succeeded,
                     )}
+                  </p>
+                  <p>
+                    Delivery attempted{" "}
+                    {runtimeFlagLabel(
+                      run.data.integration_runtime?.notification?.delivery_attempted,
+                    )}{" "}
+                    | failure code{" "}
+                    {run.data.integration_runtime?.notification?.failure_code ?? "-"}
                   </p>
                 </article>
                 <article className="row-card">

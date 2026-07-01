@@ -101,12 +101,18 @@ export type MonitorRun = {
       used_in_run?: boolean;
       fallback_used?: boolean;
       allowed_domains?: string[];
+      browser_attempt_count?: number;
+      browser_blocked_count?: number;
+      browser_failure_reason?: string | null;
+      last_browser_provider?: string | null;
     };
     notification?: {
       configured_provider?: string;
       enabled?: boolean;
       used_in_run?: boolean;
       delivery_succeeded?: boolean;
+      delivery_attempted?: boolean;
+      failure_code?: string | null;
     };
     tool_access?: {
       contract?: string;

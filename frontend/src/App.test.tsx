@@ -161,12 +161,19 @@ describe("App", () => {
               used_in_run: true,
               fallback_used: true,
               allowed_domains: ["example.com"],
+              browser_attempt_count: 2,
+              browser_blocked_count: 1,
+              last_browser_provider: "playwright_mcp",
+              browser_failure_reason:
+                "Browser fetch domain is not allowed: blocked.example.net",
             },
             notification: {
               configured_provider: "webhook",
               enabled: true,
               used_in_run: true,
               delivery_succeeded: true,
+              delivery_attempted: true,
+              failure_code: null,
             },
             tool_access: {
               contract: "unified_tool_gateway",
@@ -326,6 +333,15 @@ describe("App", () => {
     expect(screen.getByText(/Notification runtime/i)).toBeInTheDocument();
     expect(screen.getByText(/Configured provider webhook/i)).toBeInTheDocument();
     expect(screen.getByText(/Enabled yes \| used in run yes \| delivery succeeded yes/i)).toBeInTheDocument();
+    expect(
+      screen.getByText(/Attempts 2 \| blocked 1 \| last provider playwright_mcp/i),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByText(/Failure reason Browser fetch domain is not allowed: blocked.example.net/i),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByText(/Delivery attempted yes \| failure code -/i),
+    ).toBeInTheDocument();
     expect(screen.getByText(/Tool access contract/i)).toBeInTheDocument();
     expect(screen.getByText(/History index runtime/i)).toBeInTheDocument();
     expect(screen.getByText(/Provider opensearch/i)).toBeInTheDocument();

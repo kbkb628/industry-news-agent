@@ -211,6 +211,9 @@ agent with:
   - run-detail HTML and dashboard surfaces also expose notification runtime
     separately from the tool-access summary, so delivery-path evidence is not
     hidden behind the generic contract section
+  - the dashboard run-detail surface now also exposes browser attempt counts,
+    blocked-domain counts, last browser provider, notification delivery-attempt
+    state, and notification failure code for tighter degradation readback
   - the dashboard and HTML run detail page show the contract separately from
     the actual provider path used by that capability
 - API / pages:

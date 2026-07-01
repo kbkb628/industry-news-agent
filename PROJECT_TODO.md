@@ -8,6 +8,7 @@
 - expose history index runtime evidence on run detail surfaces
 - expose RAG grounding runtime evidence on run detail and resume alignment surfaces
 - expose notification runtime evidence on run detail surfaces
+- expose browser and notification governance details on dashboard read surfaces
 - implement langgraph contract tightening slice
 - spec and planning for langgraph contract tightening
 - implement mcp and playwright runtime evidence slice
