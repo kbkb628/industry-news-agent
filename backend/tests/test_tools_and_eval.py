@@ -4319,6 +4319,23 @@ def test_build_history_index_returns_noop_without_complete_opensearch_settings()
     assert isinstance(build_history_index(settings=settings), NoopHistoryIndex)
 
 
+def test_resume_alignment_docs_state_optional_adapter_boundaries_as_runtime_conditional() -> None:
+    project_root = Path(__file__).resolve().parents[2]
+    required_phrase = (
+        "adapter code alone does not imply a live service or enabled provider "
+        "in the target runtime"
+    )
+
+    for relative_path in (
+        "README.md",
+        "backend/README.md",
+        "docs/resume-alignment.md",
+        "backend/app/templates/resume_alignment.html",
+    ):
+        content = (project_root / relative_path).read_text(encoding="utf-8")
+        assert required_phrase in content.lower()
+
+
 def test_build_empty_candidate_task_output_contract() -> None:
     from app.agent.contracts import build_empty_candidate_task_output
 

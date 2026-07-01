@@ -154,12 +154,17 @@ describe("App", () => {
               enabled: true,
               used_in_run: false,
               fallback_used: true,
+              selected_tool_path: "search_news",
+              base_url_configured: true,
+              tool_call_count: 1,
             },
             browser: {
               configured_provider: "playwright_mcp",
               enabled: true,
               used_in_run: true,
               fallback_used: true,
+              selected_tool_path: "fetch_article_content.browser_fallback",
+              base_url_configured: true,
               allowed_domains: ["example.com"],
               browser_attempt_count: 2,
               browser_blocked_count: 1,
@@ -174,6 +179,7 @@ describe("App", () => {
               delivery_succeeded: true,
               delivery_attempted: true,
               failure_code: null,
+              selected_tool_path: "notification_send",
             },
             tool_access: {
               contract: "unified_tool_gateway",
@@ -281,6 +287,12 @@ describe("App", () => {
       await screen.findByText(/Quality and fallback signals/i),
     ).toBeInTheDocument();
     expect(
+      await screen.findByText(/proxy signals where the implementation is heuristic or runtime-local, not production KPI claims/i),
+    ).toBeInTheDocument();
+    expect(
+      await screen.findByText(/bounded in-process concurrency plus retry and timeout controls, not a distributed worker fleet or full circuit-breaker system/i),
+    ).toBeInTheDocument();
+    expect(
       await screen.findByRole("heading", {
         name: /APScheduler, queue, worker, retry, active-run guard/i,
       }),
@@ -329,9 +341,19 @@ describe("App", () => {
       screen.getByText(/RAG guidance applied 1 \| trusted matches 1 \| rule hits 2/i),
     ).toBeInTheDocument();
     expect(screen.getByText(/MCP runtime/i)).toBeInTheDocument();
+    expect(screen.getByText(/Tool access runtime/i)).toBeInTheDocument();
+    expect(
+      screen.getByText(/Selected path search_news \| base URL configured yes \| tool calls 1/i),
+    ).toBeInTheDocument();
     expect(screen.getByText(/Browser fallback runtime/i)).toBeInTheDocument();
     expect(screen.getByText(/Notification runtime/i)).toBeInTheDocument();
+    expect(
+      screen.getByText(
+        /Selected path fetch_article_content\.browser_fallback \| base URL configured yes/i,
+      ),
+    ).toBeInTheDocument();
     expect(screen.getByText(/Configured provider webhook/i)).toBeInTheDocument();
+    expect(screen.getByText(/Selected path notification_send/i)).toBeInTheDocument();
     expect(screen.getByText(/Enabled yes \| used in run yes \| delivery succeeded yes/i)).toBeInTheDocument();
     expect(
       screen.getByText(/Attempts 2 \| blocked 1 \| last provider playwright_mcp/i),

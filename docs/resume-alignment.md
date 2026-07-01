@@ -9,6 +9,7 @@ truth boundary. The labels below are intentionally conservative:
   scoped to the implemented boundary.
 - `boundary` means the repo contains an integration hook or compatibility shim,
   not a verified live production deployment.
+Adapter code alone does not imply a live service or enabled provider in the target runtime.
 
 Final verification status for this document:
 
@@ -292,7 +293,8 @@ Keep these scoped unless the runtime environment proves more:
 - "AI judge" should be framed as a deterministic local judge with an optional
   OpenAI-compatible adapter.
 - "Resilience" should be framed as bounded concurrency, retry, timeout, and
-  active-run controls rather than a full circuit-breaker subsystem.
+  active-run controls rather than a distributed worker fleet or full
+  circuit-breaker system.
 
 ## Suggested Demo Order
 

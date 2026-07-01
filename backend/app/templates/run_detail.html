@@ -170,6 +170,37 @@
 </section>
 
 <section class="section-card">
+  <h3>Tool access runtime</h3>
+  <p>
+    This section surfaces the run-level runtime evidence for the unified tool contract. It keeps
+    the stable access contract separate from the selected tool path, base-url configuration, and
+    observed usage counts so the page shows both the boundary and the actual execution footprint.
+  </p>
+  <div class="grid two">
+    <article class="stat">
+      <strong>MCP tool access</strong>
+      <p id="mcp-tool-access-summary">Loading MCP tool access evidence.</p>
+      <pre id="mcp-tool-access-json"><code>Loading</code></pre>
+    </article>
+    <article class="stat">
+      <strong>Browser tool access</strong>
+      <p id="browser-tool-access-summary">Loading browser tool access evidence.</p>
+      <pre id="browser-tool-access-json"><code>Loading</code></pre>
+    </article>
+    <article class="stat">
+      <strong>Notification tool access</strong>
+      <p id="notification-tool-access-summary">Loading notification tool access evidence.</p>
+      <pre id="notification-tool-access-json"><code>Loading</code></pre>
+    </article>
+    <article class="stat">
+      <strong>Unified tool contract</strong>
+      <p id="tool-access-summary">Loading unified tool access evidence.</p>
+      <pre id="tool-access-json"><code>Loading</code></pre>
+    </article>
+  </div>
+</section>
+
+<section class="section-card">
   <h3>History index runtime</h3>
   <p>
     This section exposes per-run candidate history indexing and search evidence when the monitor
@@ -368,6 +399,18 @@
         `Configured provider: ${notificationRuntime.configured_provider ?? "-"}; used in run: ${notificationRuntime.used_in_run ?? false}; delivery attempted: ${notificationRuntime.delivery_attempted ?? false}; delivery succeeded: ${notificationRuntime.delivery_succeeded ?? false}; failure code: ${notificationRuntime.failure_code ?? "-"}.`,
       );
       setSummary(
+        "mcp-tool-access-summary",
+        `Selected tool path: ${mcpRuntime.selected_tool_path ?? "-"}; Base URL configured: ${mcpRuntime.base_url_configured ?? false}; tool calls: ${mcpRuntime.tool_call_count ?? 0}.`,
+      );
+      setSummary(
+        "browser-tool-access-summary",
+        `Selected tool path: ${browserRuntime.selected_tool_path ?? "-"}; Base URL configured: ${browserRuntime.base_url_configured ?? false}; used in run: ${browserRuntime.used_in_run ?? false}.`,
+      );
+      setSummary(
+        "notification-tool-access-summary",
+        `Selected tool path: ${notificationRuntime.selected_tool_path ?? "-"}; delivery attempted: ${notificationRuntime.delivery_attempted ?? false}; delivery succeeded: ${notificationRuntime.delivery_succeeded ?? false}.`,
+      );
+      setSummary(
         "tool-access-summary",
         `Contract: ${toolAccess.contract ?? "-"}; search tool ${toolAccess.search?.tool_name ?? "-"} via ${toolAccess.search?.provider_path ?? "-"}; browser tool ${toolAccess.browser?.tool_name ?? "-"} via ${toolAccess.browser?.provider_path ?? "-"}; notification tool ${toolAccess.notification?.tool_name ?? "-"} via ${toolAccess.notification?.provider_path ?? "-"}.`,
       );
@@ -384,6 +427,9 @@
       setCodeBlock("mcp-runtime-json", mcpRuntime);
       setCodeBlock("browser-runtime-json", browserRuntime);
       setCodeBlock("notification-runtime-json", notificationRuntime);
+      setCodeBlock("mcp-tool-access-json", mcpRuntime);
+      setCodeBlock("browser-tool-access-json", browserRuntime);
+      setCodeBlock("notification-tool-access-json", notificationRuntime);
       setCodeBlock("tool-access-json", toolAccess);
       setMirrorChecks(payload);
     })
@@ -400,6 +446,9 @@
       setSummary("mcp-runtime-summary", "Run detail API unavailable.");
       setSummary("browser-runtime-summary", "Run detail API unavailable.");
       setSummary("notification-runtime-summary", "Run detail API unavailable.");
+      setSummary("mcp-tool-access-summary", "Run detail API unavailable.");
+      setSummary("browser-tool-access-summary", "Run detail API unavailable.");
+      setSummary("notification-tool-access-summary", "Run detail API unavailable.");
       setSummary("tool-access-summary", "Run detail API unavailable.");
       setCodeBlock("planner-json", { error: "run detail unavailable" });
       setCodeBlock("retrieval-json", { error: "run detail unavailable" });
@@ -413,6 +462,9 @@
       setCodeBlock("mcp-runtime-json", { error: "run detail unavailable" });
       setCodeBlock("browser-runtime-json", { error: "run detail unavailable" });
       setCodeBlock("notification-runtime-json", { error: "run detail unavailable" });
+      setCodeBlock("mcp-tool-access-json", { error: "run detail unavailable" });
+      setCodeBlock("browser-tool-access-json", { error: "run detail unavailable" });
+      setCodeBlock("notification-tool-access-json", { error: "run detail unavailable" });
       setCodeBlock("tool-access-json", { error: "run detail unavailable" });
       setCodeBlock("candidate-task-runtime-json", { error: "candidate task evidence unavailable" });
       document.getElementById("mirror-checks").innerHTML = "<li>Mirror checks unavailable.</li>";

@@ -3670,6 +3670,13 @@ def test_static_run_pages_describe_runtime_evidence_sections() -> None:
     assert "MCP runtime" in run_detail_response.text
     assert "Browser fallback runtime" in run_detail_response.text
     assert "Notification runtime" in run_detail_response.text
+    assert "Tool access runtime" in run_detail_response.text
+    assert "mcp-tool-access-summary" in run_detail_response.text
+    assert "browser-tool-access-summary" in run_detail_response.text
+    assert "notification-tool-access-summary" in run_detail_response.text
+    assert "Tool access runtime" in run_detail_response.text
+    assert "Selected tool path" in run_detail_response.text
+    assert "Base URL configured" in run_detail_response.text
     assert "structured stage evidence" in run_detail_response.text
     assert 'id="structured-run-surface"' in run_detail_response.text
     assert "const runEndpoint = `/api/monitor/runs/${runId}`;" in run_detail_response.text

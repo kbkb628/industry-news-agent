@@ -137,6 +137,8 @@ export default function App() {
       : {};
   const ragEvalMetrics =
     run?.status === "ready" ? run.data.evaluation_output?.eval_result ?? {} : {};
+  const integrationRuntime =
+    run?.status === "ready" ? run.data.integration_runtime ?? {} : {};
   const historyIndexResult =
     run?.status === "ready" ? run.data.history_index_result ?? {} : {};
   const historyIndexSearch =
@@ -260,7 +262,7 @@ export default function App() {
             <p>
               Candidate-stage reliability stays within bounded in-process
               concurrency plus retry and timeout controls, not a distributed
-              circuit-breaker fleet.
+              worker fleet or full circuit-breaker system.
             </p>
           </article>
         </section>
@@ -269,7 +271,8 @@ export default function App() {
           <h2>Quality Snapshot</h2>
           <p className="panel-copy">
             These values come from persisted eval summaries and are labeled as
-            proxy signals where the implementation is heuristic or runtime-local.
+            proxy signals where the implementation is heuristic or runtime-local,
+            not production KPI claims.
           </p>
           {summary.status === "loading" && <p>Loading quality summary...</p>}
           {summary.status === "error" && (
@@ -525,6 +528,29 @@ export default function App() {
                 </article>
               </div>
               <div className="structured-grid">
+                <article className="row-card">
+                  <h3>Tool access runtime</h3>
+                  <p>
+                    Selected path {integrationRuntime.mcp?.selected_tool_path ?? "-"} |
+                    base URL configured{" "}
+                    {runtimeFlagLabel(
+                      integrationRuntime.mcp?.base_url_configured,
+                    )}{" "}
+                    | tool calls {integrationRuntime.mcp?.tool_call_count ?? 0}
+                  </p>
+                  <p>
+                    Browser selected path{" "}
+                    {integrationRuntime.browser?.selected_tool_path ?? "-"} | base URL
+                    configured{" "}
+                    {runtimeFlagLabel(
+                      integrationRuntime.browser?.base_url_configured,
+                    )}
+                  </p>
+                  <p>
+                    Notification selected path{" "}
+                    {integrationRuntime.notification?.selected_tool_path ?? "-"}
+                  </p>
+                </article>
                 <article className="row-card">
                   <h3>MCP runtime</h3>
                   <p>

@@ -109,6 +109,7 @@ Optional integration boundaries already reserved in code:
 These integration boundaries are implemented as optional adapters. They should
 not be described as verified production deployments unless they are actually
 wired to live services in the target environment.
+Adapter code alone does not imply a live service or enabled provider in the target runtime.
 
 ## Final Alignment Status
 
@@ -132,7 +133,7 @@ What remains intentionally scoped:
 - quality metrics are proxy evidence for the local runtime, not production SLOs
 - queue and candidate-stage reliability are implemented as bounded concurrency,
   retry, timeout, and active-run controls rather than as a distributed
-  circuit-breaker fleet
+  worker fleet or full circuit-breaker system
 - the project is a truthful showcase system, not a production deployment claim
 
 ## Quick Start

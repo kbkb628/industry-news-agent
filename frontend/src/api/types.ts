@@ -94,12 +94,17 @@ export type MonitorRun = {
       enabled?: boolean;
       used_in_run?: boolean;
       fallback_used?: boolean;
+      selected_tool_path?: string;
+      base_url_configured?: boolean;
+      tool_call_count?: number;
     };
     browser?: {
       configured_provider?: string;
       enabled?: boolean;
       used_in_run?: boolean;
       fallback_used?: boolean;
+      selected_tool_path?: string;
+      base_url_configured?: boolean;
       allowed_domains?: string[];
       browser_attempt_count?: number;
       browser_blocked_count?: number;
@@ -113,6 +118,7 @@ export type MonitorRun = {
       delivery_succeeded?: boolean;
       delivery_attempted?: boolean;
       failure_code?: string | null;
+      selected_tool_path?: string;
     };
     tool_access?: {
       contract?: string;

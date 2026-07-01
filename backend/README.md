@@ -179,7 +179,7 @@ coordination backend visible in persisted run traces while PostgreSQL remains
 the authoritative record of run facts.
 The current resilience story is bounded concurrency plus retry, timeout,
 active-run guard, and transient coordination/rate controls. It should not be
-marketed as a full circuit-breaker subsystem.
+marketed as a distributed worker fleet or a full circuit-breaker subsystem.
 
 `GET /api/monitor/runs/{run_id}` may additionally surface
 `run_context.retry_state` when a run is currently parked for worker retry. That
@@ -298,6 +298,7 @@ through `mcp_gateway` versus `tool_gateway`.
 
 The `integration_runtime` section is runtime evidence, not a claim that every
 environment always wires live external MCP or Playwright-compatible services.
+Adapter code alone does not imply a live service or enabled provider in the target runtime.
 
 Optional history-index variables:
 
