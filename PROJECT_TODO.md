@@ -33,3 +33,4 @@
 - final resume-truth broad verification completed
 - final resume-truth alignment documentation completed
 - close remaining resume wording gaps across tool-access contract, provider boundaries, proxy metrics, and concurrency wording
+- expose queryable candidate-history search via API and minimal HTML page

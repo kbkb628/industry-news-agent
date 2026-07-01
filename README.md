@@ -145,6 +145,7 @@ Then open:
 - `http://localhost:8000/`
 - `http://localhost:8000/docs`
 - `http://localhost:8000/health`
+- `http://localhost:8000/history-search`
 - `http://localhost:5173`
 
 ### Manual Backend
@@ -190,6 +191,7 @@ After running it, the main demo readback order is:
 3. `GET /runs/run_demo_bootstrap/events`
 4. `GET /pushes`
 5. `GET /quality`
+6. `GET /history-search`
 
 The quality surfaces now expose persisted proxy evidence in addition to the
 existing success and fallback counts:
@@ -221,6 +223,7 @@ npm run dev
 - `GET /api/monitor/runs/{run_id}/candidates`
 - `GET /api/monitor/runs/{run_id}/candidate-tasks`
 - `GET /api/monitor/runs/{run_id}/events`
+- `GET /api/history/search`
 - `GET /api/pushes`
 - `GET /api/topics/{topic_id}/pushes`
 - `POST /api/eval/run`

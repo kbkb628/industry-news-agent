@@ -231,11 +231,13 @@ agent with:
   - OneSearch-compatible search gateway
   - OpenWebSearch-compatible search provider
   - Playwright MCP-compatible browser fetch fallback
-  - OpenSearch-compatible history projection
+  - OpenSearch-compatible history projection and query path
   - local semantic dedup
   - webhook notification delivery
   - OpenAI-compatible judge provider
 - API / pages:
+  - `GET /api/history/search`
+  - `GET /history-search`
   - the same monitor and eval endpoints expose the resulting metadata when the
     adapters are configured
 - Truth boundary:
@@ -272,7 +274,8 @@ Keep these scoped unless the runtime environment proves more:
 - "Browser automation" should be framed as a fallback adapter, not a fully
   managed browser fleet.
 - "OpenSearch history index" should be framed as a projection boundary, not the
-  source of truth.
+  source of truth, even though the current repo now exposes a real queryable
+  read surface for that projection.
 - "AI judge" should be framed as a deterministic local judge with an optional
   OpenAI-compatible adapter.
 - "Resilience" should be framed as bounded concurrency, retry, timeout, and

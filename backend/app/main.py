@@ -11,6 +11,7 @@ from pydantic import ValidationError
 from app.api.candidates import router as candidates_router
 from app.api.eval import router as eval_router
 from app.api.events import router as events_router
+from app.api.history import router as history_router
 from app.api.monitor import router as monitor_router
 from app.api.pushes import router as pushes_router
 from app.api.topics import get_topic_repository, router as topics_router
@@ -105,6 +106,10 @@ def create_app() -> FastAPI:
     def resume_alignment_page(request: Request):
         return templates.TemplateResponse(request, "resume_alignment.html")
 
+    @app.get("/history-search", response_class=HTMLResponse)
+    def history_search_page(request: Request):
+        return templates.TemplateResponse(request, "history_search.html")
+
     @app.get("/runs/{run_id}", response_class=HTMLResponse)
     def run_detail_page(run_id: str, request: Request):
         return templates.TemplateResponse(
@@ -127,6 +132,7 @@ def create_app() -> FastAPI:
     app.include_router(pushes_router)
     app.include_router(events_router)
     app.include_router(eval_router)
+    app.include_router(history_router)
 
     return app
 

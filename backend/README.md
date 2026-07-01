@@ -47,6 +47,7 @@ Included in the current codebase:
 - persisted candidate, extracted item, and structured decision records for monitor runs with snapshot fallback
 - richer eval metrics for raw-summary, browser fallback, and provider fallback trends
 - minimal HTML admin pages for topics, pushes, run detail, and events
+- minimal HTML admin pages for topics, pushes, quality, history search, run detail, and events
 - local React + Vite dashboard over existing backend APIs
 - APScheduler topic jobs that enqueue worker runs
 - Redis-backed run queue with in-memory fallback
@@ -314,6 +315,12 @@ durable source of truth. Index/search failures are recorded as run events/errors
 and do not masquerade as successful retrieval capability. This does not
 implement a vector database or external embedding pipeline.
 
+The repo now exposes a minimal operator-facing history-search workflow at
+`GET /history-search` and `GET /api/history/search`, so the query path is not
+just an internal adapter anymore. The provider boundary still stays explicit:
+`provider=none` is a truthful outcome when no OpenSearch-compatible service is
+configured.
+
 Optional semantic-dedup variables:
 
 - `SEMANTIC_DEDUP_PROVIDER=none` keeps the default exact dedup behavior.
@@ -482,6 +489,7 @@ configuration.
 - `GET /api/monitor/runs/{run_id}`
 - `GET /api/monitor/runs/{run_id}/candidates`
 - `GET /api/monitor/runs/{run_id}/candidate-tasks`
+- `GET /api/history/search`
 - `GET /api/pushes`
 - `GET /api/topics/{topic_id}/pushes`
 - `GET /api/monitor/runs/{run_id}/events`
@@ -496,5 +504,6 @@ sections and the legacy compatibility snapshot mirrors.
 - `GET /`
 - `GET /pushes`
 - `GET /quality`
+- `GET /history-search`
 - `GET /runs/{run_id}`
 - `GET /runs/{run_id}/events`

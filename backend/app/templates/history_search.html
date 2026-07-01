@@ -1,0 +1,91 @@
+{% extends "base.html" %}
+{% block title %}History Search | Industry News Agent{% endblock %}
+{% block content %}
+<section class="section-card">
+  <h2>History Search</h2>
+  <p>
+    This page turns the existing candidate-history retrieval adapter into a minimal
+    operator-visible workflow. It searches the derived candidate-history retrieval layer
+    and keeps the provider boundary visible in the result summary.
+  </p>
+  <p>
+    Treat this as candidate-history retrieval evidence, not as proof that a live
+    OpenSearch deployment is always configured in every environment.
+  </p>
+</section>
+
+<section class="section-card">
+  <h3>Search candidate history</h3>
+  <form id="history-search-form" class="grid two">
+    <label>
+      Query
+      <input id="history-query" name="q" type="text" value="OpenAI agent" />
+    </label>
+    <label>
+      Top K
+      <input id="history-top-k" name="top_k" type="number" min="1" max="20" value="5" />
+    </label>
+    <label>
+      Exclude run id
+      <input id="history-exclude-run-id" name="exclude_run_id" type="text" value="" />
+    </label>
+    <div class="stat">
+      <strong>Readback note</strong>
+      <p>Results are shown exactly as the history-search API returns them.</p>
+      <button id="history-search-submit" type="submit">Search history</button>
+    </div>
+  </form>
+</section>
+
+<section class="section-card">
+  <h3>Search summary</h3>
+  <p id="history-search-summary">No search executed yet.</p>
+  <pre id="history-search-json"><code>{}</code></pre>
+</section>
+
+<script>
+  const form = document.getElementById("history-search-form");
+  const summaryElement = document.getElementById("history-search-summary");
+  const jsonElement = document.getElementById("history-search-json");
+
+  const renderResult = (payload) => {
+    summaryElement.textContent =
+      `Provider ${payload.provider}; query "${payload.query}"; top_k ${payload.top_k}; results ${payload.items.length}.`;
+    jsonElement.textContent = JSON.stringify(payload, null, 2);
+  };
+
+  const renderError = (message) => {
+    summaryElement.textContent = message;
+    jsonElement.textContent = JSON.stringify({ error: message }, null, 2);
+  };
+
+  form.addEventListener("submit", (event) => {
+    event.preventDefault();
+    const query = document.getElementById("history-query").value.trim();
+    const topK = document.getElementById("history-top-k").value.trim() || "5";
+    const excludeRunId = document.getElementById("history-exclude-run-id").value.trim();
+
+    if (!query) {
+      renderError("Query is required.");
+      return;
+    }
+
+    const params = new URLSearchParams({ q: query, top_k: topK });
+    if (excludeRunId) {
+      params.set("exclude_run_id", excludeRunId);
+    }
+
+    fetch(`/api/history/search?${params.toString()}`)
+      .then((response) => {
+        if (!response.ok) {
+          throw new Error("history search unavailable");
+        }
+        return response.json();
+      })
+      .then(renderResult)
+      .catch(() => {
+        renderError("History search unavailable.");
+      });
+  });
+</script>
+{% endblock %}

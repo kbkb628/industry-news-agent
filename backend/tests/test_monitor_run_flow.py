@@ -4977,6 +4977,87 @@ def test_run_detail_api_surfaces_retry_state_from_short_lived_coordination() -> 
     }
 
 
+def test_history_search_api_returns_provider_results_from_history_index() -> None:
+    from app.api.history import get_history_index
+
+    class RecordingHistoryIndex:
+        def __init__(self) -> None:
+            self.calls: list[dict[str, object]] = []
+
+        def index_candidates(self, candidates: list[dict[str, object]]) -> dict[str, object]:
+            return {"indexed_count": len(candidates), "provider": "opensearch"}
+
+        def search_candidates(
+            self,
+            query: str,
+            top_k: int = 5,
+            *,
+            exclude_run_id: str | None = None,
+            exclude_candidate_ids: list[str] | None = None,
+        ) -> dict[str, object]:
+            self.calls.append(
+                {
+                    "query": query,
+                    "top_k": top_k,
+                    "exclude_run_id": exclude_run_id,
+                    "exclude_candidate_ids": exclude_candidate_ids,
+                }
+            )
+            return {
+                "provider": "opensearch",
+                "query": query,
+                "items": [
+                    {
+                        "candidate_id": "cand_hist_001",
+                        "run_id": "run_hist_001",
+                        "topic_id": "topic_ai",
+                        "title": "OpenAI agent update",
+                        "url": "https://example.com/agent-update",
+                        "decision_reason": "Matches prior pushed candidate.",
+                    }
+                ],
+            }
+
+    app = create_app()
+    history_index = RecordingHistoryIndex()
+    app.dependency_overrides[get_history_index] = lambda: history_index
+    with TestClient(app) as client:
+        response = client.get(
+            "/api/history/search",
+            params={
+                "q": "OpenAI agent",
+                "top_k": 3,
+                "exclude_run_id": "run_001",
+            },
+        )
+
+    assert response.status_code == 200
+    assert response.json() == {
+        "provider": "opensearch",
+        "query": "OpenAI agent",
+        "top_k": 3,
+        "exclude_run_id": "run_001",
+        "items": [
+            {
+                "candidate_id": "cand_hist_001",
+                "run_id": "run_hist_001",
+                "topic_id": "topic_ai",
+                "title": "OpenAI agent update",
+                "url": "https://example.com/agent-update",
+                "decision_reason": "Matches prior pushed candidate.",
+            }
+        ],
+    }
+    assert history_index.calls == [
+        {
+            "query": "OpenAI agent",
+            "top_k": 3,
+            "exclude_run_id": "run_001",
+            "exclude_candidate_ids": None,
+        }
+    ]
+
+
 def test_worker_acknowledges_queue_message_after_successful_completion(
     monkeypatch,
 ) -> None:
