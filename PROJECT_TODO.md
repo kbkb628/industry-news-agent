@@ -39,3 +39,4 @@
 - close remaining resume wording gaps across tool-access contract, provider boundaries, proxy metrics, and concurrency wording
 - expose queryable candidate-history search via API and minimal HTML page
 - resume-gap closure plan execution completed
+- gateway-owned unified tool-access contract slice completed

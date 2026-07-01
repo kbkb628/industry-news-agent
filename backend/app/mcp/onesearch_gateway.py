@@ -130,3 +130,11 @@ class OneSearchMCPGateway(ToolGateway):
                 topic=dict(kwargs["topic"]),
             )
         return self.fallback_gateway.call(tool_name, **kwargs)
+
+    def describe_tool_access(self) -> dict[str, Any]:
+        contract = self.fallback_gateway.describe_tool_access()
+        contract["search"] = {
+            "provider_path": "mcp_gateway",
+            "tool_name": "search_news",
+        }
+        return contract

@@ -207,6 +207,9 @@ agent with:
 - Evidence:
   - `integration_runtime.tool_access.contract` is now a stable
     `unified_tool_gateway` read surface
+  - the `tool_access` summary is now sourced from the gateway layer itself via
+    `ToolGateway.describe_tool_access()`, so the unified contract is backed by
+    the real execution entry point rather than only by settings-time inference
   - search, browser, and notification each expose both `tool_name` and
     `provider_path`
   - run-detail HTML and dashboard surfaces also expose notification runtime

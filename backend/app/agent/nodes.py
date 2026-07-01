@@ -1116,6 +1116,7 @@ def candidate_task_orchestrator_node(
 def supervisor_finalize_node(
     state: dict[str, Any],
     run_repository: MonitorRunRepositoryProtocol | None = None,
+    gateway: ToolGateway | None = None,
     settings: Settings | None = None,
     history_index_http_client: Any | None = None,
 ) -> dict[str, Any]:
@@ -1165,6 +1166,7 @@ def supervisor_finalize_node(
     if not integration_runtime:
         integration_runtime = build_integration_runtime(
             settings=settings,
+            gateway=gateway,
             tool_results=list(state.get("tool_results", [])),
             fetched_contents=list(state.get("fetched_contents", [])),
         )

@@ -3434,6 +3434,55 @@ def test_build_monitor_graph_degrades_to_local_gateway_when_onesearch_config_is_
     assert isinstance(gateway, LocalToolGateway)
 
 
+def test_local_tool_gateway_describe_tool_access_reports_unified_contract() -> None:
+    gateway = LocalToolGateway()
+
+    assert gateway.describe_tool_access() == {
+        "contract": "unified_tool_gateway",
+        "search": {
+            "provider_path": "tool_gateway",
+            "tool_name": "search_news",
+        },
+        "browser": {
+            "provider_path": "tool_gateway",
+            "tool_name": "fetch_article_content",
+        },
+        "notification": {
+            "provider_path": "tool_gateway",
+            "tool_name": "notification_send",
+        },
+    }
+
+
+def test_onesearch_gateway_describe_tool_access_only_overrides_search_provider_path() -> None:
+    from app.mcp.onesearch_gateway import OneSearchMCPGateway
+
+    fallback_gateway = LocalToolGateway()
+    gateway = OneSearchMCPGateway(
+        base_url="http://localhost:8090",
+        fallback_gateway=fallback_gateway,
+        http_client=object(),
+        timeout_seconds=3.0,
+        max_results=5,
+    )
+
+    assert gateway.describe_tool_access() == {
+        "contract": "unified_tool_gateway",
+        "search": {
+            "provider_path": "mcp_gateway",
+            "tool_name": "search_news",
+        },
+        "browser": {
+            "provider_path": "tool_gateway",
+            "tool_name": "fetch_article_content",
+        },
+        "notification": {
+            "provider_path": "tool_gateway",
+            "tool_name": "notification_send",
+        },
+    }
+
+
 def test_build_integration_runtime_reports_enabled_mcp_and_browser_config() -> None:
     settings = Settings(
         database_url="postgresql+psycopg://user:pass@localhost:5432/news_agent",
@@ -3684,6 +3733,26 @@ def test_build_integration_runtime_reports_unified_tool_contract_even_when_only_
     assert runtime["tool_access"]["search"]["provider_path"] == "mcp_gateway"
     assert runtime["tool_access"]["browser"]["provider_path"] == "tool_gateway"
     assert runtime["tool_access"]["notification"]["provider_path"] == "tool_gateway"
+
+
+def test_build_integration_runtime_prefers_gateway_owned_tool_access_contract() -> None:
+    settings = Settings(
+        database_url="postgresql+psycopg://user:pass@localhost:5432/news_agent",
+        redis_url="redis://localhost:6379/0",
+        mcp_gateway_provider="onesearch",
+        onesearch_base_url="http://localhost:8090",
+    )
+    gateway = LocalToolGateway()
+
+    runtime = build_integration_runtime(
+        settings=settings,
+        gateway=gateway,
+        tool_results=[],
+        fetched_contents=[],
+    )
+
+    assert runtime["tool_access"] == gateway.describe_tool_access()
+    assert runtime["tool_access"]["search"]["provider_path"] == "tool_gateway"
 
 
 def test_build_integration_runtime_reports_browser_attempt_and_allowed_domain_governance() -> None:

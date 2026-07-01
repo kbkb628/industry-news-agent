@@ -3,6 +3,7 @@ from __future__ import annotations
 from typing import Any
 
 from app.core.config import Settings
+from app.mcp.gateway import ToolGateway
 
 
 def _build_tool_access_summary(settings: Settings | None) -> dict[str, Any]:
@@ -33,6 +34,7 @@ def _build_tool_access_summary(settings: Settings | None) -> dict[str, Any]:
 def build_integration_runtime(
     *,
     settings: Settings | None,
+    gateway: ToolGateway | None = None,
     tool_results: list[dict[str, Any]],
     fetched_contents: list[dict[str, Any]],
 ) -> dict[str, dict[str, Any]]:
@@ -174,5 +176,9 @@ def build_integration_runtime(
             "fallback_used": False,
             "failure_code": notification_failure_code,
         },
-        "tool_access": _build_tool_access_summary(settings),
+        "tool_access": (
+            gateway.describe_tool_access()
+            if gateway is not None
+            else _build_tool_access_summary(settings)
+        ),
     }

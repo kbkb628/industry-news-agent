@@ -1,12 +1,23 @@
 from __future__ import annotations
 
-from app.mcp.gateway import ToolCallable, ToolGateway
+from typing import Any
+
+from app.mcp.gateway import (
+    ToolCallable,
+    ToolGateway,
+    build_unified_tool_access_contract,
+)
 from app.tools.responses import ToolResponse
 
 
 class LocalToolGateway(ToolGateway):
-    def __init__(self) -> None:
+    def __init__(self, *, tool_access_contract: dict[str, Any] | None = None) -> None:
         self._handlers: dict[str, ToolCallable] = {}
+        self._tool_access_contract = (
+            build_unified_tool_access_contract()
+            if tool_access_contract is None
+            else dict(tool_access_contract)
+        )
 
     def register(self, tool_name: str, handler: ToolCallable) -> None:
         if tool_name in self._handlers:
@@ -45,3 +56,9 @@ class LocalToolGateway(ToolGateway):
             )
 
         return result
+
+    def describe_tool_access(self) -> dict[str, Any]:
+        return {
+            key: dict(value) if isinstance(value, dict) else value
+            for key, value in self._tool_access_contract.items()
+        }

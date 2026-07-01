@@ -173,6 +173,7 @@ def _run_supervisor_finalize_stage(
     )
     state["integration_runtime"] = build_integration_runtime(
         settings=settings,
+        gateway=gateway,
         tool_results=list(state.get("tool_results", [])),
         fetched_contents=list(
             dict(state.get("extraction_output", {})).get(
@@ -184,6 +185,7 @@ def _run_supervisor_finalize_stage(
     state = supervisor_finalize_node(
         state,
         run_repository=run_repository,
+        gateway=gateway,
         settings=settings,
         history_index_http_client=history_index_http_client,
     )
