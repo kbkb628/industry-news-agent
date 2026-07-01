@@ -162,6 +162,12 @@ describe("App", () => {
               fallback_used: true,
               allowed_domains: ["example.com"],
             },
+            notification: {
+              configured_provider: "webhook",
+              enabled: true,
+              used_in_run: true,
+              delivery_succeeded: true,
+            },
             tool_access: {
               contract: "unified_tool_gateway",
               search: {
@@ -317,6 +323,9 @@ describe("App", () => {
     ).toBeInTheDocument();
     expect(screen.getByText(/MCP runtime/i)).toBeInTheDocument();
     expect(screen.getByText(/Browser fallback runtime/i)).toBeInTheDocument();
+    expect(screen.getByText(/Notification runtime/i)).toBeInTheDocument();
+    expect(screen.getByText(/Configured provider webhook/i)).toBeInTheDocument();
+    expect(screen.getByText(/Enabled yes \| used in run yes \| delivery succeeded yes/i)).toBeInTheDocument();
     expect(screen.getByText(/Tool access contract/i)).toBeInTheDocument();
     expect(screen.getByText(/History index runtime/i)).toBeInTheDocument();
     expect(screen.getByText(/Provider opensearch/i)).toBeInTheDocument();

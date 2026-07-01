@@ -565,6 +565,28 @@ export default function App() {
                   </p>
                 </article>
                 <article className="row-card">
+                  <h3>Notification runtime</h3>
+                  <p>
+                    Configured provider{" "}
+                    {run.data.integration_runtime?.notification?.configured_provider ??
+                      "-"}
+                  </p>
+                  <p>
+                    Enabled{" "}
+                    {runtimeFlagLabel(
+                      run.data.integration_runtime?.notification?.enabled,
+                    )}{" "}
+                    | used in run{" "}
+                    {runtimeFlagLabel(
+                      run.data.integration_runtime?.notification?.used_in_run,
+                    )}{" "}
+                    | delivery succeeded{" "}
+                    {runtimeFlagLabel(
+                      run.data.integration_runtime?.notification?.delivery_succeeded,
+                    )}
+                  </p>
+                </article>
+                <article className="row-card">
                   <h3>Tool access contract</h3>
                   <p>
                     Contract{" "}

@@ -161,6 +161,11 @@
       <p id="tool-access-summary">Loading unified tool access evidence.</p>
       <pre id="tool-access-json"><code>Loading</code></pre>
     </article>
+    <article class="stat">
+      <strong>Notification runtime</strong>
+      <p id="notification-runtime-summary">Loading notification runtime evidence.</p>
+      <pre id="notification-runtime-json"><code>Loading</code></pre>
+    </article>
   </div>
 </section>
 
@@ -211,6 +216,15 @@
   <p>
     This remains optional by design. A truthful run may show pure HTTP fetching with no browser
     escalation, or it may show fallback evidence only for the specific candidates that needed it.
+  </p>
+</section>
+
+<section class="section-card">
+  <h3>Notification runtime</h3>
+  <p>
+    Notification runtime explains whether persisted push records also crossed the optional delivery
+    boundary in this run. It should be read as per-run delivery evidence, not as a claim of a
+    production notification queue or guaranteed downstream delivery.
   </p>
 </section>
 
@@ -302,6 +316,7 @@
       const historySearch = safeObject(historyIndex.search);
       const mcpRuntime = safeObject(payload.integration_runtime?.mcp);
       const browserRuntime = safeObject(payload.integration_runtime?.browser);
+      const notificationRuntime = safeObject(payload.integration_runtime?.notification);
       const toolAccess = safeObject(payload.integration_runtime?.tool_access);
 
       setSummary(
@@ -349,6 +364,10 @@
         `Configured provider: ${browserRuntime.configured_provider ?? "-"}; used in run: ${browserRuntime.used_in_run ?? false}; fallback used: ${browserRuntime.fallback_used ?? false}.`,
       );
       setSummary(
+        "notification-runtime-summary",
+        `Configured provider: ${notificationRuntime.configured_provider ?? "-"}; used in run: ${notificationRuntime.used_in_run ?? false}; delivery succeeded: ${notificationRuntime.delivery_succeeded ?? false}.`,
+      );
+      setSummary(
         "tool-access-summary",
         `Contract: ${toolAccess.contract ?? "-"}; search tool ${toolAccess.search?.tool_name ?? "-"} via ${toolAccess.search?.provider_path ?? "-"}; browser tool ${toolAccess.browser?.tool_name ?? "-"} via ${toolAccess.browser?.provider_path ?? "-"}; notification tool ${toolAccess.notification?.tool_name ?? "-"} via ${toolAccess.notification?.provider_path ?? "-"}.`,
       );
@@ -364,6 +383,7 @@
       setCodeBlock("history-index-json", historyIndex);
       setCodeBlock("mcp-runtime-json", mcpRuntime);
       setCodeBlock("browser-runtime-json", browserRuntime);
+      setCodeBlock("notification-runtime-json", notificationRuntime);
       setCodeBlock("tool-access-json", toolAccess);
       setMirrorChecks(payload);
     })
@@ -379,6 +399,7 @@
       setSummary("history-index-summary", "Run detail API unavailable.");
       setSummary("mcp-runtime-summary", "Run detail API unavailable.");
       setSummary("browser-runtime-summary", "Run detail API unavailable.");
+      setSummary("notification-runtime-summary", "Run detail API unavailable.");
       setSummary("tool-access-summary", "Run detail API unavailable.");
       setCodeBlock("planner-json", { error: "run detail unavailable" });
       setCodeBlock("retrieval-json", { error: "run detail unavailable" });
@@ -391,6 +412,7 @@
       setCodeBlock("history-index-json", { error: "run detail unavailable" });
       setCodeBlock("mcp-runtime-json", { error: "run detail unavailable" });
       setCodeBlock("browser-runtime-json", { error: "run detail unavailable" });
+      setCodeBlock("notification-runtime-json", { error: "run detail unavailable" });
       setCodeBlock("tool-access-json", { error: "run detail unavailable" });
       setCodeBlock("candidate-task-runtime-json", { error: "candidate task evidence unavailable" });
       document.getElementById("mirror-checks").innerHTML = "<li>Mirror checks unavailable.</li>";

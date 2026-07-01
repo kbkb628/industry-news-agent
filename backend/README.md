@@ -328,6 +328,10 @@ run-level grounding evidence, and evaluation-time guidance metrics are shown
 alongside it so the planner/scoring effect chain is visible without reading raw
 JSON only.
 
+The same run-detail read surfaces now also summarize
+`integration_runtime.notification` directly, so notification delivery no longer
+stays implicit behind tool-access or event-only readback.
+
 Optional semantic-dedup variables:
 
 - `SEMANTIC_DEDUP_PROVIDER=none` keeps the default exact dedup behavior.

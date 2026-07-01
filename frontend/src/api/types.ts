@@ -102,6 +102,12 @@ export type MonitorRun = {
       fallback_used?: boolean;
       allowed_domains?: string[];
     };
+    notification?: {
+      configured_provider?: string;
+      enabled?: boolean;
+      used_in_run?: boolean;
+      delivery_succeeded?: boolean;
+    };
     tool_access?: {
       contract?: string;
       search?: {

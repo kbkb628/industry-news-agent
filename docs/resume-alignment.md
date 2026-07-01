@@ -208,6 +208,9 @@ agent with:
     `unified_tool_gateway` read surface
   - search, browser, and notification each expose both `tool_name` and
     `provider_path`
+  - run-detail HTML and dashboard surfaces also expose notification runtime
+    separately from the tool-access summary, so delivery-path evidence is not
+    hidden behind the generic contract section
   - the dashboard and HTML run detail page show the contract separately from
     the actual provider path used by that capability
 - API / pages:

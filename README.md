@@ -94,6 +94,7 @@ Implemented now:
 - real compatibility-preserving multi-agent contracts
 - real unified tool-access contract readback for search, browser, and
   notification with per-capability provider-path evidence
+- explicit notification runtime readback beside MCP/browser/history evidence on run detail surfaces
 
 Optional integration boundaries already reserved in code:
 

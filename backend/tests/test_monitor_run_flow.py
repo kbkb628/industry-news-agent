@@ -3669,6 +3669,7 @@ def test_static_run_pages_describe_runtime_evidence_sections() -> None:
     assert run_detail_response.status_code == 200
     assert "MCP runtime" in run_detail_response.text
     assert "Browser fallback runtime" in run_detail_response.text
+    assert "Notification runtime" in run_detail_response.text
     assert "structured stage evidence" in run_detail_response.text
     assert 'id="structured-run-surface"' in run_detail_response.text
     assert "const runEndpoint = `/api/monitor/runs/${runId}`;" in run_detail_response.text
