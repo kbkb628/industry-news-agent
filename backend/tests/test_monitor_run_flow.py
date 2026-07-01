@@ -914,7 +914,7 @@ def test_monitor_graph_runs_to_completion() -> None:
     )
     assert "keyword" in result["business_context"]["retrievers"]
     assert "bm25" in result["business_context"]["retrievers"]
-    assert "embedding_like" in result["business_context"]["retrievers"]
+    assert "embedding" in result["business_context"]["retrievers"]
     assert all(
         "retrievers" in document and "rerank_score" in document
         for document in result["business_context"]["documents"]
@@ -938,7 +938,7 @@ def test_monitor_graph_planner_agent_merges_semantic_memory_into_planner_output(
         return {
             "documents": [{"doc_id": "kb_semantic"}],
             "retrieval_mode": "hybrid_keyword_bm25_embedding_rerank",
-            "retrievers": ["keyword", "bm25", "embedding_like"],
+            "retrievers": ["keyword", "bm25", "embedding"],
             "semantic_memory": {
                 "topic_keywords": ["MCP", "LangGraph"],
                 "trusted_source_hints": ["github.com"],

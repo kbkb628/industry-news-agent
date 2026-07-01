@@ -180,6 +180,16 @@ Not claimed by the current implementation:
 - production deployment hardening
 - production frontend deployment, authentication, or authorization
 
+The knowledge-base RAG path now uses three local retrieval signals:
+
+- keyword overlap
+- BM25 full-text scoring
+- local hashed embedding similarity with canonical alias normalization and rerank
+
+This is a real local embedding retrieval path inside the current process, but it
+is still intentionally scoped: it does not claim an external embedding service,
+vector database, or production embedding indexing pipeline.
+
 ## Environment
 
 Runtime dependencies:

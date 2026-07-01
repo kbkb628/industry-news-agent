@@ -77,6 +77,7 @@ def build_monitor_graph(
         lambda state: _run_planner_stage(
             state,
             llm=resolved_llm,
+            settings=settings,
         ),
     )
     graph.add_node(
@@ -117,8 +118,9 @@ def _run_planner_stage(
     state: dict[str, Any],
     *,
     llm: BaseLLMClient,
+    settings: Settings | None = None,
 ) -> dict[str, Any]:
-    retrieve_business_context_node(state)
+    retrieve_business_context_node(state, settings=settings)
     state["expanded_queries"] = llm.expand_keywords(
         topic_name=str(state["topic"]["name"]),
         seed_keywords=state.get("seed_keywords", []),

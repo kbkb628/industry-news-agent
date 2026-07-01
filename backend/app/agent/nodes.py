@@ -173,7 +173,10 @@ def supervisor_bootstrap_node(
     return state
 
 
-def retrieve_business_context_node(state: dict[str, Any]) -> dict[str, Any]:
+def retrieve_business_context_node(
+    state: dict[str, Any],
+    settings: Settings | None = None,
+) -> dict[str, Any]:
     query = " ".join(
         [
             str(state["topic"].get("name", "")),
@@ -184,6 +187,7 @@ def retrieve_business_context_node(state: dict[str, Any]) -> dict[str, Any]:
         load_knowledge_base(),
         query,
         top_k=3,
+        settings=settings,
     )
     if state.get("business_memory"):
         state["business_memory"]["business_context"] = dict(state["business_context"])

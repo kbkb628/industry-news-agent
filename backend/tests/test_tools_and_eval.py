@@ -131,6 +131,22 @@ def test_settings_accept_history_index_provider_values() -> None:
     assert settings.opensearch_timeout_seconds == 4.0
 
 
+def test_settings_accept_local_embedding_values() -> None:
+    settings = Settings(
+        database_url="postgresql+psycopg://user:pass@localhost:5432/news_agent",
+        redis_url="redis://localhost:6379/0",
+        local_embedding_dimensions=192,
+        local_embedding_char_ngram_min=2,
+        local_embedding_char_ngram_max=4,
+        local_embedding_min_score=0.14,
+    )
+
+    assert settings.local_embedding_dimensions == 192
+    assert settings.local_embedding_char_ngram_min == 2
+    assert settings.local_embedding_char_ngram_max == 4
+    assert settings.local_embedding_min_score == 0.14
+
+
 def test_settings_accept_semantic_dedup_values() -> None:
     settings = Settings(
         database_url="postgresql+psycopg://user:pass@localhost:5432/news_agent",
@@ -2293,7 +2309,7 @@ def test_bm25_retriever_ranks_term_frequency_with_length_normalization() -> None
     assert all(result.metadata["retriever"] == "bm25" for result in results)
 
 
-def test_local_vector_retriever_uses_cosine_similarity_over_document_terms() -> None:
+def test_local_vector_retriever_uses_embedding_similarity_over_document_terms() -> None:
     documents = [
         KnowledgeDocument(
             doc_id="kb_source_quality",
@@ -2325,7 +2341,33 @@ def test_local_vector_retriever_uses_cosine_similarity_over_document_terms() -> 
         "kb_scoring",
     ]
     assert results[0].score > results[1].score
-    assert all(result.metadata["retriever"] == "embedding_like" for result in results)
+    assert all(result.metadata["retriever"] == "embedding" for result in results)
+
+
+def test_local_vector_retriever_matches_semantic_alias_without_token_overlap() -> None:
+    documents = [
+        KnowledgeDocument(
+            doc_id="kb_mcp_runtime",
+            title="MCP runtime integration",
+            content=(
+                "A model context protocol gateway unifies external tool access "
+                "for agent workflows."
+            ),
+            keywords=["model context protocol", "gateway", "tool access"],
+        ),
+        KnowledgeDocument(
+            doc_id="kb_schedule",
+            title="Scheduler governance",
+            content="Cron scheduling coordinates worker dispatch and retry windows.",
+            keywords=["scheduler", "retry"],
+        ),
+    ]
+
+    results = LocalVectorRetriever(documents).retrieve("mcp", top_k=2)
+
+    assert [result.document.doc_id for result in results] == ["kb_mcp_runtime"]
+    assert results[0].score > 0
+    assert results[0].metadata["retriever"] == "embedding"
 
 
 def test_hybrid_retriever_returns_reranked_multi_route_context() -> None:
@@ -2351,10 +2393,10 @@ def test_hybrid_retriever_returns_reranked_multi_route_context() -> None:
     )
 
     assert context["retrieval_mode"] == "hybrid_keyword_bm25_embedding_rerank"
-    assert context["retrievers"] == ["keyword", "bm25", "embedding_like"]
+    assert context["retrievers"] == ["keyword", "bm25", "embedding"]
     assert context["documents"][0]["doc_id"] == "kb_source_quality"
     assert context["documents"][0]["rerank_score"] >= context["documents"][1]["rerank_score"]
-    assert "embedding_like" in context["documents"][0]["scores"]
+    assert "embedding" in context["documents"][0]["scores"]
 
 
 def test_build_semantic_memory_deduplicates_case_folded_metadata_and_titles() -> None:
