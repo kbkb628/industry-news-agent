@@ -715,6 +715,23 @@ export default function App() {
                         ?.fallback_used,
                     )}
                   </p>
+                  {(
+                    run.data.integration_runtime?.tool_access?.calls ?? []
+                  ).length > 0 && (
+                    <div>
+                      {(run.data.integration_runtime?.tool_access?.calls ?? []).map(
+                        (call, index) => (
+                          <p key={`${call.capability ?? "call"}-${index}`}>
+                            {call.capability ?? "-"} via {call.provider_path ?? "-"}
+                            {" | "}provider {call.provider ?? "-"}
+                            {" | "}success {runtimeFlagLabel(call.success)}
+                            {" | "}fallback {runtimeFlagLabel(call.fallback_used)}
+                            {" | "}error {call.error_code ?? "-"}
+                          </p>
+                        ),
+                      )}
+                    </div>
+                  )}
                 </article>
               </div>
               <article className="row-card">

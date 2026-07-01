@@ -94,6 +94,9 @@ Implemented now:
 - real compatibility-preserving multi-agent contracts
 - real unified tool-access contract readback for search, browser, and
   notification with per-capability provider-path evidence
+- gateway-stamped unified access call-ledger evidence so the run can show
+  real per-call search/browser/notification access records under the same
+  contract
 - explicit notification runtime readback beside MCP/browser/history evidence on run detail surfaces
 - explicit browser-attempt and notification-delivery governance readback on dashboard run detail surfaces
 

@@ -40,3 +40,4 @@
 - expose queryable candidate-history search via API and minimal HTML page
 - resume-gap closure plan execution completed
 - gateway-owned unified tool-access contract slice completed
+- gateway-stamped unified access call-ledger slice completed

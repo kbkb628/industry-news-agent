@@ -183,6 +183,35 @@ describe("App", () => {
             },
             tool_access: {
               contract: "unified_tool_gateway",
+              calls: [
+                {
+                  capability: "search",
+                  tool_name: "search_news",
+                  provider_path: "mcp_gateway",
+                  provider: "onesearch_mcp",
+                  success: true,
+                  fallback_used: true,
+                  error_code: null,
+                },
+                {
+                  capability: "browser",
+                  tool_name: "fetch_article_content",
+                  provider_path: "tool_gateway",
+                  provider: "playwright_mcp",
+                  success: true,
+                  fallback_used: true,
+                  error_code: null,
+                },
+                {
+                  capability: "notification",
+                  tool_name: "notification_send",
+                  provider_path: "tool_gateway",
+                  provider: "webhook",
+                  success: true,
+                  fallback_used: false,
+                  error_code: null,
+                },
+              ],
               search: {
                 provider_path: "mcp_gateway",
                 tool_name: "search_news",
@@ -396,6 +425,9 @@ describe("App", () => {
         /Notification calls 1 \| success 1 \| failed 0 \| used yes \| fallback no/i,
       ),
     ).toBeInTheDocument();
+    expect(screen.getByText(/search via mcp_gateway/i)).toBeInTheDocument();
+    expect(screen.getByText(/browser via tool_gateway/i)).toBeInTheDocument();
+    expect(screen.getByText(/notification via tool_gateway/i)).toBeInTheDocument();
     expect(
       screen.getAllByText(/Trusted-source guidance favored feed-first planning./i)
         .length,

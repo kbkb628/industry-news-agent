@@ -541,6 +541,35 @@ def test_supervisor_finalize_adds_integration_runtime_summary_to_snapshot() -> N
             "failure_count": 0,
             "fallback_used": False,
         },
+        "calls": [
+            {
+                "capability": "search",
+                "tool_name": "search_news",
+                "provider_path": "mcp_gateway",
+                "provider": "onesearch_mcp",
+                "success": True,
+                "fallback_used": True,
+                "error_code": None,
+            },
+            {
+                "capability": "fetch_article_content" and "browser",
+                "tool_name": "fetch_article_content",
+                "provider_path": "tool_gateway",
+                "provider": "playwright_mcp",
+                "success": True,
+                "fallback_used": True,
+                "error_code": None,
+            },
+            {
+                "capability": "notification",
+                "tool_name": "notification_send",
+                "provider_path": "tool_gateway",
+                "provider": "webhook",
+                "success": True,
+                "fallback_used": False,
+                "error_code": None,
+            },
+        ],
     }
 
 
@@ -3699,6 +3728,8 @@ def test_static_run_pages_describe_runtime_evidence_sections() -> None:
     assert "browser-tool-access-summary" in run_detail_response.text
     assert "notification-tool-access-summary" in run_detail_response.text
     assert "Tool access runtime" in run_detail_response.text
+    assert "Unified access call ledger" in run_detail_response.text
+    assert "tool-access-calls-summary" in run_detail_response.text
     assert "Selected tool path" in run_detail_response.text
     assert "Base URL configured" in run_detail_response.text
     assert "structured stage evidence" in run_detail_response.text
@@ -3716,6 +3747,7 @@ def test_static_run_pages_describe_runtime_evidence_sections() -> None:
     assert "Candidate task runtime details" in run_detail_response.text
     assert resume_alignment_response.status_code == 200
     assert "per-run configuration/usage/degradation evidence" in resume_alignment_response.text
+    assert "gateway-stamped per-call access evidence" in resume_alignment_response.text
     assert "structured stage contracts" in resume_alignment_response.text
 
 

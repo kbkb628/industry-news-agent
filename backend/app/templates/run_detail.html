@@ -197,6 +197,11 @@
       <p id="tool-access-summary">Loading unified tool access evidence.</p>
       <pre id="tool-access-json"><code>Loading</code></pre>
     </article>
+    <article class="stat">
+      <strong>Unified access call ledger</strong>
+      <p id="tool-access-calls-summary">Loading unified access call evidence.</p>
+      <pre id="tool-access-calls-json"><code>Loading</code></pre>
+    </article>
   </div>
 </section>
 
@@ -418,6 +423,10 @@
         "tool-access-summary",
         `Contract: ${toolAccess.contract ?? "-"}; search tool ${toolAccess.search?.tool_name ?? "-"} via ${toolAccess.search?.provider_path ?? "-"}; browser tool ${toolAccess.browser?.tool_name ?? "-"} via ${toolAccess.browser?.provider_path ?? "-"}; notification tool ${toolAccess.notification?.tool_name ?? "-"} via ${toolAccess.notification?.provider_path ?? "-"}.`,
       );
+      setSummary(
+        "tool-access-calls-summary",
+        `Unified access call entries: ${safeList(toolAccess.calls).length}.`,
+      );
 
       setCodeBlock("planner-json", payload.planner_output ?? {});
       setCodeBlock("retrieval-json", payload.retrieval_output ?? {});
@@ -436,6 +445,7 @@
       setCodeBlock("notification-tool-access-json", notificationRuntime);
       setCodeBlock("tool-access-runtime-json", toolAccess);
       setCodeBlock("tool-access-json", toolAccess);
+      setCodeBlock("tool-access-calls-json", safeList(toolAccess.calls));
       setMirrorChecks(payload);
     })
     .catch(() => {
@@ -456,6 +466,7 @@
       setSummary("notification-tool-access-summary", "Run detail API unavailable.");
       setSummary("tool-access-runtime-summary", "Run detail API unavailable.");
       setSummary("tool-access-summary", "Run detail API unavailable.");
+      setSummary("tool-access-calls-summary", "Run detail API unavailable.");
       setCodeBlock("planner-json", { error: "run detail unavailable" });
       setCodeBlock("retrieval-json", { error: "run detail unavailable" });
       setCodeBlock("extraction-json", { error: "run detail unavailable" });
@@ -473,6 +484,7 @@
       setCodeBlock("notification-tool-access-json", { error: "run detail unavailable" });
       setCodeBlock("tool-access-runtime-json", { error: "run detail unavailable" });
       setCodeBlock("tool-access-json", { error: "run detail unavailable" });
+      setCodeBlock("tool-access-calls-json", { error: "run detail unavailable" });
       setCodeBlock("candidate-task-runtime-json", { error: "candidate task evidence unavailable" });
       document.getElementById("mirror-checks").innerHTML = "<li>Mirror checks unavailable.</li>";
     });

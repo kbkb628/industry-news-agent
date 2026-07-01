@@ -32,6 +32,20 @@ def build_unified_tool_access_contract(
     }
 
 
+def build_tool_access_metadata(
+    contract: dict[str, Any],
+    *,
+    capability: str,
+) -> dict[str, Any]:
+    capability_entry = dict(contract.get(capability, {}))
+    return {
+        "contract": str(contract.get("contract", "unified_tool_gateway")),
+        "capability": capability,
+        "provider_path": str(capability_entry.get("provider_path", "tool_gateway")),
+        "tool_name": str(capability_entry.get("tool_name", "")),
+    }
+
+
 class ToolGateway(ABC):
     @abstractmethod
     def register(self, tool_name: str, handler: ToolCallable) -> None:

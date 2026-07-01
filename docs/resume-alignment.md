@@ -35,7 +35,7 @@ agent with:
 - persisted run history, push decisions, candidate records, candidate task
   ledger records, and eval results
 - a unified tool-access contract read surface with visible per-capability
-  provider paths
+  provider paths plus compact per-call access evidence
 - optional provider boundaries for search, browser fetch, history indexing,
   judge scoring, and notification delivery
 
@@ -198,8 +198,11 @@ agent with:
 
 ### 7. "Unified search/browser/notification access under one contract"
 
-- Status: `partial`
+- Status: `ready`
 - Code:
+  - `backend/app/mcp/gateway.py`
+  - `backend/app/mcp/local_gateway.py`
+  - `backend/app/mcp/onesearch_gateway.py`
   - `backend/app/integrations/runtime_summary.py`
   - `backend/app/tools/registry.py`
   - `backend/app/templates/run_detail.html`
@@ -212,6 +215,12 @@ agent with:
     the real execution entry point rather than only by settings-time inference
   - search, browser, and notification each expose both `tool_name` and
     `provider_path`
+  - gateway-owned `ToolResponse.metadata.access` now stamps the same unified
+    contract at call time for search, browser, and notification, so the runtime
+    evidence is not limited to a display-only summary layer
+  - `integration_runtime.tool_access.calls` exposes a compact per-call access
+    ledger with capability, provider path, provider, success/failure, fallback,
+    and error-code evidence for the actual run
   - run-detail HTML and dashboard surfaces also expose notification runtime
     separately from the tool-access summary, so delivery-path evidence is not
     hidden behind the generic contract section
@@ -219,7 +228,8 @@ agent with:
     blocked-domain counts, last browser provider, notification delivery-attempt
     state, and notification failure code for tighter degradation readback
   - the dashboard and HTML run detail page show the contract separately from
-    the actual provider path used by that capability
+    the actual provider path used by that capability, while also surfacing the
+    compact call ledger for concrete run-level readback
 - API / pages:
   - `GET /api/monitor/runs/{run_id}`
   - `GET /runs/{run_id}`
@@ -274,8 +284,8 @@ Use these phrasings when you want to stay close to the implementation:
 - "I added scheduler and worker governance so queued runs have bounded
   concurrency, retry, timeout, and active-run controls."
 - "I used a unified tool-access contract for search, browser, and notification,
-  while surfacing the actual provider path per capability so the MCP boundary
-  stays truthful."
+  while surfacing the actual provider path per capability and compact per-call
+  access evidence so the MCP boundary stays truthful."
 
 ## Partial / Boundary Claims
 

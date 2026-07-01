@@ -56,6 +56,106 @@ def _build_tool_call_evidence(
     }
 
 
+def _build_tool_access_contract_from_results(
+    tool_results: list[dict[str, Any]],
+) -> dict[str, Any] | None:
+    contract = None
+    capability_entries: dict[str, dict[str, Any]] = {}
+    for item in tool_results:
+        metadata = item.get("metadata")
+        if not isinstance(metadata, dict):
+            continue
+        access = metadata.get("access")
+        if not isinstance(access, dict):
+            continue
+        capability = access.get("capability")
+        if not isinstance(capability, str) or not capability:
+            continue
+        if contract is None and isinstance(access.get("contract"), str):
+            contract = access["contract"]
+        capability_entries[capability] = {
+            "provider_path": access.get("provider_path"),
+            "tool_name": access.get("tool_name"),
+        }
+
+    if contract is None or not capability_entries:
+        return None
+
+    result: dict[str, Any] = {"contract": contract}
+    for capability in ("search", "browser", "notification"):
+        if capability in capability_entries:
+            result[capability] = dict(capability_entries[capability])
+    return result
+
+
+def _build_tool_access_calls(
+    tool_results: list[dict[str, Any]],
+    *,
+    contract: dict[str, Any],
+) -> list[dict[str, Any]]:
+    tool_name_to_capability: dict[str, str] = {}
+    for capability in ("search", "browser", "notification"):
+        entry = contract.get(capability)
+        if isinstance(entry, dict):
+            tool_name = entry.get("tool_name")
+            if isinstance(tool_name, str) and tool_name:
+                tool_name_to_capability[tool_name] = capability
+
+    calls: list[dict[str, Any]] = []
+    for item in tool_results:
+        tool_name = item.get("tool_name")
+        if not isinstance(tool_name, str) or not tool_name:
+            continue
+
+        metadata = item.get("metadata")
+        metadata_dict = metadata if isinstance(metadata, dict) else {}
+        access = metadata_dict.get("access")
+        access_dict = access if isinstance(access, dict) else {}
+        capability = access_dict.get("capability")
+        if not isinstance(capability, str) or not capability:
+            capability = tool_name_to_capability.get(tool_name)
+        if capability not in ("search", "browser", "notification"):
+            continue
+
+        provider_path = access_dict.get("provider_path")
+        if not isinstance(provider_path, str) or not provider_path:
+            provider_path = str(
+                dict(contract.get(capability, {})).get("provider_path", "tool_gateway")
+            )
+
+        provider = None
+        if capability == "search":
+            provider = metadata_dict.get("provider")
+        elif capability == "browser":
+            provider = metadata_dict.get("browser_provider")
+        elif capability == "notification":
+            provider = metadata_dict.get("notification_provider")
+
+        error = item.get("error")
+        error_code = None
+        if isinstance(error, dict):
+            error_code = error.get("code")
+        if error_code is None:
+            error_code = item.get("error_code")
+
+        calls.append(
+            {
+                "capability": capability,
+                "tool_name": tool_name,
+                "provider_path": provider_path,
+                "provider": provider,
+                "success": item.get("success") is True,
+                "fallback_used": bool(
+                    metadata_dict.get("used_fallback") is True
+                    or metadata_dict.get("used_browser_fallback") is True
+                ),
+                "error_code": error_code,
+            }
+        )
+
+    return calls
+
+
 def _attach_tool_call_evidence(
     contract: dict[str, Any],
     *,
@@ -89,6 +189,7 @@ def _attach_tool_call_evidence(
             )
         )
         enriched[capability] = current_entry
+    enriched["calls"] = _build_tool_access_calls(tool_results, contract=enriched)
     return enriched
 
 
@@ -239,9 +340,12 @@ def build_integration_runtime(
         },
         "tool_access": _attach_tool_call_evidence(
             (
-                gateway.describe_tool_access()
-                if gateway is not None
-                else _build_tool_access_summary(settings)
+                _build_tool_access_contract_from_results(tool_results)
+                or (
+                    gateway.describe_tool_access()
+                    if gateway is not None
+                    else _build_tool_access_summary(settings)
+                )
             ),
             tool_results=tool_results,
         ),

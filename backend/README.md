@@ -71,6 +71,8 @@ Final resume-truth alignment status:
   quality-evidence claims are now all backed by implemented runtime behavior
 - `integration_runtime.tool_access` now separates the unified tool-access
   contract from the actual provider path used by each capability
+- gateway-stamped `ToolResponse.metadata.access` now gives that same unified
+  contract a real per-call evidence path for search, browser, and notification
 - the optional provider-facing pieces remain explicit integration boundaries
   whose truth depends on environment configuration, not on repository presence
 - the quality metrics exposed by `GET /api/eval/summary`, `GET /quality`, and
@@ -246,6 +248,10 @@ The same snapshot also exposes `integration_runtime.tool_access`, where
 actual `provider_path`. In the current repo, search may point at
 `mcp_gateway`, while browser and notification still report `tool_gateway`
 unless their execution model is changed in code.
+The same `tool_access` section now also includes a compact per-call ledger
+derived from gateway-stamped `ToolResponse.metadata.access`, so a reviewer can
+see that unified access is backed by actual run-level tool-call evidence
+rather than only by a static contract description.
 
 Optional search-provider variables:
 

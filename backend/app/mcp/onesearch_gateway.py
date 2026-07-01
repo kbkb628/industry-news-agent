@@ -3,7 +3,7 @@ from __future__ import annotations
 from typing import Any
 import uuid
 
-from app.mcp.gateway import ToolCallable, ToolGateway
+from app.mcp.gateway import ToolCallable, ToolGateway, build_tool_access_metadata
 from app.tools.responses import ToolResponse
 
 try:
@@ -73,6 +73,10 @@ class OneSearchMCPGateway(ToolGateway):
     def _search_news(self, *, run_id: str, topic: dict[str, Any]) -> ToolResponse:
         topic_id = str(topic["topic_id"])
         query, query_terms = self._build_query(topic)
+        access_metadata = build_tool_access_metadata(
+            self.describe_tool_access(),
+            capability="search",
+        )
         try:
             response = self._get_http_client().post(
                 f"{self.base_url}/search",
@@ -96,6 +100,7 @@ class OneSearchMCPGateway(ToolGateway):
                 summary=f"Loaded {len(candidates)} search candidate(s) from OneSearch.",
                 data={"run_id": run_id, "candidates": candidates},
                 metadata={
+                    "access": access_metadata,
                     "provider": "onesearch_mcp",
                     "query": query,
                     "query_terms": query_terms,
@@ -116,6 +121,7 @@ class OneSearchMCPGateway(ToolGateway):
                 error=fallback_response.error,
                 metadata={
                     **dict(fallback_response.metadata),
+                    "access": access_metadata,
                     "provider": "onesearch_mcp",
                     "fallback_provider": "mock_search",
                     "used_fallback": True,

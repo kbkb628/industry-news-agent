@@ -122,6 +122,15 @@ export type MonitorRun = {
     };
     tool_access?: {
       contract?: string;
+      calls?: Array<{
+        capability?: string;
+        tool_name?: string;
+        provider_path?: string;
+        provider?: string | null;
+        success?: boolean;
+        fallback_used?: boolean;
+        error_code?: string | null;
+      }>;
       search?: {
         provider_path?: string;
         tool_name?: string;
