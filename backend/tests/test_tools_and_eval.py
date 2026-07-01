@@ -3607,6 +3607,7 @@ def test_build_integration_runtime_derives_usage_and_fallback_counts_from_run_ev
         tool_results=[
             {
                 "tool_name": "search_news",
+                "success": True,
                 "metadata": {
                     "provider": "onesearch_mcp",
                     "used_fallback": True,
@@ -3616,6 +3617,7 @@ def test_build_integration_runtime_derives_usage_and_fallback_counts_from_run_ev
             },
             {
                 "tool_name": "search_news",
+                "success": True,
                 "metadata": {
                     "provider": "onesearch_mcp",
                     "used_fallback": False,
@@ -3623,8 +3625,17 @@ def test_build_integration_runtime_derives_usage_and_fallback_counts_from_run_ev
             },
             {
                 "tool_name": "rss_fetch",
+                "success": True,
                 "metadata": {
                     "provider": "rss",
+                },
+            },
+            {
+                "tool_name": "fetch_article_content",
+                "success": True,
+                "metadata": {
+                    "used_browser_fallback": True,
+                    "browser_provider": "playwright_mcp",
                 },
             },
             {
@@ -3698,14 +3709,29 @@ def test_build_integration_runtime_derives_usage_and_fallback_counts_from_run_ev
         "search": {
             "provider_path": "mcp_gateway",
             "tool_name": "search_news",
+            "used_in_run": True,
+            "tool_call_count": 2,
+            "success_count": 2,
+            "failure_count": 0,
+            "fallback_used": True,
         },
         "browser": {
             "provider_path": "tool_gateway",
             "tool_name": "fetch_article_content",
+            "used_in_run": True,
+            "tool_call_count": 1,
+            "success_count": 1,
+            "failure_count": 0,
+            "fallback_used": True,
         },
         "notification": {
             "provider_path": "tool_gateway",
             "tool_name": "notification_send",
+            "used_in_run": True,
+            "tool_call_count": 1,
+            "success_count": 1,
+            "failure_count": 0,
+            "fallback_used": False,
         },
     }
 
@@ -3733,6 +3759,9 @@ def test_build_integration_runtime_reports_unified_tool_contract_even_when_only_
     assert runtime["tool_access"]["search"]["provider_path"] == "mcp_gateway"
     assert runtime["tool_access"]["browser"]["provider_path"] == "tool_gateway"
     assert runtime["tool_access"]["notification"]["provider_path"] == "tool_gateway"
+    assert runtime["tool_access"]["search"]["used_in_run"] is False
+    assert runtime["tool_access"]["browser"]["tool_call_count"] == 0
+    assert runtime["tool_access"]["notification"]["success_count"] == 0
 
 
 def test_build_integration_runtime_prefers_gateway_owned_tool_access_contract() -> None:
@@ -3751,8 +3780,69 @@ def test_build_integration_runtime_prefers_gateway_owned_tool_access_contract() 
         fetched_contents=[],
     )
 
-    assert runtime["tool_access"] == gateway.describe_tool_access()
+    assert runtime["tool_access"]["contract"] == gateway.describe_tool_access()["contract"]
     assert runtime["tool_access"]["search"]["provider_path"] == "tool_gateway"
+    assert runtime["tool_access"]["search"]["tool_name"] == "search_news"
+    assert runtime["tool_access"]["search"]["used_in_run"] is False
+    assert runtime["tool_access"]["search"]["tool_call_count"] == 0
+
+
+def test_build_integration_runtime_adds_per_capability_call_evidence_to_gateway_contract() -> None:
+    gateway = LocalToolGateway()
+
+    runtime = build_integration_runtime(
+        settings=None,
+        gateway=gateway,
+        tool_results=[
+            {
+                "tool_name": "search_news",
+                "success": True,
+                "metadata": {"used_fallback": False},
+            },
+            {
+                "tool_name": "fetch_article_content",
+                "success": False,
+                "metadata": {"used_browser_fallback": False},
+            },
+            {
+                "tool_name": "notification_send",
+                "success": True,
+                "metadata": {"notification_provider": "none"},
+            },
+        ],
+        fetched_contents=[],
+    )
+
+    assert runtime["tool_access"] == {
+        "contract": "unified_tool_gateway",
+        "search": {
+            "provider_path": "tool_gateway",
+            "tool_name": "search_news",
+            "used_in_run": True,
+            "tool_call_count": 1,
+            "success_count": 1,
+            "failure_count": 0,
+            "fallback_used": False,
+        },
+        "browser": {
+            "provider_path": "tool_gateway",
+            "tool_name": "fetch_article_content",
+            "used_in_run": True,
+            "tool_call_count": 1,
+            "success_count": 0,
+            "failure_count": 1,
+            "fallback_used": False,
+        },
+        "notification": {
+            "provider_path": "tool_gateway",
+            "tool_name": "notification_send",
+            "used_in_run": True,
+            "tool_call_count": 1,
+            "success_count": 1,
+            "failure_count": 0,
+            "fallback_used": False,
+        },
+    }
 
 
 def test_build_integration_runtime_reports_browser_attempt_and_allowed_domain_governance() -> None:

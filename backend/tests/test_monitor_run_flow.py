@@ -475,11 +475,20 @@ def test_supervisor_finalize_adds_integration_runtime_summary_to_snapshot() -> N
         "tool_results": [
             {
                 "tool_name": "search_news",
+                "success": True,
                 "metadata": {
                     "provider": "onesearch_mcp",
                     "used_fallback": True,
                     "fallback_provider": "mock_search",
                     "fallback_reason": "onesearch unavailable",
+                },
+            },
+            {
+                "tool_name": "fetch_article_content",
+                "success": True,
+                "metadata": {
+                    "used_browser_fallback": True,
+                    "browser_provider": "playwright_mcp",
                 },
             },
             {
@@ -508,14 +517,29 @@ def test_supervisor_finalize_adds_integration_runtime_summary_to_snapshot() -> N
         "search": {
             "provider_path": "mcp_gateway",
             "tool_name": "search_news",
+            "used_in_run": True,
+            "tool_call_count": 1,
+            "success_count": 1,
+            "failure_count": 0,
+            "fallback_used": True,
         },
         "browser": {
             "provider_path": "tool_gateway",
             "tool_name": "fetch_article_content",
+            "used_in_run": True,
+            "tool_call_count": 1,
+            "success_count": 1,
+            "failure_count": 0,
+            "fallback_used": True,
         },
         "notification": {
             "provider_path": "tool_gateway",
             "tool_name": "notification_send",
+            "used_in_run": True,
+            "tool_call_count": 1,
+            "success_count": 1,
+            "failure_count": 0,
+            "fallback_used": False,
         },
     }
 

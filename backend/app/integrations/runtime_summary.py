@@ -31,6 +31,67 @@ def _build_tool_access_summary(settings: Settings | None) -> dict[str, Any]:
     }
 
 
+def _build_tool_call_evidence(
+    tool_results: list[dict[str, Any]],
+    *,
+    tool_name: str,
+    fallback_metadata_keys: tuple[str, ...] = ("used_fallback",),
+) -> dict[str, Any]:
+    matching_results = [
+        item for item in tool_results if item.get("tool_name") == tool_name
+    ]
+    success_count = sum(1 for item in matching_results if item.get("success") is True)
+    failure_count = sum(1 for item in matching_results if item.get("success") is False)
+    fallback_used = any(
+        isinstance(item.get("metadata"), dict)
+        and any(item["metadata"].get(key) is True for key in fallback_metadata_keys)
+        for item in matching_results
+    )
+    return {
+        "used_in_run": bool(matching_results),
+        "tool_call_count": len(matching_results),
+        "success_count": success_count,
+        "failure_count": failure_count,
+        "fallback_used": fallback_used,
+    }
+
+
+def _attach_tool_call_evidence(
+    contract: dict[str, Any],
+    *,
+    tool_results: list[dict[str, Any]],
+) -> dict[str, Any]:
+    enriched = {
+        key: dict(value) if isinstance(value, dict) else value
+        for key, value in contract.items()
+    }
+    capability_specs = {
+        "search": {
+            "tool_name": "search_news",
+            "fallback_metadata_keys": ("used_fallback",),
+        },
+        "browser": {
+            "tool_name": "fetch_article_content",
+            "fallback_metadata_keys": ("used_fallback", "used_browser_fallback"),
+        },
+        "notification": {
+            "tool_name": "notification_send",
+            "fallback_metadata_keys": ("used_fallback",),
+        },
+    }
+    for capability, spec in capability_specs.items():
+        current_entry = dict(enriched.get(capability, {}))
+        current_entry.update(
+            _build_tool_call_evidence(
+                tool_results,
+                tool_name=str(spec["tool_name"]),
+                fallback_metadata_keys=tuple(spec["fallback_metadata_keys"]),
+            )
+        )
+        enriched[capability] = current_entry
+    return enriched
+
+
 def build_integration_runtime(
     *,
     settings: Settings | None,
@@ -176,9 +237,12 @@ def build_integration_runtime(
             "fallback_used": False,
             "failure_code": notification_failure_code,
         },
-        "tool_access": (
-            gateway.describe_tool_access()
-            if gateway is not None
-            else _build_tool_access_summary(settings)
+        "tool_access": _attach_tool_call_evidence(
+            (
+                gateway.describe_tool_access()
+                if gateway is not None
+                else _build_tool_access_summary(settings)
+            ),
+            tool_results=tool_results,
         ),
     }

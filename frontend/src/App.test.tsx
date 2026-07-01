@@ -186,14 +186,29 @@ describe("App", () => {
               search: {
                 provider_path: "mcp_gateway",
                 tool_name: "search_news",
+                used_in_run: false,
+                tool_call_count: 1,
+                success_count: 1,
+                failure_count: 0,
+                fallback_used: true,
               },
               browser: {
                 provider_path: "tool_gateway",
                 tool_name: "fetch_article_content",
+                used_in_run: true,
+                tool_call_count: 1,
+                success_count: 1,
+                failure_count: 0,
+                fallback_used: true,
               },
               notification: {
                 provider_path: "tool_gateway",
                 tool_name: "notification_send",
+                used_in_run: true,
+                tool_call_count: 1,
+                success_count: 1,
+                failure_count: 0,
+                fallback_used: false,
               },
             },
           },
@@ -370,6 +385,17 @@ describe("App", () => {
     expect(screen.getByText(/Indexed 2 \| search results 1/i)).toBeInTheDocument();
     expect(screen.getByText(/Contract unified_tool_gateway/i)).toBeInTheDocument();
     expect(screen.getByText(/Search path mcp_gateway \| tool search_news/i)).toBeInTheDocument();
+    expect(
+      screen.getByText(/Search calls 1 \| success 1 \| failed 0 \| used no \| fallback yes/i),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByText(/Browser calls 1 \| success 1 \| failed 0 \| used yes \| fallback yes/i),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByText(
+        /Notification calls 1 \| success 1 \| failed 0 \| used yes \| fallback no/i,
+      ),
+    ).toBeInTheDocument();
     expect(
       screen.getAllByText(/Trusted-source guidance favored feed-first planning./i)
         .length,

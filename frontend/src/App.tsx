@@ -647,6 +647,22 @@ export default function App() {
                     {run.data.integration_runtime?.tool_access?.search?.tool_name ?? "-"}
                   </p>
                   <p>
+                    Search calls{" "}
+                    {run.data.integration_runtime?.tool_access?.search?.tool_call_count ?? 0}
+                    {" | "}success{" "}
+                    {run.data.integration_runtime?.tool_access?.search?.success_count ?? 0}
+                    {" | "}failed{" "}
+                    {run.data.integration_runtime?.tool_access?.search?.failure_count ?? 0}
+                    {" | "}used{" "}
+                    {runtimeFlagLabel(
+                      run.data.integration_runtime?.tool_access?.search?.used_in_run,
+                    )}
+                    {" | "}fallback{" "}
+                    {runtimeFlagLabel(
+                      run.data.integration_runtime?.tool_access?.search?.fallback_used,
+                    )}
+                  </p>
+                  <p>
                     Browser path{" "}
                     {run.data.integration_runtime?.tool_access?.browser?.provider_path ??
                       "-"}
@@ -655,12 +671,49 @@ export default function App() {
                       "-"}
                   </p>
                   <p>
+                    Browser calls{" "}
+                    {run.data.integration_runtime?.tool_access?.browser?.tool_call_count ?? 0}
+                    {" | "}success{" "}
+                    {run.data.integration_runtime?.tool_access?.browser?.success_count ?? 0}
+                    {" | "}failed{" "}
+                    {run.data.integration_runtime?.tool_access?.browser?.failure_count ?? 0}
+                    {" | "}used{" "}
+                    {runtimeFlagLabel(
+                      run.data.integration_runtime?.tool_access?.browser?.used_in_run,
+                    )}
+                    {" | "}fallback{" "}
+                    {runtimeFlagLabel(
+                      run.data.integration_runtime?.tool_access?.browser?.fallback_used,
+                    )}
+                  </p>
+                  <p>
                     Notification path{" "}
                     {run.data.integration_runtime?.tool_access?.notification
                       ?.provider_path ?? "-"}
                     {" | "}tool{" "}
                     {run.data.integration_runtime?.tool_access?.notification?.tool_name ??
                       "-"}
+                  </p>
+                  <p>
+                    Notification calls{" "}
+                    {run.data.integration_runtime?.tool_access?.notification
+                      ?.tool_call_count ?? 0}
+                    {" | "}success{" "}
+                    {run.data.integration_runtime?.tool_access?.notification
+                      ?.success_count ?? 0}
+                    {" | "}failed{" "}
+                    {run.data.integration_runtime?.tool_access?.notification
+                      ?.failure_count ?? 0}
+                    {" | "}used{" "}
+                    {runtimeFlagLabel(
+                      run.data.integration_runtime?.tool_access?.notification
+                        ?.used_in_run,
+                    )}
+                    {" | "}fallback{" "}
+                    {runtimeFlagLabel(
+                      run.data.integration_runtime?.tool_access?.notification
+                        ?.fallback_used,
+                    )}
                   </p>
                 </article>
               </div>

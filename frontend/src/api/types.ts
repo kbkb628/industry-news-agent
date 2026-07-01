@@ -125,14 +125,29 @@ export type MonitorRun = {
       search?: {
         provider_path?: string;
         tool_name?: string;
+        used_in_run?: boolean;
+        tool_call_count?: number;
+        success_count?: number;
+        failure_count?: number;
+        fallback_used?: boolean;
       };
       browser?: {
         provider_path?: string;
         tool_name?: string;
+        used_in_run?: boolean;
+        tool_call_count?: number;
+        success_count?: number;
+        failure_count?: number;
+        fallback_used?: boolean;
       };
       notification?: {
         provider_path?: string;
         tool_name?: string;
+        used_in_run?: boolean;
+        tool_call_count?: number;
+        success_count?: number;
+        failure_count?: number;
+        fallback_used?: boolean;
       };
     };
   };
