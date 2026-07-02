@@ -151,12 +151,17 @@ class LocalVectorRetriever:
                     score=score,
                     metadata={
                         "retriever": "embedding",
+                        "embedding_provider": "local",
+                        "embedding_backend": "hashed",
+                        "embedding_model": "local_hashed_char_ngram",
                         "dimensions": self.dimensions,
                         "char_ngram_min": self.char_ngram_min,
                         "char_ngram_max": self.char_ngram_max,
                         "min_score": self.min_score,
                         "embedding_score": embedding_score,
                         "overlap_score": overlap_score,
+                        "used_fallback": False,
+                        "fallback_reason": None,
                     },
                 )
             )

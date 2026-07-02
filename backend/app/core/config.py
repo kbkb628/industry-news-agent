@@ -1,7 +1,8 @@
+import os
 from pathlib import Path
 from typing import Literal
 
-from pydantic import Field
+from pydantic import Field, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 DEFAULT_PUSH_THRESHOLD = 0.72
@@ -41,6 +42,11 @@ class Settings(BaseSettings):
     opensearch_base_url: str | None = Field(default=None)
     opensearch_index_name: str = Field(default="industry-news-candidates")
     opensearch_timeout_seconds: float = Field(default=10.0)
+    embedding_provider: Literal["local", "openai_compatible"] = Field(default="local")
+    embedding_base_url: str | None = Field(default=None)
+    embedding_api_key: str | None = Field(default=None)
+    embedding_model: str = Field(default="text-embedding-v4")
+    embedding_timeout_seconds: float = Field(default=10.0, gt=0.0)
     local_embedding_dimensions: int = Field(default=256, gt=0)
     local_embedding_char_ngram_min: int = Field(default=3, gt=0)
     local_embedding_char_ngram_max: int = Field(default=5, gt=0)
@@ -53,6 +59,19 @@ class Settings(BaseSettings):
     notification_provider: str = Field(default="none")
     notification_webhook_url: str | None = Field(default=None)
     notification_timeout_seconds: float = Field(default=10.0, gt=0.0)
+
+    @model_validator(mode="after")
+    def resolve_embedding_api_key_aliases(self) -> "Settings":
+        if self.embedding_api_key:
+            return self
+
+        for alias in ("TONGYI_API_KEY", "DASHSCOPE_API_KEY"):
+            value = os.getenv(alias)
+            if value:
+                self.embedding_api_key = value
+                break
+        return self
+
 
 def get_settings() -> Settings:
     return Settings()

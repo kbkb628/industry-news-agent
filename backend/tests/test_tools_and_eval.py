@@ -19,6 +19,7 @@ from app.rag.knowledge_loader import (
     load_knowledge_base,
 )
 from app.rag.bm25_retriever import BM25Retriever
+from app.rag.external_embedding_retriever import OpenAICompatibleEmbeddingRetriever
 from app.rag.hybrid_retriever import retrieve_hybrid_context
 from app.rag.local_vector_retriever import LocalVectorRetriever
 from app.rag.semantic_memory import build_empty_semantic_memory, build_semantic_memory
@@ -145,6 +146,58 @@ def test_settings_accept_local_embedding_values() -> None:
     assert settings.local_embedding_char_ngram_min == 2
     assert settings.local_embedding_char_ngram_max == 4
     assert settings.local_embedding_min_score == 0.14
+
+
+def test_settings_accept_external_embedding_provider_values() -> None:
+    settings = Settings(
+        database_url="postgresql+psycopg://user:pass@localhost:5432/news_agent",
+        redis_url="redis://localhost:6379/0",
+        embedding_provider="openai_compatible",
+        embedding_base_url="https://dashscope.aliyuncs.com/compatible-mode/v1",
+        embedding_api_key="test-key",
+        embedding_model="text-embedding-v4",
+        embedding_timeout_seconds=4.0,
+    )
+
+    assert settings.embedding_provider == "openai_compatible"
+    assert (
+        settings.embedding_base_url
+        == "https://dashscope.aliyuncs.com/compatible-mode/v1"
+    )
+    assert settings.embedding_api_key == "test-key"
+    assert settings.embedding_model == "text-embedding-v4"
+    assert settings.embedding_timeout_seconds == 4.0
+
+
+def test_settings_resolve_embedding_api_key_from_tongyi_alias(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("TONGYI_API_KEY", "tongyi-test-key")
+
+    settings = Settings(
+        database_url="postgresql+psycopg://user:pass@localhost:5432/news_agent",
+        redis_url="redis://localhost:6379/0",
+        embedding_provider="openai_compatible",
+        embedding_base_url="https://dashscope.aliyuncs.com/compatible-mode/v1",
+    )
+
+    assert settings.embedding_api_key == "tongyi-test-key"
+
+
+def test_settings_explicit_embedding_api_key_overrides_alias_env(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("TONGYI_API_KEY", "tongyi-test-key")
+
+    settings = Settings(
+        database_url="postgresql+psycopg://user:pass@localhost:5432/news_agent",
+        redis_url="redis://localhost:6379/0",
+        embedding_provider="openai_compatible",
+        embedding_base_url="https://dashscope.aliyuncs.com/compatible-mode/v1",
+        embedding_api_key="explicit-key",
+    )
+
+    assert settings.embedding_api_key == "explicit-key"
 
 
 def test_settings_accept_semantic_dedup_values() -> None:
@@ -2443,6 +2496,77 @@ def test_local_vector_retriever_matches_semantic_alias_without_token_overlap() -
     assert results[0].metadata["retriever"] == "embedding"
 
 
+def test_external_embedding_retriever_calls_openai_compatible_embeddings() -> None:
+    documents = [
+        KnowledgeDocument(
+            doc_id="kb_001",
+            title="AI agent launch",
+            content="OpenAI launched enterprise agent tooling.",
+            keywords=["AI", "agent"],
+            metadata={},
+        )
+    ]
+
+    class FakeResponse:
+        def raise_for_status(self) -> None:
+            return None
+
+        def json(self) -> dict[str, object]:
+            return {
+                "data": [
+                    {"embedding": [0.8, 0.2]},
+                    {"embedding": [0.9, 0.1]},
+                ]
+            }
+
+    class FakeHttpClient:
+        def __init__(self) -> None:
+            self.requests: list[dict[str, object]] = []
+
+        def post(
+            self,
+            url: str,
+            headers: dict[str, str],
+            json: dict[str, object],
+            timeout: float,
+        ) -> FakeResponse:
+            self.requests.append(
+                {
+                    "url": url,
+                    "headers": headers,
+                    "json": json,
+                    "timeout": timeout,
+                }
+            )
+            return FakeResponse()
+
+    http_client = FakeHttpClient()
+    retriever = OpenAICompatibleEmbeddingRetriever(
+        documents,
+        base_url="https://dashscope.aliyuncs.com/compatible-mode/v1",
+        api_key="test-key",
+        model="text-embedding-v4",
+        timeout_seconds=4.0,
+        http_client=http_client,
+    )
+
+    results = retriever.retrieve("enterprise agent", top_k=1)
+
+    assert len(http_client.requests) == 1
+    assert (
+        http_client.requests[0]["url"]
+        == "https://dashscope.aliyuncs.com/compatible-mode/v1/embeddings"
+    )
+    assert http_client.requests[0]["timeout"] == 4.0
+    assert http_client.requests[0]["json"]["model"] == "text-embedding-v4"
+    assert len(http_client.requests[0]["json"]["input"]) == 2
+    assert results[0].document.doc_id == "kb_001"
+    assert results[0].metadata["embedding_backend"] == "openai_compatible"
+    assert results[0].metadata["embedding_provider"] == "external"
+    assert results[0].metadata["embedding_model"] == "text-embedding-v4"
+    assert results[0].metadata["used_fallback"] is False
+
+
 def test_hybrid_retriever_returns_reranked_multi_route_context() -> None:
     documents = [
         KnowledgeDocument(
@@ -2470,6 +2594,102 @@ def test_hybrid_retriever_returns_reranked_multi_route_context() -> None:
     assert context["documents"][0]["doc_id"] == "kb_source_quality"
     assert context["documents"][0]["rerank_score"] >= context["documents"][1]["rerank_score"]
     assert "embedding" in context["documents"][0]["scores"]
+
+
+def test_retrieve_hybrid_context_uses_external_embedding_provider_when_configured() -> None:
+    documents = [
+        KnowledgeDocument(
+            doc_id="kb_001",
+            title="AI agent launch",
+            content="OpenAI launched enterprise agent tooling.",
+            keywords=["AI", "agent"],
+            metadata={"topic_keywords": ["AI Agent"]},
+        )
+    ]
+
+    class FakeResponse:
+        def raise_for_status(self) -> None:
+            return None
+
+        def json(self) -> dict[str, object]:
+            return {
+                "data": [
+                    {"embedding": [0.8, 0.2]},
+                    {"embedding": [0.9, 0.1]},
+                ]
+            }
+
+    class FakeEmbeddingHttpClient:
+        def post(
+            self,
+            url: str,
+            headers: dict[str, str],
+            json: dict[str, object],
+            timeout: float,
+        ) -> FakeResponse:
+            return FakeResponse()
+
+    settings = Settings(
+        database_url="postgresql+psycopg://user:pass@localhost:5432/news_agent",
+        redis_url="redis://localhost:6379/0",
+        embedding_provider="openai_compatible",
+        embedding_base_url="https://dashscope.aliyuncs.com/compatible-mode/v1",
+        embedding_api_key="test-key",
+        embedding_model="text-embedding-v4",
+    )
+
+    context = retrieve_hybrid_context(
+        documents,
+        "enterprise agent",
+        top_k=1,
+        settings=settings,
+        embedding_http_client=FakeEmbeddingHttpClient(),
+    )
+
+    assert context["embedding_runtime"]["configured_provider"] == "openai_compatible"
+    assert context["embedding_runtime"]["effective_provider"] == "openai_compatible"
+    assert context["embedding_runtime"]["used_fallback"] is False
+    assert context["embedding_runtime"]["model"] == "text-embedding-v4"
+    assert context["documents"][0]["scores"]["embedding"] > 0
+
+
+def test_retrieve_hybrid_context_falls_back_to_local_embedding_when_provider_fails() -> None:
+    documents = [
+        KnowledgeDocument(
+            doc_id="kb_001",
+            title="AI agent launch",
+            content="OpenAI launched enterprise agent tooling.",
+            keywords=["AI", "agent"],
+            metadata={"topic_keywords": ["AI Agent"]},
+        )
+    ]
+
+    class FailingHttpClient:
+        def post(self, *args, **kwargs) -> object:
+            raise RuntimeError("provider unavailable")
+
+    settings = Settings(
+        database_url="postgresql+psycopg://user:pass@localhost:5432/news_agent",
+        redis_url="redis://localhost:6379/0",
+        embedding_provider="openai_compatible",
+        embedding_base_url="https://dashscope.aliyuncs.com/compatible-mode/v1",
+        embedding_api_key="test-key",
+        embedding_model="text-embedding-v4",
+    )
+
+    context = retrieve_hybrid_context(
+        documents,
+        "enterprise agent",
+        top_k=1,
+        settings=settings,
+        embedding_http_client=FailingHttpClient(),
+    )
+
+    assert context["embedding_runtime"]["configured_provider"] == "openai_compatible"
+    assert context["embedding_runtime"]["effective_provider"] == "local"
+    assert context["embedding_runtime"]["used_fallback"] is True
+    assert "provider unavailable" in context["embedding_runtime"]["fallback_reason"]
+    assert context["documents"][0]["scores"]["embedding"] > 0
 
 
 def test_build_semantic_memory_deduplicates_case_folded_metadata_and_titles() -> None:

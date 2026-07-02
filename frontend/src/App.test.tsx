@@ -99,6 +99,12 @@ describe("App", () => {
             business_context: {
               retrieval_mode: "hybrid",
               retrievers: ["keyword", "bm25", "embedding"],
+              embedding_runtime: {
+                configured_provider: "openai_compatible",
+                effective_provider: "openai_compatible",
+                used_fallback: false,
+                model: "text-embedding-v4",
+              },
               semantic_memory: {
                 topic_keywords: ["AI Agent", "MCP"],
                 trusted_source_hints: ["openai.com", "github.com"],
@@ -393,10 +399,14 @@ describe("App", () => {
     expect(screen.getByText(/Push history 1 \| documents 1/i)).toBeInTheDocument();
     expect(screen.getByText(/RAG grounding runtime/i)).toBeInTheDocument();
     expect(
-      screen.getByText(/Retrieval mode hybrid \| retrievers keyword, bm25, embedding/i),
+      screen.getByText(
+        /Retrieval mode hybrid \| retrievers keyword, bm25, embedding \| embedding provider openai_compatible -> openai_compatible/i,
+      ),
     ).toBeInTheDocument();
     expect(
-      screen.getByText(/Semantic keywords 2 \| trusted sources 2 \| push rules 1/i),
+      screen.getByText(
+        /Semantic keywords 2 \| trusted sources 2 \| push rules 1 \| fallback no/i,
+      ),
     ).toBeInTheDocument();
     expect(
       screen.getByText(/RAG guidance applied 1 \| trusted matches 1 \| rule hits 2/i),

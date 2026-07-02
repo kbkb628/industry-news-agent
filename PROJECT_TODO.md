@@ -5,6 +5,8 @@
 ## in_progress
 
 ## completed
+- implement external-first embedding provider path
+- spec and planning for external embedding provider
 - expose judge runtime evidence on run detail surfaces
 - align demo bootstrap read surfaces across dashboard and HTML showcase
 - expose history index runtime evidence on run detail surfaces

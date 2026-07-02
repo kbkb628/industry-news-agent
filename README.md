@@ -98,6 +98,8 @@ Implemented now:
 - gateway-stamped unified access call-ledger evidence so the run can show
   real per-call search/browser/notification access records under the same
   contract
+- external-first embedding provider support for business-context RAG with
+  explicit local fallback
 - explicit notification runtime readback beside MCP/browser/history evidence on run detail surfaces
 - explicit browser-attempt and notification-delivery governance readback on dashboard run detail surfaces
 
@@ -107,6 +109,7 @@ Optional integration boundaries already reserved in code:
 - OpenWebSearch-compatible provider path
 - Playwright-compatible browser fallback adapter boundary
 - OpenSearch-compatible history index projection boundary
+- OpenAI-compatible external embedding provider boundary
 - OpenAI-compatible eval judge provider
 - generic webhook notification delivery
 
@@ -124,15 +127,16 @@ actual runtime boundary of this codebase:
 - candidate-level task coordination is real and leaves durable task-ledger evidence
 - Redis owns short-lived queue and retry coordination while PostgreSQL remains
   the durable business store
-- RAG uses local keyword + BM25 + hashed-embedding retrieval instead of
-  embedding-like naming over token overlap alone
+- RAG uses local keyword + BM25 + embedding retrieval, with an optional
+  OpenAI-compatible external embedding path preferred when configured and an
+  explicit local hashed fallback when it is not
 - quality pages and dashboard surfaces expose persisted proxy evidence,
   including event-latency and runtime-cost proxies, rather than only aggregate
   success counters
 
 What remains intentionally scoped:
 
-- external search / browser / judge / notification providers are optional
+- external search / browser / embedding / judge / notification providers are optional
   boundaries, not guaranteed live services
 - quality metrics are proxy evidence for the local runtime, not production SLOs
 - queue and candidate-stage reliability are implemented as bounded concurrency,

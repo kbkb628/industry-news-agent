@@ -42,6 +42,14 @@ export type MonitorRun = {
     business_context?: {
       retrieval_mode?: string;
       retrievers?: string[];
+      embedding_runtime?: {
+        configured_provider?: string;
+        effective_provider?: string;
+        enabled?: boolean;
+        used_fallback?: boolean;
+        model?: string;
+        fallback_reason?: string | null;
+      };
       semantic_memory?: {
         topic_keywords?: string[];
         trusted_source_hints?: string[];

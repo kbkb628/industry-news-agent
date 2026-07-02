@@ -203,15 +203,18 @@ Not claimed by the current implementation:
 - production deployment hardening
 - production frontend deployment, authentication, or authorization
 
-The knowledge-base RAG path now uses three local retrieval signals:
+The knowledge-base RAG path now uses three retrieval signals:
 
 - keyword overlap
 - BM25 full-text scoring
-- local hashed embedding similarity with canonical alias normalization and rerank
+- embedding similarity with canonical alias normalization and rerank
 
-This is a real local embedding retrieval path inside the current process, but it
-is still intentionally scoped: it does not claim an external embedding service,
-vector database, or production embedding indexing pipeline.
+When `EMBEDDING_PROVIDER=openai_compatible` is configured with a compatible
+base URL and API key, the embedding leg prefers a real external provider call.
+When the provider is disabled or fails, the system degrades explicitly to the
+local hashed embedding retriever. This remains intentionally scoped: it does
+not claim a vector database, external persisted embedding index, or production
+embedding indexing pipeline.
 
 ## Environment
 
@@ -272,6 +275,23 @@ Optional eval judge variables:
 - `JUDGE_MODEL` defaults to `gpt-4o-mini`.
 - `JUDGE_TIMEOUT_SECONDS` defaults to `10.0`.
 
+Optional embedding-provider variables:
+
+- `EMBEDDING_PROVIDER=local` keeps the deterministic local hashed embedding path.
+- `EMBEDDING_PROVIDER=openai_compatible` enables a provider-backed embedding
+  path when `EMBEDDING_BASE_URL` and an API key are available.
+- `EMBEDDING_BASE_URL` points at an OpenAI-compatible `/embeddings` service root.
+- `EMBEDDING_API_KEY` is sent as the bearer token for the embedding provider.
+- `EMBEDDING_MODEL` defaults to `text-embedding-v4`.
+- `EMBEDDING_TIMEOUT_SECONDS` defaults to `10.0`.
+
+API key alias support:
+
+- if `EMBEDDING_API_KEY` is unset, the backend also checks `TONGYI_API_KEY`
+  and `DASHSCOPE_API_KEY`
+- this keeps the provider contract generic while still supporting the current
+  Alibaba Bailian-compatible environment
+
 Optional browser fallback variables:
 
 - `BROWSER_FETCH_PROVIDER=none` keeps browser fallback disabled.
@@ -330,7 +350,7 @@ just an internal adapter anymore. The provider boundary still stays explicit:
 `provider=none` is a truthful outcome when no OpenSearch-compatible service is
 configured.
 
-The run detail page and React dashboard also expose the local RAG path more
+The run detail page and React dashboard also expose the configured RAG path more
 directly: `business_memory.business_context.semantic_memory` is summarized as
 run-level grounding evidence, and evaluation-time guidance metrics are shown
 alongside it so the planner/scoring effect chain is visible without reading raw
@@ -390,6 +410,12 @@ JUDGE_PROVIDER=mock
 # JUDGE_PROVIDER=openai_compatible
 # JUDGE_BASE_URL=https://api.openai.com/v1
 # JUDGE_API_KEY=replace-me
+EMBEDDING_PROVIDER=local
+# EMBEDDING_PROVIDER=openai_compatible
+# EMBEDDING_BASE_URL=https://dashscope.aliyuncs.com/compatible-mode/v1
+# EMBEDDING_API_KEY=replace-me
+# EMBEDDING_MODEL=text-embedding-v4
+# EMBEDDING_TIMEOUT_SECONDS=10.0
 BROWSER_FETCH_PROVIDER=none
 # BROWSER_FETCH_PROVIDER=playwright_mcp
 # PLAYWRIGHT_MCP_BASE_URL=http://localhost:8931

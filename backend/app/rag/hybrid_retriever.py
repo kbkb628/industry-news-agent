@@ -4,6 +4,7 @@ from typing import Any, Sequence
 
 from app.core.config import Settings
 from app.rag.bm25_retriever import BM25Retriever
+from app.rag.external_embedding_retriever import OpenAICompatibleEmbeddingRetriever
 from app.rag.keyword_retriever import KeywordRetriever
 from app.rag.knowledge_loader import KnowledgeDocument
 from app.rag.local_vector_retriever import LocalVectorRetriever
@@ -19,16 +20,48 @@ def retrieve_hybrid_context(
     *,
     top_k: int = 3,
     settings: Settings | None = None,
+    embedding_http_client: Any | None = None,
 ) -> dict[str, Any]:
     keyword_hits = KeywordRetriever(documents).retrieve(query, top_k=top_k)
     bm25_hits = BM25Retriever(documents).retrieve(query, top_k=top_k)
-    vector_hits = LocalVectorRetriever(
+    local_retriever = LocalVectorRetriever(
         documents,
         dimensions=(settings.local_embedding_dimensions if settings else 256),
         char_ngram_min=(settings.local_embedding_char_ngram_min if settings else 3),
         char_ngram_max=(settings.local_embedding_char_ngram_max if settings else 5),
         min_score=(settings.local_embedding_min_score if settings else 0.18),
-    ).retrieve(query, top_k=top_k)
+    )
+    vector_hits = local_retriever.retrieve(query, top_k=top_k)
+    configured_provider = settings.embedding_provider if settings else "local"
+    effective_provider = "local"
+    embedding_enabled = configured_provider == "openai_compatible"
+    used_fallback = False
+    fallback_reason: str | None = None
+    effective_model = "local_hashed_char_ngram"
+
+    if (
+        settings is not None
+        and settings.embedding_provider == "openai_compatible"
+        and settings.embedding_base_url
+        and settings.embedding_api_key
+    ):
+        try:
+            vector_hits = OpenAICompatibleEmbeddingRetriever(
+                documents,
+                base_url=settings.embedding_base_url,
+                api_key=settings.embedding_api_key,
+                model=settings.embedding_model,
+                timeout_seconds=settings.embedding_timeout_seconds,
+                min_score=settings.local_embedding_min_score,
+                http_client=embedding_http_client,
+            ).retrieve(query, top_k=top_k)
+            effective_provider = "openai_compatible"
+            effective_model = settings.embedding_model
+        except Exception as exc:
+            vector_hits = local_retriever.retrieve(query, top_k=top_k)
+            used_fallback = True
+            fallback_reason = str(exc)
+            effective_model = "local_hashed_char_ngram"
     merged: dict[str, dict[str, Any]] = {}
 
     for item in keyword_hits:
@@ -54,6 +87,8 @@ def retrieve_hybrid_context(
             existing["scores"][retriever_name] = float(item.score)
             if retriever_name not in existing["retrievers"]:
                 existing["retrievers"].append(retriever_name)
+            if retriever_name == "embedding":
+                existing["embedding_metadata"] = dict(item.metadata)
 
     for item in merged.values():
         scores = dict(item["scores"])
@@ -85,6 +120,7 @@ def retrieve_hybrid_context(
             "retrievers": list(item["retrievers"]),
             "scores": dict(item["scores"]),
             "metadata": dict(item["document"].metadata),
+            "embedding_metadata": dict(item.get("embedding_metadata", {})),
         }
         for item in ranked_hits
     ]
@@ -93,6 +129,14 @@ def retrieve_hybrid_context(
         "query": query,
         "retrieval_mode": RETRIEVAL_MODE,
         "retrievers": list(RETRIEVERS),
+        "embedding_runtime": {
+            "configured_provider": configured_provider,
+            "effective_provider": effective_provider,
+            "enabled": embedding_enabled,
+            "used_fallback": used_fallback,
+            "model": effective_model,
+            "fallback_reason": fallback_reason,
+        },
         "documents": documents_payload,
         "semantic_memory": build_semantic_memory(ranked_documents),
     }

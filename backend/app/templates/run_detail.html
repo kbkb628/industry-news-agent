@@ -93,7 +93,7 @@
 <section class="section-card">
   <h3>RAG grounding runtime</h3>
   <p>
-    This section makes the local RAG path reviewable at run level: it reads the retrieved
+    This section makes the configured RAG path reviewable at run level: it reads the retrieved
     business context, summarizes the stable <code>semantic_memory</code> contract, and pairs it
     with evaluation-time guidance metrics so the effect chain is visible.
   </p>
@@ -351,6 +351,7 @@
       const runContext = safeObject(payload.run_context);
       const businessMemory = safeObject(payload.business_memory);
       const businessContext = safeObject(businessMemory.business_context);
+      const embeddingRuntime = safeObject(businessContext.embedding_runtime);
       const semanticMemory = safeObject(businessContext.semantic_memory);
       const ragMetrics = safeObject(payload.evaluation_output?.eval_result);
       const historyIndex = safeObject(payload.history_index_result);
@@ -387,7 +388,7 @@
       );
       setSummary(
         "rag-grounding-summary",
-        `Retrieval mode: ${businessContext.retrieval_mode ?? "-"}; retrievers: ${safeList(businessContext.retrievers).join(", ") || "-"}; semantic keywords: ${safeList(semanticMemory.topic_keywords).length}.`,
+        `Retrieval mode: ${businessContext.retrieval_mode ?? "-"}; retrievers: ${safeList(businessContext.retrievers).join(", ") || "-"}; embedding provider: ${embeddingRuntime.configured_provider ?? "-"} -> ${embeddingRuntime.effective_provider ?? "-"}; fallback: ${embeddingRuntime.used_fallback ?? false}; semantic keywords: ${safeList(semanticMemory.topic_keywords).length}.`,
       );
       setSummary(
         "rag-metrics-summary",

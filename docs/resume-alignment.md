@@ -37,7 +37,7 @@ agent with:
 - a unified tool-access contract read surface with visible per-capability
   provider paths plus compact per-call access evidence
 - optional provider boundaries for search, browser fetch, history indexing,
-  judge scoring, and notification delivery
+  embedding retrieval, judge scoring, and notification delivery
 
 ## Claim To Code Evidence
 
@@ -255,11 +255,12 @@ agent with:
   - `backend/app/tools/browser_fetch_tool.py`
   - `backend/app/eval/judge.py`
 - Evidence:
-  - OneSearch-compatible search gateway
-  - OpenWebSearch-compatible search provider
-  - Playwright MCP-compatible browser fetch fallback
-  - OpenSearch-compatible history projection and query path
-  - local semantic dedup
+- OneSearch-compatible search gateway
+- OpenWebSearch-compatible search provider
+- OpenAI-compatible external embedding provider with explicit local fallback
+- Playwright MCP-compatible browser fetch fallback
+- OpenSearch-compatible history projection and query path
+- local semantic dedup
   - webhook notification delivery
   - OpenAI-compatible judge provider
 - API / pages:
@@ -296,9 +297,10 @@ Keep these scoped unless the runtime environment proves more:
 
 - "LLM-backed" should be read as `MockLLM` plus swappable provider boundaries
   unless a live provider is actually configured.
-- "RAG grounding" is now visible through run-detail read surfaces, but it is a
-  local JSONL + keyword/BM25/hashed-embedding path rather than an external
-  vector-store deployment.
+- "RAG grounding" is now visible through run-detail read surfaces, and the
+  retrieval stack is `local JSONL + keyword/BM25 + embedding rerank` with an
+  optional OpenAI-compatible external embedding path plus explicit local
+  fallback. It is still not a vector-store deployment.
 - "Search integration" should be framed as a unified tool contract plus an
   optional provider boundary.
 - "Browser automation" should be framed as a fallback adapter, not a fully

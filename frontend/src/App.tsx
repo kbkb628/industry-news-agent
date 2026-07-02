@@ -135,6 +135,11 @@ export default function App() {
     typeof businessContext.semantic_memory === "object"
       ? businessContext.semantic_memory
       : {};
+  const embeddingRuntime =
+    businessContext.embedding_runtime &&
+    typeof businessContext.embedding_runtime === "object"
+      ? businessContext.embedding_runtime
+      : {};
   const ragEvalMetrics =
     run?.status === "ready" ? run.data.evaluation_output?.eval_result ?? {} : {};
   const integrationRuntime =
@@ -500,12 +505,17 @@ export default function App() {
                   <h3>RAG grounding runtime</h3>
                   <p>
                     Retrieval mode {businessContext.retrieval_mode ?? "-"} | retrievers{" "}
-                    {businessContext.retrievers?.join(", ") || "-"}
+                    {businessContext.retrievers?.join(", ") || "-"} | embedding
+                    provider {String(embeddingRuntime.configured_provider ?? "-")} {"->"}{" "}
+                    {String(embeddingRuntime.effective_provider ?? "-")}
                   </p>
                   <p>
                     Semantic keywords {semanticMemory.topic_keywords?.length ?? 0} |
                     trusted sources {semanticMemory.trusted_source_hints?.length ?? 0} |
-                    push rules {semanticMemory.push_rules?.length ?? 0}
+                    push rules {semanticMemory.push_rules?.length ?? 0} | fallback{" "}
+                    {runtimeFlagLabel(
+                      embeddingRuntime.used_fallback as boolean | undefined,
+                    )}
                   </p>
                   <p>
                     RAG guidance applied{" "}
