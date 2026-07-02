@@ -128,6 +128,9 @@ agent with:
   OpenAI-compatible boundary
 - persisted eval history now includes recall proxy, false-positive proxy,
   candidate-task failure-rate proxy, event-latency proxy, and runtime-cost proxy
+- run detail surfaces now read back judge runtime explicitly with configured
+  provider, effective mode, fallback flag, and issue count, so the judge
+  boundary is visible at run level instead of only through raw eval payloads
   - push decisions are persisted and exposed through run snapshots
 - API / pages:
   - `POST /api/eval/run`
@@ -137,7 +140,7 @@ agent with:
   - `GET /runs/{run_id}`
   - local React dashboard run detail view
 - Truth boundary:
-  - the current judge default is deterministic and local; live judge support is
+- the current judge default is deterministic and local; live judge support is
   optional and should be described as a provider boundary
 - recall, false-positive, failure-rate, latency, and runtime-cost metrics are
   truthful as proxy evidence surfaces, not as production monitoring or

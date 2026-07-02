@@ -638,6 +638,33 @@ export default function App() {
                   </p>
                 </article>
                 <article className="row-card">
+                  <h3>Judge runtime</h3>
+                  <p>
+                    Configured provider{" "}
+                    {run.data.integration_runtime?.judge?.configured_provider ?? "-"}
+                  </p>
+                  <p>
+                    Enabled{" "}
+                    {runtimeFlagLabel(run.data.integration_runtime?.judge?.enabled)} |
+                    used in run{" "}
+                    {runtimeFlagLabel(
+                      run.data.integration_runtime?.judge?.used_in_run,
+                    )}{" "}
+                    | fallback used{" "}
+                    {runtimeFlagLabel(
+                      run.data.integration_runtime?.judge?.fallback_used,
+                    )}
+                  </p>
+                  <p>
+                    Mode {run.data.integration_runtime?.judge?.mode ?? "-"} | selected
+                    model {run.data.integration_runtime?.judge?.selected_model ?? "-"} |
+                    issue count {run.data.integration_runtime?.judge?.issue_count ?? 0}
+                  </p>
+                  <p>
+                    {run.data.integration_runtime?.judge?.reason ?? "No judge reason recorded."}
+                  </p>
+                </article>
+                <article className="row-card">
                   <h3>Tool access contract</h3>
                   <p>
                     Contract{" "}

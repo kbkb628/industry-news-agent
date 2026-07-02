@@ -181,6 +181,12 @@ def _run_supervisor_finalize_stage(
                 state.get("fetched_contents", []),
             )
         ),
+        eval_result=dict(
+            dict(state.get("evaluation_output", {})).get(
+                "eval_result",
+                state.get("eval_result", {}),
+            )
+        ),
     )
     state = supervisor_finalize_node(
         state,

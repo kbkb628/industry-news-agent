@@ -451,6 +451,10 @@ def test_supervisor_finalize_adds_integration_runtime_summary_to_snapshot() -> N
         browser_allowed_domains=["example.com"],
         notification_provider="webhook",
         notification_webhook_url="https://hooks.example.com/news",
+        judge_provider="openai_compatible",
+        judge_base_url="https://judge.example.com/v1",
+        judge_api_key="judge-secret",
+        judge_model="gpt-4o-mini",
     )
     state = {
         "run_id": "run_runtime_001",
@@ -470,7 +474,12 @@ def test_supervisor_finalize_adds_integration_runtime_summary_to_snapshot() -> N
         },
         "evaluation_output": {
             "final_decisions": [{"candidate_id": "cand_001", "should_push": True}],
-            "eval_result": {"push_count": 1},
+            "eval_result": {
+                "push_count": 1,
+                "judge_mode": "mock_rule_judge",
+                "judge_reason": "Mock judge found no rule-based quality issues. Judge provider fallback: timeout",
+                "judge_issues": ["judge_provider_fallback"],
+            },
         },
         "tool_results": [
             {
@@ -512,6 +521,17 @@ def test_supervisor_finalize_adds_integration_runtime_summary_to_snapshot() -> N
     assert result["integration_runtime"]["browser"]["fallback_used"] is True
     assert result["integration_runtime"]["notification"]["configured_provider"] == "webhook"
     assert result["integration_runtime"]["notification"]["used_in_run"] is True
+    assert result["integration_runtime"]["judge"] == {
+        "configured_provider": "openai_compatible",
+        "enabled": True,
+        "selected_model": "gpt-4o-mini",
+        "base_url_configured": True,
+        "used_in_run": True,
+        "fallback_used": True,
+        "mode": "mock_rule_judge",
+        "issue_count": 1,
+        "reason": "Mock judge found no rule-based quality issues. Judge provider fallback: timeout",
+    }
     assert result["integration_runtime"]["tool_access"] == {
         "contract": "unified_tool_gateway",
         "search": {

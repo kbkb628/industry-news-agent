@@ -49,6 +49,7 @@ Included in the current codebase:
 - minimal HTML admin pages for topics, pushes, run detail, and events
 - minimal HTML admin pages for topics, pushes, quality, history search, run detail, and events
 - explicit run-detail and resume-alignment read surfaces for local RAG grounding evidence
+- explicit run-detail read surface for judge provider/mode/fallback runtime evidence
 - local React + Vite dashboard over existing backend APIs
 - APScheduler topic jobs that enqueue worker runs
 - Redis-backed run queue with in-memory fallback

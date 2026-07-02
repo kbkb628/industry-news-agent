@@ -5,6 +5,7 @@
 ## in_progress
 
 ## completed
+- expose judge runtime evidence on run detail surfaces
 - align demo bootstrap read surfaces across dashboard and HTML showcase
 - expose history index runtime evidence on run detail surfaces
 - expose RAG grounding runtime evidence on run detail and resume alignment surfaces

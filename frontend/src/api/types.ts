@@ -120,6 +120,17 @@ export type MonitorRun = {
       failure_code?: string | null;
       selected_tool_path?: string;
     };
+    judge?: {
+      configured_provider?: string;
+      enabled?: boolean;
+      selected_model?: string | null;
+      base_url_configured?: boolean;
+      used_in_run?: boolean;
+      fallback_used?: boolean;
+      mode?: string | null;
+      issue_count?: number;
+      reason?: string | null;
+    };
     tool_access?: {
       contract?: string;
       calls?: Array<{

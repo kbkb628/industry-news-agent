@@ -49,7 +49,7 @@
         <li>The run snapshot separates `integration_runtime.tool_access.contract` from per-capability `provider_path`, so unified access does not over-claim universal MCP execution.</li>
         <li>The same snapshot now also exposes gateway-stamped per-call access evidence, so unified access is backed by real run-level call records rather than only by settings-time inference or display-layer summaries.</li>
         <li>Optional MCP and browser adapters can produce real per-run configuration/usage/degradation evidence when the target runtime wires them, but they remain optional and are not guaranteed always-live deployments.</li>
-        <li>Judge and history-index adapters still remain runtime boundaries unless the environment explicitly enables them.</li>
+        <li>Judge runtime is now read back explicitly on run detail surfaces, but judge and history-index adapters still remain runtime boundaries unless the environment explicitly enables them.</li>
         <li>Worker governance and candidate-task coordination are real, but they are still single-process and bounded rather than a distributed worker fleet.</li>
       </ul>
     </article>

@@ -137,6 +137,10 @@ describe("App", () => {
               rag_guidance_applied_count: 1,
               trusted_source_match_count: 1,
               rule_guidance_hits: 2,
+              judge_mode: "mock_rule_judge",
+              judge_reason:
+                "Mock judge found no rule-based quality issues. Judge provider fallback: timeout",
+              judge_issues: ["judge_provider_fallback"],
             },
           },
           history_index_result: {
@@ -180,6 +184,18 @@ describe("App", () => {
               delivery_attempted: true,
               failure_code: null,
               selected_tool_path: "notification_send",
+            },
+            judge: {
+              configured_provider: "openai_compatible",
+              enabled: true,
+              selected_model: "gpt-4o-mini",
+              base_url_configured: true,
+              used_in_run: true,
+              fallback_used: true,
+              mode: "mock_rule_judge",
+              issue_count: 1,
+              reason:
+                "Mock judge found no rule-based quality issues. Judge provider fallback: timeout",
             },
             tool_access: {
               contract: "unified_tool_gateway",
@@ -386,6 +402,7 @@ describe("App", () => {
       screen.getByText(/RAG guidance applied 1 \| trusted matches 1 \| rule hits 2/i),
     ).toBeInTheDocument();
     expect(screen.getByText(/MCP runtime/i)).toBeInTheDocument();
+    expect(screen.getByText(/Judge runtime/i)).toBeInTheDocument();
     expect(screen.getByText(/Tool access runtime/i)).toBeInTheDocument();
     expect(
       screen.getByText(/Selected path search_news \| base URL configured yes \| tool calls 1/i),
@@ -398,6 +415,11 @@ describe("App", () => {
       ),
     ).toBeInTheDocument();
     expect(screen.getByText(/Configured provider webhook/i)).toBeInTheDocument();
+    expect(screen.getByText(/Configured provider openai_compatible/i)).toBeInTheDocument();
+    expect(
+      screen.getByText(/Mode mock_rule_judge \| selected model gpt-4o-mini \| issue count 1/i),
+    ).toBeInTheDocument();
+    expect(screen.getAllByText(/Judge provider fallback: timeout/i).length).toBeGreaterThan(0);
     expect(screen.getByText(/Selected path notification_send/i)).toBeInTheDocument();
     expect(screen.getByText(/Enabled yes \| used in run yes \| delivery succeeded yes/i)).toBeInTheDocument();
     expect(

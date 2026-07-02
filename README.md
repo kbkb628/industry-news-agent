@@ -28,6 +28,7 @@ The current codebase already runs a truthful end-to-end closed loop with:
 - MockLLM-first execution path with replaceable provider boundaries
 - local JSONL/keyword-based business context retrieval
 - explicit run-detail readback for local RAG grounding and guidance metrics
+- explicit run-detail readback for judge provider/mode/fallback runtime evidence
 - persisted quality proxy evidence for recall, false-positive, task-failure,
   event-latency, and runtime-cost readback
 - visible fallback, error, and governance events

@@ -1169,6 +1169,7 @@ def supervisor_finalize_node(
             gateway=gateway,
             tool_results=list(state.get("tool_results", [])),
             fetched_contents=list(state.get("fetched_contents", [])),
+            eval_result=dict(state.get("eval_result", {})),
         )
     state["integration_runtime"] = integration_runtime
     state["status"] = "completed"

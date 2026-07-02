@@ -193,12 +193,52 @@ def _attach_tool_call_evidence(
     return enriched
 
 
+def _build_judge_runtime(
+    settings: Settings | None,
+    eval_result: dict[str, Any] | None,
+) -> dict[str, Any]:
+    result = eval_result if isinstance(eval_result, dict) else {}
+    raw_issues = result.get("judge_issues")
+    issues = [str(item) for item in raw_issues] if isinstance(raw_issues, list) else []
+
+    mode = result.get("judge_mode")
+    if not isinstance(mode, str) or not mode:
+        mode = None
+
+    reason = result.get("judge_reason")
+    if not isinstance(reason, str) or not reason:
+        reason = None
+
+    configured_provider = "mock" if settings is None else settings.judge_provider
+    selected_model = None
+    if settings is not None and settings.judge_provider == "openai_compatible":
+        selected_model = settings.judge_model
+
+    return {
+        "configured_provider": configured_provider,
+        "enabled": bool(
+            settings
+            and settings.judge_provider == "openai_compatible"
+            and settings.judge_base_url
+            and settings.judge_api_key
+        ),
+        "selected_model": selected_model,
+        "base_url_configured": bool(settings and settings.judge_base_url),
+        "used_in_run": bool(result),
+        "fallback_used": "judge_provider_fallback" in issues,
+        "mode": mode,
+        "issue_count": len(issues),
+        "reason": reason,
+    }
+
+
 def build_integration_runtime(
     *,
     settings: Settings | None,
     gateway: ToolGateway | None = None,
     tool_results: list[dict[str, Any]],
     fetched_contents: list[dict[str, Any]],
+    eval_result: dict[str, Any] | None = None,
 ) -> dict[str, dict[str, Any]]:
     mcp_provider = None if settings is None else settings.mcp_gateway_provider
     mcp_base_url_configured = bool(settings and settings.onesearch_base_url)
@@ -338,6 +378,7 @@ def build_integration_runtime(
             "fallback_used": False,
             "failure_code": notification_failure_code,
         },
+        "judge": _build_judge_runtime(settings, eval_result),
         "tool_access": _attach_tool_call_evidence(
             (
                 _build_tool_access_contract_from_results(tool_results)

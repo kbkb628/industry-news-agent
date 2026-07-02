@@ -166,6 +166,11 @@
       <p id="notification-runtime-summary">Loading notification runtime evidence.</p>
       <pre id="notification-runtime-json"><code>Loading</code></pre>
     </article>
+    <article class="stat">
+      <strong>Judge runtime</strong>
+      <p id="judge-runtime-summary">Loading judge runtime evidence.</p>
+      <pre id="judge-runtime-json"><code>Loading</code></pre>
+    </article>
   </div>
 </section>
 
@@ -353,6 +358,7 @@
       const mcpRuntime = safeObject(payload.integration_runtime?.mcp);
       const browserRuntime = safeObject(payload.integration_runtime?.browser);
       const notificationRuntime = safeObject(payload.integration_runtime?.notification);
+      const judgeRuntime = safeObject(payload.integration_runtime?.judge);
       const toolAccess = safeObject(payload.integration_runtime?.tool_access);
 
       setSummary(
@@ -404,6 +410,10 @@
         `Configured provider: ${notificationRuntime.configured_provider ?? "-"}; used in run: ${notificationRuntime.used_in_run ?? false}; delivery attempted: ${notificationRuntime.delivery_attempted ?? false}; delivery succeeded: ${notificationRuntime.delivery_succeeded ?? false}; failure code: ${notificationRuntime.failure_code ?? "-"}.`,
       );
       setSummary(
+        "judge-runtime-summary",
+        `Configured provider: ${judgeRuntime.configured_provider ?? "-"}; mode: ${judgeRuntime.mode ?? "-"}; used in run: ${judgeRuntime.used_in_run ?? false}; fallback used: ${judgeRuntime.fallback_used ?? false}; issue count: ${judgeRuntime.issue_count ?? 0}.`,
+      );
+      setSummary(
         "mcp-tool-access-summary",
         `Selected tool path: ${mcpRuntime.selected_tool_path ?? "-"}; Base URL configured: ${mcpRuntime.base_url_configured ?? false}; tool calls: ${mcpRuntime.tool_call_count ?? 0}.`,
       );
@@ -440,6 +450,7 @@
       setCodeBlock("mcp-runtime-json", mcpRuntime);
       setCodeBlock("browser-runtime-json", browserRuntime);
       setCodeBlock("notification-runtime-json", notificationRuntime);
+      setCodeBlock("judge-runtime-json", judgeRuntime);
       setCodeBlock("mcp-tool-access-json", mcpRuntime);
       setCodeBlock("browser-tool-access-json", browserRuntime);
       setCodeBlock("notification-tool-access-json", notificationRuntime);
@@ -461,6 +472,7 @@
       setSummary("mcp-runtime-summary", "Run detail API unavailable.");
       setSummary("browser-runtime-summary", "Run detail API unavailable.");
       setSummary("notification-runtime-summary", "Run detail API unavailable.");
+      setSummary("judge-runtime-summary", "Run detail API unavailable.");
       setSummary("mcp-tool-access-summary", "Run detail API unavailable.");
       setSummary("browser-tool-access-summary", "Run detail API unavailable.");
       setSummary("notification-tool-access-summary", "Run detail API unavailable.");
@@ -479,6 +491,7 @@
       setCodeBlock("mcp-runtime-json", { error: "run detail unavailable" });
       setCodeBlock("browser-runtime-json", { error: "run detail unavailable" });
       setCodeBlock("notification-runtime-json", { error: "run detail unavailable" });
+      setCodeBlock("judge-runtime-json", { error: "run detail unavailable" });
       setCodeBlock("mcp-tool-access-json", { error: "run detail unavailable" });
       setCodeBlock("browser-tool-access-json", { error: "run detail unavailable" });
       setCodeBlock("notification-tool-access-json", { error: "run detail unavailable" });

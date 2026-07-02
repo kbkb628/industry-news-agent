@@ -3616,6 +3616,7 @@ def test_build_integration_runtime_reports_enabled_mcp_and_browser_config() -> N
         settings=settings,
         tool_results=[],
         fetched_contents=[],
+        eval_result={},
     )
 
     assert runtime["mcp"] == {
@@ -3655,6 +3656,17 @@ def test_build_integration_runtime_reports_enabled_mcp_and_browser_config() -> N
         "fallback_used": False,
         "failure_code": None,
     }
+    assert runtime["judge"] == {
+        "configured_provider": "mock",
+        "enabled": False,
+        "selected_model": None,
+        "base_url_configured": False,
+        "used_in_run": False,
+        "fallback_used": False,
+        "mode": None,
+        "issue_count": 0,
+        "reason": None,
+    }
     assert runtime["tool_access"]["contract"] == "unified_tool_gateway"
     assert runtime["tool_access"]["search"]["provider_path"] == "mcp_gateway"
     assert runtime["tool_access"]["browser"]["provider_path"] == "tool_gateway"
@@ -3676,6 +3688,7 @@ def test_build_integration_runtime_disables_browser_when_required_config_is_miss
         settings=settings,
         tool_results=[],
         fetched_contents=[],
+        eval_result={},
     )
 
     assert runtime["browser"] == {
@@ -3796,6 +3809,11 @@ def test_build_integration_runtime_derives_usage_and_fallback_counts_from_run_ev
                 "fetch_method": "http",
             },
         ],
+        eval_result={
+            "judge_mode": "openai_compatible_judge",
+            "judge_reason": "Judge accepted the run quality.",
+            "judge_issues": ["trace_incomplete"],
+        },
     )
 
     assert runtime["mcp"] == {
@@ -3834,6 +3852,17 @@ def test_build_integration_runtime_derives_usage_and_fallback_counts_from_run_ev
         "delivery_succeeded": True,
         "fallback_used": False,
         "failure_code": None,
+    }
+    assert runtime["judge"] == {
+        "configured_provider": "mock",
+        "enabled": False,
+        "selected_model": None,
+        "base_url_configured": False,
+        "used_in_run": True,
+        "fallback_used": False,
+        "mode": "openai_compatible_judge",
+        "issue_count": 1,
+        "reason": "Judge accepted the run quality.",
     }
     assert runtime["tool_access"]["contract"] == "unified_tool_gateway"
     assert runtime["tool_access"]["search"] == {
