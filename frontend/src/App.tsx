@@ -44,7 +44,7 @@ export default function App() {
   const [summary, setSummary] = useState<Loadable<EvalSummary>>({
     status: "loading",
   });
-  const [runId, setRunId] = useState("run_001");
+  const [runId, setRunId] = useState("run_demo_bootstrap");
   const [run, setRun] = useState<Loadable<MonitorRun> | null>(null);
   const [events, setEvents] = useState<Loadable<EventListResponse> | null>(
     null,
@@ -174,6 +174,10 @@ export default function App() {
             />
             <button type="submit">Load run</button>
           </div>
+          <p className="run-hint">
+            Defaulting to the reproducible demo evidence chain:
+            <code>run_demo_bootstrap</code>.
+          </p>
         </form>
       </section>
 

@@ -481,6 +481,8 @@ Then open `http://localhost:5173`.
 When using Docker Compose, the local dashboard is available at
 `http://localhost:5173` and proxies API calls to the backend service through
 `VITE_API_PROXY_TARGET=http://backend:8000`.
+The run-detail input now defaults to `run_demo_bootstrap` so the dashboard
+opens on the same reproducible evidence path documented for the bootstrap flow.
 
 ## Test
 

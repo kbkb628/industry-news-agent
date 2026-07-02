@@ -38,7 +38,7 @@ describe("App", () => {
           pushes: [
             {
               push_id: "push_001",
-              run_id: "run_001",
+              run_id: "run_demo_bootstrap",
               topic_id: "topic_001",
               candidate_id: "cand_001",
               should_push: true,
@@ -65,7 +65,7 @@ describe("App", () => {
           avg_event_latency_ms: 245,
           latest_eval: {
             eval_id: "eval_001",
-            run_id: "run_001",
+            run_id: "run_demo_bootstrap",
             topic_id: "topic_001",
             retrieved_count: 4,
             deduped_count: 3,
@@ -83,9 +83,9 @@ describe("App", () => {
           },
         });
       }
-      if (path === "/api/monitor/runs/run_001") {
+      if (path === "/api/monitor/runs/run_demo_bootstrap") {
         return respond({
-          run_id: "run_001",
+          run_id: "run_demo_bootstrap",
           topic_id: "topic_001",
           trigger: "manual",
           status: "completed",
@@ -253,13 +253,13 @@ describe("App", () => {
           errors: [],
         });
       }
-      if (path === "/api/monitor/runs/run_001/events") {
+      if (path === "/api/monitor/runs/run_demo_bootstrap/events") {
         return respond({
-          run_id: "run_001",
+          run_id: "run_demo_bootstrap",
           events: [
             {
               event_id: "evt_001",
-              run_id: "run_001",
+              run_id: "run_demo_bootstrap",
               topic_id: "topic_001",
               event_type: "node_completed",
               node: "retrieve_candidates",
@@ -269,12 +269,12 @@ describe("App", () => {
           ],
         });
       }
-      if (path === "/api/monitor/runs/run_001/candidate-tasks") {
+      if (path === "/api/monitor/runs/run_demo_bootstrap/candidate-tasks") {
         return respond({
           items: [
             {
               task_id: "task_fetch_001",
-              run_id: "run_001",
+              run_id: "run_demo_bootstrap",
               stage: "fetch",
               status: "completed",
               candidate_id: "cand_001",
@@ -284,7 +284,7 @@ describe("App", () => {
             },
             {
               task_id: "task_extract_001",
-              run_id: "run_001",
+              run_id: "run_demo_bootstrap",
               stage: "extract",
               status: "completed",
               candidate_id: "cand_001",
@@ -295,7 +295,7 @@ describe("App", () => {
             },
             {
               task_id: "task_evaluate_001",
-              run_id: "run_001",
+              run_id: "run_demo_bootstrap",
               stage: "evaluate",
               status: "completed",
               candidate_id: "cand_001",
@@ -343,6 +343,7 @@ describe("App", () => {
     ).toBeInTheDocument();
     expect(await screen.findByText("AI Agent")).toBeInTheDocument();
     expect(await screen.findByText("push_001")).toBeInTheDocument();
+    expect(screen.getByDisplayValue("run_demo_bootstrap")).toBeInTheDocument();
     expect(await screen.findByText("Tool success")).toBeInTheDocument();
     expect(await screen.findByText("100%")).toBeInTheDocument();
     expect(await screen.findByText(/Recall proxy 82%/i)).toBeInTheDocument();
@@ -355,7 +356,7 @@ describe("App", () => {
     const user = userEvent.setup();
 
     await user.clear(screen.getByLabelText("Run ID"));
-    await user.type(screen.getByLabelText("Run ID"), "run_001");
+    await user.type(screen.getByLabelText("Run ID"), "run_demo_bootstrap");
     await user.click(screen.getByRole("button", { name: "Load run" }));
 
     await waitFor(() => {

@@ -221,6 +221,9 @@ npm install
 npm run dev
 ```
 
+The dashboard defaults its run-detail input to `run_demo_bootstrap` so the
+first manual readback aligns with the deterministic showcase evidence chain.
+
 ## Main APIs
 
 - `POST /api/topics`

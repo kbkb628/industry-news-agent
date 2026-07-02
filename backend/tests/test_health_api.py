@@ -21,6 +21,8 @@ def test_html_pages_expose_showcase_navigation_and_resume_copy(
     assert "History Search" in topics_response.text
     assert "Recruiter-ready console" in topics_response.text
     assert "Agent workflow highlights" in topics_response.text
+    assert "/runs/run_demo_bootstrap" in topics_response.text
+    assert "/runs/run_demo_bootstrap/events" in topics_response.text
 
     assert resume_response.status_code == 200
     assert "Resume Alignment" in resume_response.text
